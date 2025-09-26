@@ -31,7 +31,7 @@ output:
 ````
 
 
-# or with the punny aliases
+### (or with the basil puns like chop and sprout)
 
 ````
 # See the tokens
