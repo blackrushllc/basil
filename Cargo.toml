@@ -11,9 +11,8 @@ members = [
 ]
 resolver = "2"
 
-
 [workspace.package]
 edition = "2021"
-name = "basil"
 version = "0.0.1"
 license = "MIT"
+# (no `name` here)

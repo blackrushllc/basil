@@ -39,7 +39,10 @@ impl VM {
                 Op::Mul => self.bin_num(|a, b| a * b)?,
                 Op::Div => self.bin_num(|a, b| a / b)?,
                 Op::Neg => {
-                    let a = self.as_num(self.pop()?)?;
+                    let a = {
+                        let val = self.pop()?;
+                        self.as_num(val)?
+                    };
                     self.stack.push(Value::Num(-a));
                 }
                 Op::Print => {
@@ -104,8 +107,14 @@ impl VM {
     }
 
     fn bin_num<F: Fn(f64, f64) -> f64>(&mut self, f: F) -> Result<()> {
-        let b = self.as_num(self.pop()?)?;
-        let a = self.as_num(self.pop()?)?;
+        let b = {
+            let val = self.pop()?;
+            self.as_num(val)?
+        };
+        let a = {
+            let val = self.pop()?;
+            self.as_num(val)?
+        };
         self.stack.push(Value::Num(f(a, b)));
         Ok(())
     }
