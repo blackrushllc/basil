@@ -15,7 +15,7 @@ and seamless interoperability with C and WASI.
 
 
 # 🌱 STATUS _It's Working!!_
-#### Prototype v0: tokens → AST → bytecode → VM
+#### Prototype v0: tokens → Abstract Syntax Tree → bytecode → VM
 The core is in place! We can now run simple programs with functions, recursion, locals, conditionals, and arithmetic.
 
 See TODO.md for next steps.
@@ -132,7 +132,7 @@ or make serve (greenhouse) spin up a tiny static file server for docs.
 
 # 🌱 Basil Prototype v0 — Public Plan & Skeleton
 
-A minimal, public‑ready blueprint for a modern BASIC‑flavored language focused on web/back‑end. This plan targets a tiny, end‑to‑end slice: **source → tokens → AST → bytecode → VM** with room to evolve into C/WASM/JS backends.
+A minimal, public‑ready blueprint for a modern BASIC‑flavored language focused on web/back‑end. This plan targets a tiny, end‑to‑end slice: **source → tokens → Abstract Syntax Tree → bytecode → VM** with room to evolve into C/WASM/JS backends.
 
 ---
 
@@ -157,9 +157,9 @@ basil/
 │  └─ src/main.rs
 ├─ basilcore/                    # language core crates
 │  ├─ lexer/         (tokens + scanner)
-│  ├─ parser/        (Pratt parser → AST)
-│  ├─ ast/           (AST nodes + spans)
-│  ├─ compiler/      (AST → bytecode chunk)
+│  ├─ parser/        (Pratt parser → Abstract Syntax Tree)
+│  ├─ ast/           (Abstract Syntax Tree nodes + spans)
+│  ├─ compiler/      (Abstract Syntax Tree → bytecode chunk)
 │  ├─ bytecode/      (opcodes, chunk, constants)
 │  ├─ vm/            (stack VM, values, GC stub)
 │  └─ common/        (errors, interner, span, arena)
@@ -309,7 +309,7 @@ enum Expr {
 
 **Why stack first?**
 
-* Easiest to emit from AST.
+* Easiest to emit from Abstract Syntax Tree.
 * Minimal VM loop; great for bootstrapping.
 * We can later add a register/SSA IR and keep this as a portable baseline.
 
@@ -465,7 +465,7 @@ fn bin_cmp<F: Fn(&Value,&Value)->bool>(vm: &mut VM, f: F) -> Result<(), VMError>
 
 ---
 
-## 9) 🌱 Compiler (AST → bytecode) — essentials
+## 9) 🌱 Compiler (Abstract Syntax Tree → bytecode) — essentials
 
 ### 9.1 🌱 Expression emission
 
