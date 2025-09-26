@@ -1,4 +1,4 @@
-# TODO: Implement functions, calls, returns, control flow, and comparisons
+# TADA!: Implement functions, calls, returns, control flow, and comparisons
 # Goal: run this program:
 ```FUNC fib(n)
   IF n < 2 THEN
@@ -8,7 +8,7 @@
 END
 PRINT fib(10)
 ``` 
-
+### 🌿💻🎉🚀 This is working now 🐷🐷🐷🐷🐷🐷🌱 
 
 1. **Functions** (`FUNC name(params) … END`)
 2. **Calls** (`fib(10)`)
