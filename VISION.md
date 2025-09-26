@@ -54,7 +54,7 @@ This trio (WASM, C, Node) gives you: browser, server, embedded, and “compile a
 * Add **capabilities** in metadata: which OS/CPU/backends/FFIs a package supports.
 * Include **vendoring** and **checksums** (corporate users will ask immediately).
 
-# 4) Extension & ecosystem strategy (your biggest leverage)
+# 4) Extension & ecosystem strategy (our biggest leverage)
 
 Think of extensions in **tiers**, so authors can pick the easiest viable path:
 
