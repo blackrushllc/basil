@@ -1,6 +1,18 @@
 # Basil 🌿
 A modern BASIC‑flavored language focused on web/back‑end.
 
+# 🌱 STATUS _Working!!_:
+#### Prototype v0: tokens → AST → bytecode → VM
+The core is in place! We can now run simple programs with functions, recursion, locals, conditionals, and arithmetic.
+
+See TODO.md for next steps.
+
+See GOALS.md for the high-level vision.
+
+See VISION.md for more details on language shape, stdlib, web story, tooling, performance, and roadmap.
+
+
+
 # 🌱 HERE'S THE LATEST UPDATE :
 
 # Basil (prototype v0)
@@ -76,32 +88,36 @@ Examples:
 
 
 
-🍿 Next steps
+## 🍿 The Deep Geek Stuff:
 
 We can wire fmt (prune) to a basic whitespace/semicolon normalizer next, 
 or make serve (greenhouse) spin up a tiny static file server for docs.
 
 
-+ `git init && cargo run -p basilc` -- examples/hello.basil → see tokens.
+### 🐷 What's Done So Far:
 
 + Fill parser with the Pratt loop from the plan.
-
 + Implement a basil-bytecode Chunk and the VM dispatch loop.
-
 + Wire basilc to: lex → parse → compile → run.
-
-
++ Add examples: hello.basil, expr.basil, fib.basil.
++ Add CLI commands: run/sprout, lex/chop, help.
++ Most rudimentary BASIC features:
+  - `PRINT` statement
+  - `LET` for local variable declaration
+  - Numeric literals and arithmetic expressions
+  - Function declarations with `FUNC`/`RETURN`
+  - Function calls with arguments
+  - Recursion (e.g., Fibonacci)
+  - `IF/THEN[/ELSE]` conditionals
+  - Local variables and parameters
+  - Comparison operators: `==`, `!=`, `<`, `<=`, `>`, `>=`
+  - Stack-based bytecode VM with call frames
++ Basic error handling (panics on runtime errors for now).
 
 #### 🐷 That's All Folks ! ! ! 
 
-🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷
 
-
-# 🚀 HERE IS THE PLAN:
-
-
-
-# Basil Prototype v0 — Public Plan & Skeleton
+# 🌱 Basil Prototype v0 — Public Plan & Skeleton
 
 A minimal, public‑ready blueprint for a modern BASIC‑flavored language focused on web/back‑end. This plan targets a tiny, end‑to‑end slice: **source → tokens → AST → bytecode → VM** with room to evolve into C/WASM/JS backends.
 
@@ -109,14 +125,14 @@ A minimal, public‑ready blueprint for a modern BASIC‑flavored language focus
 
 ## 0) High‑level goals
 
-* **Developer joy**: BASIC warmth + modern features (expressions, async later, modules).
-* **Simple core now, room to grow**: start with a stack VM, evolve to register/SSA.
-* **Interop first**: design a stable C ABI and WASI component boundary (later phases).
-* **Linux + Windows, single binary toolchain**.
+* 🌱 **Developer joy**: BASIC warmth + modern features (expressions, async later, modules).
+* 🌱 **Simple core now, room to grow**: start with a stack VM, evolve to register/SSA.
+* 🌱 **Interop first**: design a stable C ABI and WASI component boundary (later phases).
+* 🌱 **Linux + Windows, single binary toolchain**.
 
 ---
 
-## 1) Repository layout (Rust host)
+## 1) 🌱 Repository layout (Rust host)
 
 ```
 basil/
@@ -147,7 +163,7 @@ basil/
 
 ---
 
-## 2) Language subset v0 (EBNF)
+## 2) 🌱 Language subset / Extended Backus-Naur Form (EBNF)
 
 ```
 program     := { declaration } EOF ;
@@ -190,7 +206,7 @@ type        := IDENT ; // placeholder for v0, optional annotations only
 
 ---
 
-## 3) Tokens (v0)
+## 3) 🌱 Tokens (v0)
 
 ```
 Enum TokenKind {
@@ -213,7 +229,7 @@ Enum TokenKind {
 
 ---
 
-## 4) Pratt parser outline (binding powers)
+## 4) 🌱 Pratt parser outline (binding powers)
 
 Binding power table (lowest → highest):
 
@@ -251,7 +267,7 @@ fn parse_bp(&mut self, min_bp: u8) -> Expr {
 
 ---
 
-## 5) AST (v0)
+## 5) 🌱 Abstract Syntax Tree (AST) (v0)
 
 ```rust
 enum Stmt {
@@ -276,7 +292,7 @@ enum Expr {
 
 ---
 
-## 6) Bytecode format v0 (stack‑based)
+## 6) 🌱 Bytecode format v0 (stack‑based)
 
 **Why stack first?**
 
@@ -328,7 +344,7 @@ HALT
 
 ---
 
-## 7) Values & stack frames
+## 7) 🌱 Values & stack frames
 
 ```rust
 enum Value {
@@ -357,7 +373,7 @@ struct VM {
 
 ---
 
-## 8) Minimal VM loop (Rust)
+## 8) 🌱 Minimal VM loop (Rust)
 
 ```rust
 fn run(&mut self) -> Result<(), VMError> {
@@ -436,9 +452,9 @@ fn bin_cmp<F: Fn(&Value,&Value)->bool>(vm: &mut VM, f: F) -> Result<(), VMError>
 
 ---
 
-## 9) Compiler (AST → bytecode) — essentials
+## 9) 🌱 Compiler (AST → bytecode) — essentials
 
-### 9.1 Expression emission
+### 9.1 🌱 Expression emission
 
 ```rust
 fn emit_expr(&mut self, e: &Expr) {
@@ -477,7 +493,7 @@ fn emit_expr(&mut self, e: &Expr) {
 }
 ```
 
-### 9.2 Control flow (patching)
+### 9.2 🌱 Control flow (patching)
 
 ```rust
 fn emit_if(&mut self, cond: &Expr, then_s: &Stmt, else_s: Option<&Stmt>) {
@@ -497,7 +513,7 @@ fn emit_if(&mut self, cond: &Expr, then_s: &Stmt, else_s: Option<&Stmt>) {
 
 ---
 
-## 10) CLI behavior (v0)
+## 10) 🌱 CLI behavior (v0)
 
 * `basilc run examples/expr.basil` → lex/parse/compile/execute.
 * `basilc repl` → interactive (line → compile → run frame).
@@ -505,7 +521,7 @@ fn emit_if(&mut self, cond: &Expr, then_s: &Stmt, else_s: Option<&Stmt>) {
 
 ---
 
-## 11) Example programs
+## 11) 🌱 Example programs
 
 **examples/hello.basil**
 
@@ -536,7 +552,7 @@ PRINT fib(10); // 55
 
 ---
 
-## 12) Testing strategy
+## 12) 🌱 Testing strategy
 
 * Unit tests per crate (lexer, parser, compiler, vm).
 * Golden tests: source → bytecode hex dump → compare.
@@ -544,7 +560,7 @@ PRINT fib(10); // 55
 
 ---
 
-## 13) Roadmap from here
+## 13) 🌱 Roadmap from here
 
 1. **Check in skeleton**: crates, opcodes, minimal lexer, numeric literals, string interner.
 2. **Implement Pratt parser** and statements `LET/IF/WHILE/RETURN/BLOCK`.
@@ -557,7 +573,7 @@ PRINT fib(10); // 55
 
 ---
 
-## 14) Licensing & contribution
+## 14) 🌱 Licensing & contribution
 
 * MIT or Apache‑2.0 for maximum adoption.
 * `CONTRIBUTING.md` with rustfmt + clippy gates; CI on Windows/Linux.
