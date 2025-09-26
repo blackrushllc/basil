@@ -1,33 +1,42 @@
 # Basil 🌿
 A modern BASIC‑flavored language focused on web/back‑end.
 
-# 🍿 HERE'S THE LATEST UPDATE :
+# 🌱 HERE'S THE LATEST UPDATE :
 
 # Basil (prototype v0)
 
+Let's Grow some Basil! 🌿🌱🌱🌱
 
 
-🍿 Minimal public prototype: CLI + lexer that prints tokens.
-
-
+ 
 🍿 Quick Try:
 
 ```` 
-cargo run -p basilc -- run examples/hello.basil 
+# Using the "lex" command to see tokens:
+cargo run -p basilc -- lex examples/hello.basil
+
+output:
+Print   'PRINT' @0..5
+String  '"Hello, Basil!"'       @6..21
+Semicolon       ';'     @21..22
+Eof     ''      @24..24 
 ````
 
-Output:
-```Ident   'RINT ' @1..6
-String  'Hello, Basil!";'       @7..22
-Semicolon       ''      @22..22
-Eof     ''      @22..22
-```
+```` 
+# Or the "run" command
+cargo run -p basilc -- run examples/hello.basil
 
-Right now we're just going to tokenize an example file
+output:
+"Hello, Basil!"
+````
 
-# or with the punny alias
+
+# or with the punny aliases
 
 ````
+# See the tokens
+cargo run -p basilc -- chop examples/hello.basil
+# Run the file
 cargo run -p basilc -- sprout examples/hello.basil
 ````
 
@@ -52,7 +61,8 @@ Commands (aliases in parentheses):
   dev  (steep)       Start dev mode (stub)
   serve (greenhouse) Serve local HTTP (stub)
   doc  (bouquet)     Generate docs (stub)
-
+  lex  (chop)        Dump tokens from a .basil file (debug)
+ 
 Usage:
   basilc <command> [args]
 
@@ -60,6 +70,7 @@ Examples:
   basilc run examples/hello.basil
   basilc sprout examples/hello.basil
   basilc init myapp
+  
 
 ```
 
