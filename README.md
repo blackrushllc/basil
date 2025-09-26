@@ -310,7 +310,9 @@ enum Expr {
 
 * Easiest to emit from Abstract Syntax Tree.
 * Minimal VM loop; great for bootstrapping.
-* We can later add a register/SSA IR and keep this as a portable baseline.
+* We can later add a register/SSA (Static Single Assignment) Intermediate Representation
+
+and keep this as a portable baseline.
 
 **Chunk layout**
 
@@ -581,7 +583,7 @@ PRINT fib(10); // 55
 5. **Release v0.1** with examples + docs.
 6. **Next**: Booleans short‑circuit, arrays/maps, for‑loops, file I/O, import/module system.
 7. **Then**: async runtime scaffold; C‑ABI & WASI plugin MVP; Postgres driver.
-8. **Finally**: register/SSA IR and C/WASM/JS emitters.
+8. **Finally**: register/Static Single Assignment / Intermediate Representation and C/WASM/JS emitters.
 
 ---
 
