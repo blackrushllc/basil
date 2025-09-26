@@ -3,6 +3,17 @@ A modern BASIC‑flavored language focused on web/back‑end with the
 ability to compile binaries, transpile to C, NodeJS and WASM, 
 and leverages a lot of existing libraries from other environments.
 
+🌱 Basil is inspired by PowerBASIC, FreeBASIC, and the warmth and simplicity of BASIC,
+but reimagined for today's developer needs with modern features, a robust standard library,
+and seamless interoperability with C and WASI.
+
+🌱 Basil is written in Rust for safety and performance, and aims to provide a delightful developer experience.
+
+🌱 Basil is open source under the MIT or Apache-2.0 license.
+
+🌱 Basil is a project by Blackrush LLC (https://blackrush.us).
+
+
 # 🌱 STATUS _It's Working!!_
 #### Prototype v0: tokens → AST → bytecode → VM
 The core is in place! We can now run simple programs with functions, recursion, locals, conditionals, and arithmetic.
