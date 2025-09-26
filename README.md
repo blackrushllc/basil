@@ -139,7 +139,7 @@ A minimal, public‑ready blueprint for a modern BASIC‑flavored language focus
 
 * 🌱 **Developer joy**: BASIC warmth + modern features (expressions, async later, modules).
 * 🌱 **Simple core now, room to grow**: start with a stack VM, evolve to register/SSA.
-* 🌱 **Interop first**: design a stable C ABI and WASI component boundary (later phases).
+* 🌱 **Interop first**: design a stable C Application Binary Interface (ABI) and WASI component boundary (later phases).
 * 🌱 **Linux + Windows, single binary toolchain**.
 
 ---
