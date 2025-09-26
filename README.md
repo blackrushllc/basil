@@ -1,5 +1,5 @@
 # Basil 🌿
-A modern BASIC‑flavored language focused on web/back‑end.
+A modern BASIC‑flavored language focused on web/back‑end with the ability to compile or tranpile to C, NodeJS and WASM, and leverages a lot of existing libraries from other environments.
 
 # 🌱 STATUS _It's Working!!_
 #### Prototype v0: tokens → AST → bytecode → VM
