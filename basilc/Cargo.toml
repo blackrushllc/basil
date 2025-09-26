@@ -7,3 +7,7 @@ edition = "2021"
 [dependencies]
 basil-lexer = { path = "../basilcore/lexer" }
 basil-common = { path = "../basilcore/common" }
+# New deps for end-to-end run:
+basil-parser = { path = "../basilcore/parser" }
+basil-compiler= { path = "../basilcore/compiler" }
+basil-vm = { path = "../basilcore/vm" }

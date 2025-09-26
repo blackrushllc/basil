@@ -58,5 +58,8 @@ name = "basilc"
 version = "0.0.1"
 dependencies = [
  "basil-common",
+ "basil-compiler",
  "basil-lexer",
+ "basil-parser",
+ "basil-vm",
 ]
