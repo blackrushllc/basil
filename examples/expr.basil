@@ -1,2 +1,6 @@
 LET a = 2 + 3 * 4;
 PRINT a;
+PRINT (2 + 3) * 4;
+PRINT -a;
+
+REM basil LET a = 2 + 3 * 4; PRINT a;
