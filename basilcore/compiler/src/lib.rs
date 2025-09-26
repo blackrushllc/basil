@@ -1,6 +1,6 @@
 //! AST → bytecode compiler (tiny subset)
 use std::collections::HashMap;
-use basil_common::{Result, BasilError};
+use basil_common::{Result};
 use basil_ast::{Program, Stmt, Expr, BinOp};
 use basil_bytecode::{Chunk, Program as BCProgram, Value, Op};
 
