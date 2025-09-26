@@ -103,8 +103,7 @@ Examples:
 
 ## 🍿 The Deep Geek Stuff:
 
-We can wire fmt (prune) to a basic whitespace/semicolon normalizer next, 
-or make serve (greenhouse) spin up a tiny static file server for docs.
+We can make serve (greenhouse) spin up a tiny static file server for docs.
 
 
 ### 🐷 What's Done So Far:
