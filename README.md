@@ -1,11 +1,11 @@
 # Basil 🌿
 A modern BASIC‑flavored language focused on web/back‑end with the 
-ability to compile binaries, transpile to C, NodeJS and WASM, 
+ability to compile binaries, transpile to C, NodeJS and WebAssembly, 
 and leverages a lot of existing libraries from other environments.
 
-🌱 Basil is inspired by PowerBASIC, FreeBASIC, and the warmth and simplicity of BASIC,
+🌱 Basil is inspired by Bob Zale's PowerBASIC and the warmth and simplicity of BASIC,
 but reimagined for today's developer needs with modern features, a robust standard library,
-and seamless interoperability with C and WASI.
+and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Basil is written in Rust for safety and performance, and aims to provide a delightful developer experience.
 
