@@ -592,7 +592,6 @@ PRINT fib(10); // 55
 * `CONTRIBUTING.md` with rustfmt + clippy gates; CI on Windows/Linux.
 
 ---
-
-**End of v0 plan.** When you’re ready, we can generate the initial crates, opcodes, and example files so you can `cargo run -p basilc -- examples/hello.basil` and see the first output.
+ 
 
 🐖🐷🌿💻🎉🚀
