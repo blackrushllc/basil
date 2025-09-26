@@ -1,7 +1,7 @@
 # Basil 🌿
 A modern BASIC‑flavored language focused on web/back‑end.
 
-# 🌱 STATUS _Working!!_:
+# 🌱 STATUS _It's Working!!_
 #### Prototype v0: tokens → AST → bytecode → VM
 The core is in place! We can now run simple programs with functions, recursion, locals, conditionals, and arithmetic.
 
