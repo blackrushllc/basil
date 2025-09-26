@@ -5,31 +5,85 @@ A modern BASIC‑flavored language focused on web/back‑end.
 
 # Basil (prototype v0)
 
-Minimal public prototype: CLI + lexer that prints tokens.
 
-Build:
 
-```bash
-cargo run -p basilc -- examples/hello.basil
+🍿 Minimal public prototype: CLI + lexer that prints tokens.
+
+
+🍿 Quick Try:
+
+```` 
+cargo run -p basilc -- run examples/hello.basil 
 ````
-Quick Try:
 
-````# tokenize an example file
-cargo run -p basilc -- run examples/hello.basil
+Output:
+```Ident   'RINT ' @1..6
+String  'Hello, Basil!";'       @7..22
+Semicolon       ''      @22..22
+Eof     ''      @22..22
+```
 
+Right now we're just going to tokenize an example file
 
 # or with the punny alias
+
+````
 cargo run -p basilc -- sprout examples/hello.basil
 ````
 
-# init a new project in ./myapp (or use alias `seed`)
-````cargo run -p basilc -- init myapp````
+# see help
 
-````cargo run -p basilc -- seed myapp````
+````
+cargo run -p basilc -- --help
+````
+
+Output:
+```
+Basil CLI (prototype)
+
+Commands (aliases in parentheses):
+  init (seed)        Create a new Basil project
+  run  (sprout)      Tokenize & run (v0: tokenize) a .basil file
+  build (harvest)    Build project (stub)
+  test (cultivate)   Run tests (stub)
+  fmt  (prune)       Format sources (stub)
+  add  (infuse)      Add dependency (stub)
+  clean (compost)    Remove build artifacts (stub)
+  dev  (steep)       Start dev mode (stub)
+  serve (greenhouse) Serve local HTTP (stub)
+  doc  (bouquet)     Generate docs (stub)
+
+Usage:
+  basilc <command> [args]
+
+Examples:
+  basilc run examples/hello.basil
+  basilc sprout examples/hello.basil
+  basilc init myapp
+
+```
+
+
+
+🍿 Next steps
+
+We can wire fmt (prune) to a basic whitespace/semicolon normalizer next, 
+or make serve (greenhouse) spin up a tiny static file server for docs.
+
+
++ `git init && cargo run -p basilc` -- examples/hello.basil → see tokens.
+
++ Fill parser with the Pratt loop from the plan.
+
++ Implement a basil-bytecode Chunk and the VM dispatch loop.
+
++ Wire basilc to: lex → parse → compile → run.
+
+
 
 #### 🐷 That's All Folks ! ! ! 
 
-PS. ChatGPT says that "Basil" is a "Pun Farm".  
+🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷🐷
 
 
 # 🚀 HERE IS THE PLAN:
