@@ -58,9 +58,9 @@ This trio (WASM, C, Node) gives you: browser, server, embedded, and “compile a
 
 Think of extensions in **tiers**, so authors can pick the easiest viable path:
 
-**Tier A — FFI to C ABI (fastest route to “big ecosystem”)**
+**Tier A — FFI to C Application Binary Interface (ABI) (fastest route to “big ecosystem”)**
 
-* Provide a stable **C ABI** for host ↔ extension. If you can call C, you can call **SQLite, OpenSSL, libxml2, libcurl**, etc., and—via shims—tap **existing PHP/Python/Ruby/Perl** native libs.
+* Provide a stable **C Application Binary Interface (ABI)** for host ↔ extension. If you can call C, you can call **SQLite, OpenSSL, libxml2, libcurl**, etc., and—via shims—tap **existing PHP/Python/Ruby/Perl** native libs.
 * Ship **binding generators** (like cbindgen/bindgen) and a **header-only SDK** for native modules.
 
 **Tier B — WASI plugins (safe, portable)**
@@ -131,7 +131,7 @@ Think of extensions in **tiers**, so authors can pick the easiest viable path:
 
 **Phase 3 (weeks 21–32)**
 
-* C emitter (portable AOT), FFI (C ABI), WASI target for modules, simple N-API bridge. CLI “one binary” polish.
+* C emitter (portable AOT), FFI (C Application Binary Interface), WASI target for modules, simple N-API bridge. CLI “one binary” polish.
 
 **Phase 4 (weeks 33–48)**
 
@@ -139,7 +139,7 @@ Think of extensions in **tiers**, so authors can pick the easiest viable path:
 
 **Phase 5 (weeks 49–52)**
 
-* Stability pass on ABI, pkg index, “hello-CRUD” starter, perf tuning, 1.0 beta.
+* Stability pass on Application Binary Interface (ABI), pkg index, “hello-CRUD” starter, perf tuning, 1.0 beta.
 
 # 11) Pitfalls to avoid
 
