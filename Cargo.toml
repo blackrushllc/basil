@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "basilc",
+    "basilcore/common",
+    "basilcore/lexer",
+    "basilcore/ast",
+    "basilcore/parser",
+    "basilcore/bytecode",
+    "basilcore/compiler",
+    "basilcore/vm",
+]
+resolver = "2"
+
+
+[workspace.package]
+edition = "2021"
+name = "basil"
+version = "0.0.1"
+license = "MIT"
