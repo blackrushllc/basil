@@ -46,7 +46,7 @@ This trio (WASM, C, Node) gives you: browser, server, embedded, and “compile a
 
 # 3) Modules, packages, and versioning
 
-* Design a **Cargo-like package manager** from the start: `bozo.toml` (or your language’s name), semantic versioning, lockfiles, reproducible builds.
+* Design a **Cargo-like package manager** from the start: `basil.toml` (or your language’s name), semantic versioning, lockfiles, reproducible builds.
 * **Two module kinds**:
 
     1. **Pure** (compiles to any backend).
@@ -100,7 +100,7 @@ Think of extensions in **tiers**, so authors can pick the easiest viable path:
 
 * **Single binary** that includes: REPL, build, test, fmt, lsp, doc gen.
 * **LSP** for editor integration, **formatter** (no bikeshedding), **fast test runner**, **time-travel debugger** for async code (killer feature).
-* **Project templates**: `bozo new web`, `bozo new lib`, `bozo new wasm-plugin`.
+* **Project templates**: `basil new web`, `basil new lib`, `basil new wasm-plugin`.
 
 # 8) Performance plan
 
