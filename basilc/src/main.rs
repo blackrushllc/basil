@@ -11,7 +11,7 @@
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
 Copyright (C) 2026, Blackrush LLC, All Rights Reserved
-Created by Erik Olson, Tarpon Springs, Florida
+Created by Erik Lee Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 
 MIT License
@@ -95,7 +95,7 @@ fn print_help() {
     println!("  basilc run examples/hello.basil");
     println!("  basilc sprout examples/hello.basil");
     println!("  basilc init myapp");
-    
+
 }
 
 fn cmd_init(target: Option<String>) -> io::Result<()> {
@@ -159,7 +159,7 @@ fn cmd_run(path: Option<String>) {
     }
 }
 
-fn main() {
+fn old_main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_help();
@@ -188,5 +188,186 @@ fn main() {
             print_help();
             std::process::exit(2);
         }
+    }
+}
+
+use std::env;
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::process::{Command, Stdio};
+
+/// --- New: mode detection ---
+
+fn is_cgi_invocation() -> bool {
+    // Apache/CGI set these; lighttpd/nginx-fastcgi set similar.
+    env::var("GATEWAY_INTERFACE").is_ok() && env::var("REQUEST_METHOD").is_ok()
+}
+
+/// --- Your existing CLI entry, unchanged logic moved here ---
+
+fn cli_main() {
+    // === BEGIN: your old main() body ===
+    let mut args = env::args().skip(1).collect::<Vec<_>>();
+    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
+        print_help();
+        return;
+    }
+    let cmd = canonicalize(&args[0]).to_string();
+    args.remove(0);
+
+    match cmd.as_str() {
+        "init" => {
+            let name = args.get(0).cloned();
+            if let Err(e) = cmd_init(name) {
+                eprintln!("init error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        "run" => {
+            cmd_run(args.get(0).cloned());
+        }
+        "build" | "test" | "fmt" | "add" | "clean" | "dev" | "serve" | "doc" => {
+            println!("[stub] '{}' not implemented yet in the prototype", cmd);
+        }
+        "lex" => { cmd_lex(args.get(0).cloned()); }
+        other => {
+            eprintln!("unknown command: '{}'\n", other);
+            print_help();
+            std::process::exit(2);
+        }
+    }
+    // === END: your old main() body ===
+}
+
+/// --- New: CGI entrypoint that wraps your CLI 'run' ---
+
+fn cgi_main() {
+    // 1) Resolve the Basil script path the request mapped to
+    let script_path = env::var("SCRIPT_FILENAME")
+        .or_else(|_| env::var("PATH_TRANSLATED"))
+        .or_else(|_| env::var("PATH_INFO").map(|p| format!("/var/www{}", p)))
+        .unwrap_or_else(|_| "/var/www/html/index.basil".to_string());
+
+    if !Path::new(&script_path).exists() {
+        println!("Status: 404 Not Found");
+        println!("Content-Type: text/plain; charset=utf-8");
+        println!();
+        println!("Basil file not found: {}", script_path);
+        return;
+    }
+
+    // 2) Gather request bits
+    let method = env::var("REQUEST_METHOD").unwrap_or_else(|_| "GET".into());
+    let query  = env::var("QUERY_STRING").unwrap_or_default();
+    let ctype  = env::var("CONTENT_TYPE").unwrap_or_default();
+    let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    let mut body = Vec::with_capacity(clen);
+    if clen > 0 {
+        let mut stdin = io::stdin();
+        stdin.take(clen as u64).read_to_end(&mut body).ok();
+    }
+
+    // 3) Spawn *this* binary in CLI mode to run the script
+    //    We force CLI mode so the child doesn't enter cgi_main() again.
+    let self_exe = match env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            println!("Status: 500 Internal Server Error");
+            println!("Content-Type: text/plain; charset=utf-8");
+            println!();
+            println!("Failed to locate current executable: {e}");
+            return;
+        }
+    };
+
+    let mut child = match Command::new(self_exe)
+        .arg("run")
+        .arg(&script_path)
+        .env("BASIL_FORCE_MODE", "cli")       // <- prevents recursion
+        .env("QUERY_STRING", &query)          // pass through web context
+        .env("REQUEST_METHOD", &method)
+        .env("CONTENT_TYPE", &ctype)
+        .env("CONTENT_LENGTH", clen.to_string())
+        .env("SCRIPT_FILENAME", &script_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            println!("Status: 500 Internal Server Error");
+            println!("Content-Type: text/plain; charset=utf-8");
+            println!();
+            println!("Failed to spawn Basil runner: {e}");
+            return;
+        }
+    };
+
+    // 4) Pipe request body to the child (if your Basil runtime wants it)
+    if clen > 0 {
+        if let Some(mut sin) = child.stdin.take() {
+            let _ = sin.write_all(&body);
+        }
+    }
+
+    // 5) Collect output
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            println!("Status: 500 Internal Server Error");
+            println!("Content-Type: text/plain; charset=utf-8");
+            println!();
+            println!("Failed to run Basil script: {e}");
+            return;
+        }
+    };
+
+    // Send child's stderr to Apache error log (very helpful)
+    if !output.stderr.is_empty() {
+        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    // 6) If the Basil program already prints CGI headers, pass them through.
+    //    Otherwise, default to HTML.
+    let stdout = output.stdout;
+    let looks_like_cgi = stdout.starts_with(b"Content-Type:")
+        || stdout.starts_with(b"Status:")
+        || stdout.windows(2).position(|w| w == b"\r\n").is_some();
+
+    if looks_like_cgi {
+        // Assume full CGI response
+        io::stdout().write_all(&stdout).ok();
+        return;
+    }
+
+    // Minimal wrapper headers
+    if output.status.success() {
+        println!("Status: 200 OK");
+        println!("Content-Type: text/html; charset=utf-8");
+        println!();
+        io::stdout().write_all(&stdout).ok();
+    } else {
+        println!("Status: 500 Internal Server Error");
+        println!("Content-Type: text/plain; charset=utf-8");
+        println!();
+        io::stdout().write_all(&stdout).ok();
+    }
+}
+
+/// --- New: tiny dispatcher ---
+
+fn main() {
+    // Explicit escape hatch for any subprocess we spawn:
+    if env::var("BASIL_FORCE_MODE").ok().as_deref() == Some("cli") {
+        cli_main();
+        return;
+    }
+
+    if is_cgi_invocation() {
+        cgi_main();
+    } else {
+        cli_main();
     }
 }
