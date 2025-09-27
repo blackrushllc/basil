@@ -239,7 +239,7 @@ fn cgi_main() {
 
     let mut body = Vec::with_capacity(clen);
     if clen > 0 {
-        let mut stdin = io::stdin();
+        let stdin = io::stdin();
         stdin.take(clen as u64).read_to_end(&mut body).ok();
     }
 
