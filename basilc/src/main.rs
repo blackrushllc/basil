@@ -38,11 +38,21 @@ SOFTWARE.
 
 */
 
-use std::{env, fs, io, path::Path};
+use std::env;
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::fs;
+
+
+//use std::{env, fs, io, path::Path};
 use basil_parser::parse;
 use basil_compiler::compile;
 use basil_vm::VM;
 use basil_lexer::Lexer; // add this near the other use lines
+
+
+
 
 // Map fun aliases → canonical commands
 fn canonicalize(cmd: &str) -> &str {
@@ -159,42 +169,7 @@ fn cmd_run(path: Option<String>) {
     }
 }
 
-fn old_main() {
-    let mut args = env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
-        print_help();
-        return;
-    }
-    let cmd = canonicalize(&args[0]).to_string();
-    args.remove(0);
 
-    match cmd.as_str() {
-        "init" => {
-            let name = args.get(0).cloned();
-            if let Err(e) = cmd_init(name) {
-                eprintln!("init error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        "run" => {
-            cmd_run(args.get(0).cloned());
-        }
-        "build" | "test" | "fmt" | "add" | "clean" | "dev" | "serve" | "doc" => {
-            println!("[stub] '{}' not implemented yet in the prototype", cmd);
-        }
-        "lex" => { cmd_lex(args.get(0).cloned()); }
-        other => {
-            eprintln!("unknown command: '{}'\n", other);
-            print_help();
-            std::process::exit(2);
-        }
-    }
-}
-
-use std::env;
-use std::io::{self, Read, Write};
-use std::path::Path;
-use std::process::{Command, Stdio};
 
 /// --- New: mode detection ---
 
