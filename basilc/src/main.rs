@@ -40,10 +40,9 @@ SOFTWARE.
 
 use std::env;
 use std::io::{self, Read, Write};
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::fs;
-
+use std::path::{Path, PathBuf};
 
 //use std::{env, fs, io, path::Path};
 use basil_parser::parse;
@@ -218,10 +217,12 @@ fn cli_main() {
 
 fn cgi_main() {
     // 1) Resolve the Basil script path the request mapped to
-    let script_path = env::var("SCRIPT_FILENAME")
-        .or_else(|_| env::var("PATH_TRANSLATED"))
-        .or_else(|_| env::var("PATH_INFO").map(|p| format!("/var/www{}", p)))
-        .unwrap_or_else(|_| "/var/www/html/index.basil".to_string());
+    let script_path = resolve_script_path().unwrap_or_else(|| "/var/www/html/index.basil".to_string());
+
+    // let script_path = env::var("SCRIPT_FILENAME")
+    //     .or_else(|_| env::var("PATH_TRANSLATED"))
+    //     .or_else(|_| env::var("PATH_INFO").map(|p| format!("/var/www{}", p)))
+    //     .unwrap_or_else(|_| "/var/www/html/index.basil".to_string());
 
     if !Path::new(&script_path).exists() {
         println!("Status: 404 Not Found");
@@ -330,6 +331,60 @@ fn cgi_main() {
         io::stdout().write_all(&stdout).ok();
     }
 }
+
+// use std::env;
+// use std::path::{Path, PathBuf};
+
+fn url_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Ok(h), Ok(l)) = (u8::from_str_radix(&s[i+1..i+2], 16), u8::from_str_radix(&s[i+2..i+3], 16)) {
+                out.push((h << 4 | l) as char);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn resolve_script_path() -> Option<String> {
+    // 1) Prefer SCRIPT_FILENAME if it points to a .basil file
+    if let Ok(sf) = env::var("SCRIPT_FILENAME") {
+        if sf.ends_with(".basil") && Path::new(&sf).is_file() {
+            return Some(sf);
+        }
+    }
+    // 2) PATH_TRANSLATED is often correct under Action
+    if let Ok(pt) = env::var("PATH_TRANSLATED") {
+        if pt.ends_with(".basil") && Path::new(&pt).is_file() {
+            return Some(pt);
+        }
+    }
+    // 3) Try DOCUMENT_ROOT + PATH_INFO
+    if let (Ok(docroot), Ok(pi)) = (env::var("DOCUMENT_ROOT"), env::var("PATH_INFO")) {
+        let cand = PathBuf::from(docroot).join(pi.trim_start_matches('/'));
+        if cand.extension().and_then(|e| e.to_str()) == Some("basil") && cand.is_file() {
+            return Some(cand.to_string_lossy().into_owned());
+        }
+    }
+    // 4) Try DOCUMENT_ROOT + REQUEST_URI (strip query)
+    if let (Ok(docroot), Ok(uri)) = (env::var("DOCUMENT_ROOT"), env::var("REQUEST_URI")) {
+        let path_part = uri.split('?').next().unwrap_or("");
+        let dec = url_decode(path_part);
+        let cand = PathBuf::from(docroot).join(dec.trim_start_matches('/'));
+        if cand.extension().and_then(|e| e.to_str()) == Some("basil") && cand.is_file() {
+            return Some(cand.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
 
 /// --- New: tiny dispatcher ---
 
