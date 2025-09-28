@@ -140,27 +140,49 @@ fn cmd_lex(path: Option<String>) {
 }
 
 fn cmd_run(path: Option<String>) {
-    let Some(path) = path else {
-        eprintln!("usage: basilc run <file.basil>");
-        std::process::exit(2)
+    // Require a path
+    let path = match path {
+        Some(p) => p,
+        None => {
+            eprintln!("usage: basilc run <file.basil>");
+            std::process::exit(2);
+        }
     };
-    let src = fs::read_to_string(&path).expect("read file");
+
+    // Optional: refuse obvious non-source invocations (helps catch /usr/lib/cgi-bin/basil.cgi)
+    if !path.ends_with(".basil") {
+        eprintln!("Refusing to run a non-.basil file: {}", path);
+        std::process::exit(2);
+    }
+
+    // Read the source once, with good error messages
+    let src = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            eprintln!("File is not UTF-8 text: {}", path);
+            std::process::exit(3);
+        }
+        Err(e) => {
+            eprintln!("Failed to read {}: {}", path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // Parse → compile → run
     match parse(&src) {
-        Ok(ast) => {
-            match compile(&ast) {
-                Ok(prog) => {
-                    let mut vm = VM::new(prog);
-                    if let Err(e) = vm.run() {
-                        eprintln!("runtime error: {}", e);
-                        std::process::exit(1);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("compile error: {}", e);
+        Ok(ast) => match compile(&ast) {
+            Ok(prog) => {
+                let mut vm = VM::new(prog);
+                if let Err(e) = vm.run() {
+                    eprintln!("runtime error: {}", e);
                     std::process::exit(1);
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("compile error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Err(e) => {
             eprintln!("parse error: {}", e);
             std::process::exit(1);
