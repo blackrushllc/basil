@@ -1,8 +1,51 @@
 There are three practical ways to sit Basil behind Apache, from easiest to most “production-y”:
 
 1. the “it just works today” route (classic CGI)
+
+Yesss! 🎉 So glad it’s all wired up and humming on both CLI and Apache CGI!!!
+
+Basil can now tell the difference between running in CLI mode vs web mode, and you can write Basil scripts that respond 
+to HTTP requests or run as normal CLI programs.
+
+# Now we have it working as CGI, we can evolve to:
+
+
 2. the “faster without rewriting Apache” route (FastCGI)
 3. the “treat Basil like PHP-FPM or a microservice” route (reverse proxy to a long-running Basil server)
+
+
+
+Now here's a tiny “polish” checklist:
+
+* Add a `--cgi` flag (or `BASIL_FORCE_MODE=cgi`) so you can force CGI mode in tests without setting multiple env vars.
+* Forward request headers: you already pass `HTTP_*`; keep that—super handy for auth/cookies later.
+* Guardrails: cap body size (`CONTENT_LENGTH`) and add an execution timeout in the shim (e.g., kill child after 3–5s on prod).
+* Better errors in prod: write detailed traces to stderr (Apache error log), show friendly 500 pages to users.
+* File mapping: keep the `RewriteCond %{HANDLER} =basil-script` trick—rock solid.
+
+For speed & state, two upgrade paths:
+
+1. **FastCGI** (drop-in speedup, PHP-FPM-style)
+
+    * Run a Basil FastCGI worker pool; point Apache via `mod_fcgid` or `proxy_fcgi`.
+    * You keep the same `.basil` mapping; no fork/exec per request.
+
+2. **Basil HTTP server behind Apache** (most flexible)
+
+    * Axum/Actix service; Apache proxies only dynamic routes.
+    * Lets you preload stdlib/modules, cache compiled bytecode, and keep VM state (sessions).
+
+next we can:
+
+* stub a minimal FastCGI worker in Rust, or
+* sketch a `BasilRequest -> BasilResponse` API so your shim calls the VM directly (no subprocess), or
+* design a tiny web stdlib for Basil (`request.get`, `request.post`, `env`, `print/echo`, headers, cookies).
+
+
+
+
+
+
 
 Below are working snippets for each, plus a tiny Rust CGI shim to drop in right now:
 
