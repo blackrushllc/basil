@@ -13,8 +13,84 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Basil is a project by Blackrush LLC (https://blackrush.us).
 
+🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
-# 🌱 STATUS _It's Working!!_
+# 🌿 STATUS UPDATE _CGI Working_ !!!
+
+### (Along side html and Php files like normal)
+
+🌱 Basil executable can tell the difference between running in CLI mode vs web mode, and you can 
+write Basil scripts that respond to HTTP requests or run as normal CLI programs.
+
+# Build Basil From the command line on Linux:
+
+```
+cargo build --release -p basilc
+
+install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
+```
+
+# Setup Apache to run Basil as CGI:
+
+```
+
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+        ServerName yobasic.com
+        # Allow CGI under /cgi-bin/
+
+        ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+
+        <Directory "/usr/lib/cgi-bin/">
+            Options +ExecCGI
+            AllowOverride None
+            Require all granted
+        </Directory>
+      
+        # Run any .basil files with basil.cgi
+        
+        AddHandler basil-script .basil
+        Action basil-script /cgi-bin/basil.cgi
+
+        # Alternatively, map URL like /app/foo.basil -> sets SCRIPT_FILENAME to /var/www/app/foo.basil
+        # RewriteCond %{REQUEST_FILENAME} !-f
+        # RewriteRule ^/app/(.+\.basil)$ /cgi-bin/basil.cgi [QSA,PT,E=SCRIPT_FILENAME:/var/www/app/$1]
+
+        # Make sure CGI sees the real file path
+        RewriteEngine On
+        RewriteCond %{HANDLER} =basil-script
+        RewriteRule ^ - [E=SCRIPT_FILENAME:%{REQUEST_FILENAME}]
+
+        # Configure your Php Site like normal (example here is the Yore PHP framework)
+        <Directory /var/www/yore/web>
+            Options Indexes FollowSymLinks MultiViews
+            AllowOverride All
+            Require all granted
+            RewriteEngine on
+            RewriteCond %{REQUEST_FILENAME} !-f
+            RewriteCond %{REQUEST_FILENAME} !-d
+            RewriteRule ^(.*)$ /index.php/$1 [NC,L]
+        </Directory>
+
+        ServerAdmin webmaster@localhost
+        DocumentRoot /var/www/yore/web
+
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+# SSL configuration
+SSLCertificateFile /etc/letsencrypt/live/yobasic.com-0002/fullchain.pem
+SSLCertificateKeyFile /etc/letsencrypt/live/yobasic.com-0002/privkey.pem
+Include /etc/letsencrypt/options-ssl-apache.conf
+</VirtualHost>
+</IfModule>
+
+
+```
+
+
+
+# 🌱 STATUS UPDATE _It's Working!!_
 #### Prototype v0: tokens → Abstract Syntax Tree → bytecode → VM
 The core is in place! We can now run simple programs with functions, recursion, locals, conditionals, and arithmetic.
 
@@ -23,6 +99,9 @@ See TODO.md for next steps.
 See GOALS.md for the high-level vision.
 
 See VISION.md for more details on language shape, stdlib, web story, tooling, performance, and roadmap.
+
+
+# 🌱 STATUS UPDATE _It Compiles_ :clown_face:
 
 
 
