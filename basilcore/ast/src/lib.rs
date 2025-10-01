@@ -40,6 +40,14 @@ SOFTWARE.
 
 //! AST for Basil v0 — functions, calls, returns, if/blocks, comparisons
 
+
+// simplest: make Ident an alias for now
+
+//pub mod ident;
+
+//use crate::expr::Expr;
+//use crate::ident::Ident;
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     Number(f64),
@@ -48,6 +56,17 @@ pub enum Expr {
     UnaryNeg(Box<Expr>),
     Binary { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr> },
     Call { callee: Box<Expr>, args: Vec<Expr> },
+}
+
+
+#[derive(Debug, Clone)]
+pub struct ForStmt {
+    pub var: String,
+    pub start: Expr,
+    pub end_: Expr,
+    pub step: Option<Expr>,
+    pub body: Vec<Stmt>,
+    pub next_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +84,7 @@ pub enum Stmt {
     If { cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
     Block(Vec<Stmt>),
     Func { name: String, params: Vec<String>, body: Vec<Stmt> },
+    For(ForStmt),
 }
 
 pub type Program = Vec<Stmt>;

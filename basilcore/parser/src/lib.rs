@@ -116,6 +116,9 @@ impl Parser {
         Ok(Stmt::ExprStmt(e))
     }
 
+    .
+
+
     // Accept ';' OR EOF after a statement
     fn terminate_stmt(&mut self) -> Result<()> {
         if self.match_k(TokenKind::Semicolon) { return Ok(()); }

@@ -53,7 +53,7 @@ pub enum TokenKind {
     // Keywords
     Func, Return, If, Then, Else, While, Do, Begin, End,
     Let, Print, True, False, Null, And, Or, Not,
-    Eof,
+    Eof, For, To, Step, Next,
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +186,9 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 match self.cur {
                     Some('"') => { s.push('"'); self.advance(); }
-                    Some('n') => { s.push('\n'); self.advance(); }
+                    Some('n') => { s.push('\n'); self.advance();
+
+                    }
                     Some('t') => { s.push('\t'); self.advance(); }
                     Some(c2)  => { s.push(c2);  self.advance(); }
                     None => break,
@@ -258,6 +260,10 @@ impl<'a> Lexer<'a> {
             "AND"    => TokenKind::And,
             "OR"     => TokenKind::Or,
             "NOT"    => TokenKind::Not,
+            "FOR"    => TokenKind::For,
+            "TO"     => TokenKind::To,
+            "STEP"   => TokenKind::Step,
+            "NEXT"   => TokenKind::Next,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))

@@ -1,1 +1,4 @@
 PRINT "Hello, Basil!";
+FOR i = 1 TO 3 STEP -1
+    PRINT i
+NEXT i
