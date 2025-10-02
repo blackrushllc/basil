@@ -142,3 +142,36 @@ It’s the smallest set that:
 1. **AST + Parser**: add `Func`, `Call`, `Return`, `If`, `Block`, comparisons, and call postfix loop.
 2. **Bytecode + Compiler**: add new opcodes; function compiler that creates a `Function` value; locals map for params; `if` jump patching; `return`.
 3. **VM**: convert to frame-based loop; implement `CALL`/`RET`, `LOAD/STORE_LOCAL`, `JUMP/JIF`, comparisons.
+
+# Built-in string function: AUTHOR
+
+- Syntax: AUTHOR or AUTHOR()
+- Returns: the string constant "Erik Olson".
+- Usage examples:
+  - PRINT AUTHOR
+  - PRINT AUTHOR()
+
+This is implemented as a keyword that evaluates to a string literal; the optional empty parentheses are accepted for BASIC-style ergonomics.
+
+
+
+# FOR/NEXT loops
+
+- Syntax:
+  - FOR <ident> = <startExpr> TO <endExpr> [STEP <stepExpr>] <stmt | BEGIN ... END> NEXT [<ident>]
+- Semantics:
+  - Initializes the loop variable to startExpr.
+  - Evaluates stepExpr each iteration; default is 1 if omitted.
+  - If step >= 0 then the loop continues while var <= endExpr; otherwise while var >= endExpr.
+  - Body can be a single statement (e.g., PRINT i;) or a block delimited by BEGIN ... END.
+  - NEXT may optionally repeat the loop variable name; a semicolon after NEXT is optional.
+- Examples:
+```
+FOR i = 1 TO 5
+PRINT i;
+NEXT i;
+
+FOR j = 5 TO 1 STEP -1 BEGIN
+    PRINT j;
+END NEXT j;
+```
