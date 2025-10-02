@@ -2,14 +2,17 @@
 
 Abstract: This is going to be a new concept for our BASIC interpreter. As you know, the interpreter is written in Rust.
 I want to be able to have a new data type. Right now I have Strings, Integers and floats where the identifiers (variable
-names) indicate the data type with a dollar sign for String (i.e.
-MyString$) or a percent sign for integer (i.e. MyInteger%) and indenitifers with no special character are considered to be floating point numbers. I have also added Array support for String, Integer and Float data types by using parenthesis to indicate the subscripts (up to 4 dimensions) and they are initialized with the DIM statement, i.e. DIM MyStringArray(10). I want to introduce a new data type which is a built-in object that can be instantiated much like the DIM statement is used to create arrays, but using a new keyword or perhaps retasking DIM or LET to be used in the instantiation of a new object identified by a name. I want to have these objects stored in a library of objects in my Rust projects. I want to be able to choose which objects are included in the build either by meta statements or constants in the main Rust for, or by some other commonly accepted means. When these objects have been compiled into the language, I want the native BASIC to be able to instantiate them into a variable that has a special symbol like how $
-is used for strings. I want the native BASIC to be able to set properties, call methods and have results returned from
+names) indicate the data type with a dollar sign for String (i.e. MyString$) or a percent sign for integer 
+(i.e. MyInteger%) and indenitifiers with no special character are considered to be floating point numbers. I have also added Array support for String, Integer and Float data types by using parenthesis to indicate the subscripts (up to 4 dimensions) and they are initialized with the DIM statement, i.e. DIM MyStringArray(10). I want to introduce a new data type which is a built-in object that can be instantiated much like the DIM statement is used to create arrays, but using a new keyword or perhaps retasking DIM or LET to be used in the instantiation of a new object identified by a name. I want to have these objects stored in a library of objects in my Rust projects. I want to be able to choose which objects are included in the build either by meta statements or constants in the main Rust for, or by some other commonly accepted means. When these objects have been compiled into the language, I want the native BASIC to be able to instantiate them into a variable that has a special symbol like how $
+is used for strings. I want the native BASIC to be able to set properties, call methods, and have results returned from
 these objects.. I want the native BASIC to be able to dump a description of an object to show it's public properties and
 methods, which could be useful to the programmer. An example of such a library object would be a file IO object, which
 can open and work with files on the device, and perhaps have other useful methods related to working with files. Another
 example of such a library object would be a PDO database connector, which can connect to a data source, send queries,
 and return results from a database.
+
+## Design
+
 
 # 1) Surface design (what BASIC sees)
 
