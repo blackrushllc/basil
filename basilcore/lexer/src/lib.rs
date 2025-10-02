@@ -68,6 +68,7 @@ pub struct Token {
     pub lexeme: String,
     pub literal: Option<Literal>,
     pub span: Span,
+    pub line: u32,
 }
 
 pub struct Lexer<'a> {
@@ -76,11 +77,13 @@ pub struct Lexer<'a> {
     cur:   Option<char>,
     pos:   usize, // byte offset *after* `cur`
     start: usize, // byte offset start of current token
+    line:  usize, // 1-based current line number
+    tok_line: usize, // line number at start of current token
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0 };
+        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0, line: 1, tok_line: 1 };
         l.advance(); // prime `cur` and `pos`
         l
     }
@@ -98,6 +101,9 @@ impl<'a> Lexer<'a> {
 
     fn next_token(&mut self) -> Result<Token> {
         self.skip_ws_and_comments();
+
+        // Record the line number at the start of the token (or EOF)
+        self.tok_line = self.line;
 
         // If no current char, emit EOF
         let ch = match self.cur {
@@ -160,6 +166,7 @@ impl<'a> Lexer<'a> {
             lexeme: self.src[start..end].to_string(),
             literal: None,
             span: Span::new(start, end),
+            line: self.tok_line as u32,
         }
     }
 
@@ -306,6 +313,7 @@ impl<'a> Lexer<'a> {
     fn advance(&mut self) {
         self.cur = self.chars.next();
         if let Some(c) = self.cur {
+            if c == '\n' { self.line += 1; }
             self.pos += c.len_utf8();
         } else {
             self.pos = self.src.len();
