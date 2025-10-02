@@ -112,6 +112,7 @@ pub enum Op {
     Print = 60,
     Pop   = 61,
     ToInt = 62,
+    Builtin = 63,       // +u8 (builtin id), +u8 (argc)
     Halt  = 255,
 }
 
