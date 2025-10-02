@@ -117,6 +117,86 @@ impl C {
 
             // Ignore RETURN/IF at toplevel for MVP (could be supported later).
             Stmt::Return(_) | Stmt::If { .. } => {}
+
+            // FOR at toplevel
+            Stmt::For { var, start, end, step, body } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                // init: var = start
+                self.emit_expr_in(&mut chunk, start, None)?;
+                let g = self.gslot(var);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+
+                // loop start label
+                let loop_start = chunk.here();
+
+                // step >= 0 ?
+                match step {
+                    Some(e) => { self.emit_expr_in(&mut chunk, e, None)?; }
+                    None => {
+                        let idx = chunk.add_const(Value::Num(1.0));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                    }
+                }
+                let idx0 = chunk.add_const(Value::Num(0.0));
+                chunk.push_op(Op::ConstU8); chunk.push_u8(idx0);
+                chunk.push_op(Op::Ge);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_to_neg = chunk.emit_u16_placeholder();
+
+                // positive step compare: var <= end
+                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                self.emit_expr_in(&mut chunk, end, None)?;
+                chunk.push_op(Op::Le);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit1 = chunk.emit_u16_placeholder();
+                chunk.push_op(Op::Jump);
+                let j_after_pos = chunk.emit_u16_placeholder();
+
+                // negative step path label
+                let after_pos = chunk.here();
+                let off_to_neg = (after_pos - (j_to_neg + 2)) as u16;
+                chunk.patch_u16_at(j_to_neg, off_to_neg);
+
+                // negative step compare: var >= end
+                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                self.emit_expr_in(&mut chunk, end, None)?;
+                chunk.push_op(Op::Ge);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit2 = chunk.emit_u16_placeholder();
+
+                // after compare join
+                let after_cmp = chunk.here();
+                let off_after_pos = (after_cmp - (j_after_pos + 2)) as u16;
+                chunk.patch_u16_at(j_after_pos, off_after_pos);
+
+                // body
+                self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
+
+                // increment: var = var + step
+                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                match step {
+                    Some(e) => { self.emit_expr_in(&mut chunk, e, None)?; }
+                    None => {
+                        let idx1 = chunk.add_const(Value::Num(1.0));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx1);
+                    }
+                }
+                chunk.push_op(Op::Add);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+
+                // jump back (use JumpBack with u16 distance backwards)
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - loop_start) as u16; // ip after reading u16 minus loop_start
+                chunk.patch_u16_at(j_back, off_back);
+
+                // exit label patches
+                let exit_here = chunk.here();
+                let off_exit1 = (exit_here - (j_exit1 + 2)) as u16; chunk.patch_u16_at(j_exit1, off_exit1);
+                let off_exit2 = (exit_here - (j_exit2 + 2)) as u16; chunk.patch_u16_at(j_exit2, off_exit2);
+
+                self.chunk = chunk;
+            }
         }
         Ok(())
     }
@@ -181,6 +261,105 @@ impl C {
                 for s2 in stmts { self.emit_stmt_func(chunk, s2, env)?; }
             }
             Stmt::Func { .. } => { /* no nested funcs in MVP */ }
+            Stmt::For { var, start, end, step, body } => {
+                // init var
+                self.emit_expr_in(chunk, start, Some(env))?;
+                if let Some(slot) = env.lookup(var) {
+                    chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                } else {
+                    let g = self.gslot(var);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                }
+
+                // loop start
+                let loop_start = chunk.here();
+
+                // step >= 0 ?
+                match step {
+                    Some(e) => { self.emit_expr_in(chunk, e, Some(env))?; }
+                    None => {
+                        let idx = chunk.add_const(Value::Num(1.0));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                    }
+                }
+                let idx0 = chunk.add_const(Value::Num(0.0));
+                chunk.push_op(Op::ConstU8); chunk.push_u8(idx0);
+                chunk.push_op(Op::Ge);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_to_neg = chunk.emit_u16_placeholder();
+
+                // positive compare: var <= end
+                if let Some(slot) = env.lookup(var) {
+                    chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                } else {
+                    let g = self.gslot(var);
+                    chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                }
+                self.emit_expr_in(chunk, end, Some(env))?;
+                chunk.push_op(Op::Le);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit1 = chunk.emit_u16_placeholder();
+                chunk.push_op(Op::Jump);
+                let j_after_pos = chunk.emit_u16_placeholder();
+
+                // negative path label
+                let after_pos = chunk.here();
+                let off_to_neg = (after_pos - (j_to_neg + 2)) as u16;
+                chunk.patch_u16_at(j_to_neg, off_to_neg);
+
+                // negative compare: var >= end
+                if let Some(slot) = env.lookup(var) {
+                    chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                } else {
+                    let g = self.gslot(var);
+                    chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                }
+                self.emit_expr_in(chunk, end, Some(env))?;
+                chunk.push_op(Op::Ge);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit2 = chunk.emit_u16_placeholder();
+
+                // after compare join
+                let after_cmp = chunk.here();
+                let off_after_pos = (after_cmp - (j_after_pos + 2)) as u16;
+                chunk.patch_u16_at(j_after_pos, off_after_pos);
+
+                // body
+                self.emit_stmt_func(chunk, body, env)?;
+
+                // increment: var = var + step
+                if let Some(slot) = env.lookup(var) {
+                    chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                } else {
+                    let g = self.gslot(var);
+                    chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                }
+                match step {
+                    Some(e) => { self.emit_expr_in(chunk, e, Some(env))?; }
+                    None => {
+                        let idx1 = chunk.add_const(Value::Num(1.0));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx1);
+                    }
+                }
+                chunk.push_op(Op::Add);
+                if let Some(slot) = env.lookup(var) {
+                    chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                } else {
+                    let g = self.gslot(var);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                }
+
+                // jump back
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - loop_start) as u16;
+                chunk.patch_u16_at(j_back, off_back);
+
+                // exit label patch
+                let exit_here = chunk.here();
+                let off_exit1 = (exit_here - (j_exit1 + 2)) as u16; chunk.patch_u16_at(j_exit1, off_exit1);
+                let off_exit2 = (exit_here - (j_exit2 + 2)) as u16; chunk.patch_u16_at(j_exit2, off_exit2);
+            }
         }
         Ok(())
     }
@@ -270,4 +449,134 @@ impl LocalEnv {
         let i = self.next; self.map.insert(name, i); self.next += 1; i
     }
     fn lookup(&self, name: &str) -> Option<u8> { self.map.get(name).copied() }
+}
+
+
+impl C {
+    fn emit_if_tl_into(&mut self, chunk: &mut Chunk, cond: &Expr, then_s: &Stmt, else_s: &Option<Box<Stmt>>) -> Result<()> {
+        self.emit_expr_in(chunk, cond, None)?;
+        chunk.push_op(Op::JumpIfFalse);
+        let jf = chunk.emit_u16_placeholder();
+
+        self.emit_stmt_tl_in_chunk(chunk, then_s)?;
+        chunk.push_op(Op::Jump);
+        let je = chunk.emit_u16_placeholder();
+
+        let after_then = chunk.here();
+        let off_then = (after_then - (jf + 2)) as u16;
+        chunk.patch_u16_at(jf, off_then);
+
+        if let Some(e) = else_s {
+            self.emit_stmt_tl_in_chunk(chunk, e)?;
+        }
+
+        let after_else = chunk.here();
+        let off_else = (after_else - (je + 2)) as u16;
+        chunk.patch_u16_at(je, off_else);
+
+        Ok(())
+    }
+
+    fn emit_stmt_tl_in_chunk(&mut self, chunk: &mut Chunk, s: &Stmt) -> Result<()> {
+        match s {
+            Stmt::Let { name, init } => {
+                self.emit_expr_in(chunk, init, None)?;
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+            }
+            Stmt::Print { expr } => {
+                self.emit_expr_in(chunk, expr, None)?;
+                chunk.push_op(Op::Print);
+            }
+            Stmt::ExprStmt(e) => {
+                self.emit_expr_in(chunk, e, None)?;
+                chunk.push_op(Op::Pop);
+            }
+            Stmt::Return(_) => { /* ignore at top level inside FOR body */ }
+            Stmt::If { cond, then_branch, else_branch } => {
+                self.emit_if_tl_into(chunk, cond, then_branch, else_branch)?;
+            }
+            Stmt::Block(stmts) => {
+                for s2 in stmts { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+            }
+            Stmt::Func { name, params, body } => {
+                let f = self.compile_function(name.clone(), params.clone(), body);
+                chunk.push_op(Op::ConstU8);
+                let idx = chunk.add_const(f);
+                chunk.push_u8(idx);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+            }
+            Stmt::For { var, start, end, step, body } => {
+                self.emit_for_toplevel_into(chunk, var, start, end, step, body)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_for_toplevel_into(&mut self, chunk: &mut Chunk, var: &String, start: &Expr, end: &Expr, step: &Option<Expr>, body: &Stmt) -> Result<()> {
+        // init
+        self.emit_expr_in(chunk, start, None)?;
+        let g = self.gslot(var);
+        chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+
+        // loop start
+        let loop_start = chunk.here();
+
+        // step >= 0 ?
+        match step {
+            Some(e) => { self.emit_expr_in(chunk, e, None)?; }
+            None => { let idx = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::ConstU8); chunk.push_u8(idx); }
+        }
+        let idx0 = chunk.add_const(Value::Num(0.0));
+        chunk.push_op(Op::ConstU8); chunk.push_u8(idx0);
+        chunk.push_op(Op::Ge);
+        chunk.push_op(Op::JumpIfFalse);
+        let j_to_neg = chunk.emit_u16_placeholder();
+
+        // positive compare var <= end
+        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+        self.emit_expr_in(chunk, end, None)?;
+        chunk.push_op(Op::Le);
+        chunk.push_op(Op::JumpIfFalse);
+        let j_exit1 = chunk.emit_u16_placeholder();
+        chunk.push_op(Op::Jump);
+        let j_after_pos = chunk.emit_u16_placeholder();
+
+        // negative label
+        let after_pos = chunk.here();
+        let off_to_neg = (after_pos - (j_to_neg + 2)) as u16; chunk.patch_u16_at(j_to_neg, off_to_neg);
+
+        // negative compare var >= end
+        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+        self.emit_expr_in(chunk, end, None)?;
+        chunk.push_op(Op::Ge);
+        chunk.push_op(Op::JumpIfFalse);
+        let j_exit2 = chunk.emit_u16_placeholder();
+
+        // after cmp join
+        let after_cmp = chunk.here();
+        let off_after_pos = (after_cmp - (j_after_pos + 2)) as u16; chunk.patch_u16_at(j_after_pos, off_after_pos);
+
+        // body
+        self.emit_stmt_tl_in_chunk(chunk, body)?;
+
+        // increment
+        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+        match step { Some(e) => { self.emit_expr_in(chunk, e, None)?; }, None => { let idx1 = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::ConstU8); chunk.push_u8(idx1); } }
+        chunk.push_op(Op::Add);
+        chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+
+        // back jump
+        chunk.push_op(Op::JumpBack);
+        let j_back = chunk.emit_u16_placeholder();
+        let off_back = (j_back + 2 - loop_start) as u16; chunk.patch_u16_at(j_back, off_back);
+
+        // exit label
+        let exit_here = chunk.here();
+        let off_exit1 = (exit_here - (j_exit1 + 2)) as u16; chunk.patch_u16_at(j_exit1, off_exit1);
+        let off_exit2 = (exit_here - (j_exit2 + 2)) as u16; chunk.patch_u16_at(j_exit2, off_exit2);
+
+        Ok(())
+    }
 }

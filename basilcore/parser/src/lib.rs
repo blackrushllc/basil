@@ -110,6 +110,37 @@ impl Parser {
             return Ok(Stmt::Block(inner));
         }
 
+        if self.match_k(TokenKind::For) {
+            // FOR var = start TO end [STEP step] <stmt-or-block> NEXT [var]
+            let var = self.expect_ident()?;
+            self.expect(TokenKind::Assign)?;
+            let start = self.parse_expr_bp(0)?;
+            self.expect(TokenKind::To)?;
+            let end = self.parse_expr_bp(0)?;
+            let step = if self.match_k(TokenKind::Step) { Some(self.parse_expr_bp(0)?) } else { None };
+
+            // Body: either BEGIN..END or single statement
+            let body: Stmt = if self.match_k(TokenKind::Begin) {
+                let mut inner = Vec::new();
+                while !self.match_k(TokenKind::End) {
+                    if self.check(TokenKind::Eof) { return Err(BasilError("unterminated FOR BEGIN/END".into())); }
+                    inner.push(self.parse_stmt()?);
+                }
+                Stmt::Block(inner)
+            } else {
+                // Single statement body
+                self.parse_stmt()?
+            };
+
+            // Expect NEXT [ident]
+            self.expect(TokenKind::Next)?;
+            if self.check(TokenKind::Ident) { let _ = self.next(); }
+            // Optional terminator after NEXT
+            let _ = self.terminate_stmt();
+
+            return Ok(Stmt::For { var, start, end, step, body: Box::new(body) });
+        }
+
         // Fallback: expression statement
         let e = self.parse_expr_bp(0)?;
         self.terminate_stmt()?;
@@ -169,6 +200,15 @@ impl Parser {
             Some(TokenKind::String) => {
                 let t = self.next().unwrap();
                 if let Some(Literal::Str(s)) = t.literal { Ok(Expr::Str(s)) } else { Err(BasilError("string literal missing".into())) }
+            }
+            Some(TokenKind::Author) => {
+                // Consume AUTHOR token
+                let _ = self.next().unwrap();
+                // Allow optional empty parentheses: AUTHOR or AUTHOR()
+                if self.match_k(TokenKind::LParen) {
+                    self.expect(TokenKind::RParen)?;
+                }
+                Ok(Expr::Str("Erik Olson".to_string()))
             }
             Some(TokenKind::Ident) => Ok(Expr::Var(self.next().unwrap().lexeme)),
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
