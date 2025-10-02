@@ -39,7 +39,7 @@ SOFTWARE.
 */
 
 //! AST → bytecode compiler with functions, calls, returns, if/blocks
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use basil_common::Result;
@@ -59,11 +59,12 @@ struct C {
     chunk: Chunk,
     globals: Vec<String>,
     gmap: HashMap<String, u8>,
+    fn_names: HashSet<String>,
 }
 
 impl C {
     fn new() -> Self {
-        Self { chunk: Chunk::default(), globals: Vec::new(), gmap: HashMap::new() }
+        Self { chunk: Chunk::default(), globals: Vec::new(), gmap: HashMap::new(), fn_names: HashSet::new() }
     }
 
     fn gslot(&mut self, name: &str) -> u8 {
@@ -78,6 +79,8 @@ impl C {
         match s {
             // Compile function to a Function value and store into a global.
             Stmt::Func { name, params, body } => {
+                // remember function name for call vs array indexing disambiguation
+                self.fn_names.insert(name.to_ascii_uppercase());
                 let f = self.compile_function(name.clone(), params.clone(), body);
                 self.chunk.push_op(Op::ConstU8);
                 let idx = self.chunk.add_const(f);
@@ -89,13 +92,35 @@ impl C {
             }
 
             // Top-level LET/PRINT/EXPR: move chunk out to avoid &mut self + &mut self.chunk alias.
-            Stmt::Let { name, init } => {
+            Stmt::Let { name, indices, init } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
-                self.emit_expr_in(&mut chunk, init, None)?;
-                if name.ends_with('%') { chunk.push_op(Op::ToInt); }
+                match indices {
+                    None => {
+                        self.emit_expr_in(&mut chunk, init, None)?;
+                        if name.ends_with('%') { chunk.push_op(Op::ToInt); }
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::StoreGlobal);
+                        chunk.push_u8(g);
+                    }
+                    Some(idxs) => {
+                        // array element assignment
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        for ix in idxs { self.emit_expr_in(&mut chunk, ix, None)?; }
+                        self.emit_expr_in(&mut chunk, init, None)?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
+                    }
+                }
+                self.chunk = chunk;
+            }
+            Stmt::Dim { name, dims } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                for d in dims { self.emit_expr_in(&mut chunk, d, None)?; }
+                chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
+                let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
+                chunk.push_u8(et);
                 let g = self.gslot(name);
-                chunk.push_op(Op::StoreGlobal);
-                chunk.push_u8(g);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.chunk = chunk;
             }
             Stmt::Print { expr } => {
@@ -233,12 +258,36 @@ impl C {
 
     fn emit_stmt_func(&mut self, chunk: &mut Chunk, s: &Stmt, env: &mut LocalEnv) -> Result<()> {
         match s {
-            Stmt::Let { name, init } => {
-                self.emit_expr_in(chunk, init, Some(env))?;
-                if name.ends_with('%') { chunk.push_op(Op::ToInt); }
+            Stmt::Let { name, indices, init } => {
+                match indices {
+                    None => {
+                        self.emit_expr_in(chunk, init, Some(env))?;
+                        if name.ends_with('%') { chunk.push_op(Op::ToInt); }
+                        let slot = env.bind_next_if_absent(name.clone());
+                        chunk.push_op(Op::StoreLocal);
+                        chunk.push_u8(slot);
+                    }
+                    Some(idxs) => {
+                        // array element assignment: load array ref (local or global), push indices, value, ArrSet
+                        if let Some(slot) = env.lookup(name) {
+                            chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                        } else {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        }
+                        for ix in idxs { self.emit_expr_in(chunk, ix, Some(env))?; }
+                        self.emit_expr_in(chunk, init, Some(env))?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
+                    }
+                }
+            }
+            Stmt::Dim { name, dims } => {
+                for d in dims { self.emit_expr_in(chunk, d, Some(env))?; }
+                chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
+                let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
+                chunk.push_u8(et);
                 let slot = env.bind_next_if_absent(name.clone());
-                chunk.push_op(Op::StoreLocal);
-                chunk.push_u8(slot);
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
             Stmt::Print { expr } => {
                 self.emit_expr_in(chunk, expr, Some(env))?;
@@ -452,6 +501,27 @@ impl C {
                         chunk.push_op(Op::Builtin); chunk.push_u8(id); chunk.push_u8(args.len() as u8);
                         return Ok(());
                     }
+                    // If not builtin, treat as array access when not a known function
+                    if args.len() >= 1 && args.len() <= 4 {
+                        let is_func = self.fn_names.contains(&uname);
+                        // prefer local var if present
+                        if let Some(env) = env {
+                            if env.lookup(name).is_some() && !is_func {
+                                let slot = env.lookup(name).unwrap();
+                                chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                                for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
+                                chunk.push_op(Op::ArrGet); chunk.push_u8(args.len() as u8);
+                                return Ok(());
+                            }
+                        }
+                        if !is_func {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            for a in args { self.emit_expr_in(chunk, a, env)?; }
+                            chunk.push_op(Op::ArrGet); chunk.push_u8(args.len() as u8);
+                            return Ok(());
+                        }
+                    }
                 }
                 // Regular call
                 self.emit_expr_in(chunk, callee, env)?;
@@ -507,8 +577,27 @@ impl C {
 
     fn emit_stmt_tl_in_chunk(&mut self, chunk: &mut Chunk, s: &Stmt) -> Result<()> {
         match s {
-            Stmt::Let { name, init } => {
-                self.emit_expr_in(chunk, init, None)?;
+            Stmt::Let { name, indices, init } => {
+                match indices {
+                    None => {
+                        self.emit_expr_in(chunk, init, None)?;
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                    }
+                    Some(idxs) => {
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        for ix in idxs { self.emit_expr_in(chunk, ix, None)?; }
+                        self.emit_expr_in(chunk, init, None)?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
+                    }
+                }
+            }
+            Stmt::Dim { name, dims } => {
+                for d in dims { self.emit_expr_in(chunk, d, None)?; }
+                chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
+                let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
+                chunk.push_u8(et);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }

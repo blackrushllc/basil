@@ -68,10 +68,22 @@ impl Parser {
 
         if self.match_k(TokenKind::Let) {
             let name = self.expect_ident()?;
+            // Optional indices for array element assignment: name '(' exprlist ')'
+            let indices = if self.match_k(TokenKind::LParen) {
+                let mut idxs = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        idxs.push(self.parse_expr_bp(0)?);
+                        if !self.match_k(TokenKind::Comma) { break; }
+                    }
+                }
+                self.expect(TokenKind::RParen)?;
+                Some(idxs)
+            } else { None };
             self.expect(TokenKind::Assign)?;
             let init = self.parse_expr_bp(0)?;
             self.terminate_stmt()?;
-            return Ok(Stmt::Let { name, init });
+            return Ok(Stmt::Let { name, indices, init });
         }
 
         if self.match_k(TokenKind::Print) {
@@ -146,6 +158,21 @@ impl Parser {
             let _ = self.terminate_stmt();
 
             return Ok(Stmt::For { var, start, end, step, body: Box::new(body) });
+        }
+
+        if self.match_k(TokenKind::Dim) {
+            let name = self.expect_ident()?;
+            self.expect(TokenKind::LParen)?;
+            let mut dims = Vec::new();
+            if !self.check(TokenKind::RParen) {
+                loop {
+                    dims.push(self.parse_expr_bp(0)?);
+                    if !self.match_k(TokenKind::Comma) { break; }
+                }
+            }
+            self.expect(TokenKind::RParen)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Dim { name, dims });
         }
 
         // Fallback: expression statement
