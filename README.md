@@ -15,6 +15,22 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+# 🌿 STATUS UPDATE _Arrays Working_ !!!
++ String, Integer and Float arrays up to 4 dimensions
++ Array function LEN() returns number of elements in array
++ Array command DIM creates/recreates array with specified dimensions
+
++ Also added INPUT, INKEY%, INKEY\$ functions for keyboard input
++ Syntax error output shows line number
+
+TODO in this vein:
++ Array functions MID, LBOUND, UBOUND, REDIM, REDIM PRESERVE, REDIM SHARED
++ Copy / Slice etc
++ Maybe Array functions SORT, RESIZE, RESHAPE, TRANSPOSE, RANDOMIZE, REVERSE, FOR EACH Loops
++ Maybe Array types Byte(), Word(), Long(), Double()
+
+
+
 # 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
 + Also String and Integer variable types (A$, MyNum%)
 + String concatenation with "+" (direct) or "," (tab)

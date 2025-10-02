@@ -47,6 +47,7 @@ pub enum Expr {
     Var(String),
     UnaryNeg(Box<Expr>),
     Binary { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr> },
+    // Postfix parentheses used for either function calls or array indexing (disambiguated in compiler)
     Call { callee: Box<Expr>, args: Vec<Expr> },
 }
 
@@ -58,7 +59,10 @@ pub enum BinOp {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Let   { name: String, init: Expr },
+    // LET for variables or array elements (if indices present)
+    Let   { name: String, indices: Option<Vec<Expr>>, init: Expr },
+    // DIM statement to create arrays (1–4 dimensions)
+    Dim   { name: String, dims: Vec<Expr> },
     Print { expr: Expr },
     ExprStmt(Expr),
     Return(Option<Expr>),
