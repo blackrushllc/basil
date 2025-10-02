@@ -432,6 +432,24 @@ impl C {
                 });
             }
             Expr::Call { callee, args } => {
+                // Detect built-in string functions by name and emit a Builtin opcode instead of a call
+                if let Expr::Var(name) = &**callee {
+                    let uname = name.to_ascii_uppercase();
+                    let bid = match &*uname {
+                        "LEN" => Some(1u8),
+                        "MID$" => Some(2u8),
+                        "LEFT$" => Some(3u8),
+                        "RIGHT$" => Some(4u8),
+                        "INSTR" => Some(5u8),
+                        _ => None,
+                    };
+                    if let Some(id) = bid {
+                        for a in args { self.emit_expr_in(chunk, a, env)?; }
+                        chunk.push_op(Op::Builtin); chunk.push_u8(id); chunk.push_u8(args.len() as u8);
+                        return Ok(());
+                    }
+                }
+                // Regular call
                 self.emit_expr_in(chunk, callee, env)?;
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
