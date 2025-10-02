@@ -158,6 +158,14 @@ impl VM {
 
                 Op::Print => { let v = self.pop()?; println!("{}", v); }
                 Op::Pop   => { let _ = self.pop()?; }
+                Op::ToInt => {
+                    let v = self.pop()?;
+                    match v {
+                        Value::Int(i) => self.stack.push(Value::Int(i)),
+                        Value::Num(n) => self.stack.push(Value::Int(n.trunc() as i64)),
+                        _ => return Err(BasilError("ToInt expects a numeric value".into())),
+                    }
+                }
 
                 Op::Halt => {
                     if self.frames.len() == 1 { break; }
@@ -182,7 +190,7 @@ impl VM {
             30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
             40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,
-            60=>Op::Print, 61=>Op::Pop,
+            60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
@@ -202,7 +210,11 @@ impl VM {
     fn pop(&mut self) -> Result<Value> { self.stack.pop().ok_or_else(|| BasilError("stack underflow".into())) }
 
     fn as_num(&self, v: Value) -> Result<f64> {
-        if let Value::Num(n)=v { Ok(n) } else { Err(BasilError("expected number".into())) }
+        match v {
+            Value::Num(n) => Ok(n),
+            Value::Int(i) => Ok(i as f64),
+            _ => Err(BasilError("expected number".into())),
+        }
     }
     fn bin_num<F: Fn(f64,f64)->f64>(&mut self, f: F) -> Result<()> {
         let b = self.pop()?; let a = self.pop()?;
@@ -225,6 +237,7 @@ fn is_truthy(v: &Value) -> bool {
         Value::Null => false,
         Value::Bool(b) => *b,
         Value::Num(n) => *n != 0.0,
+        Value::Int(i) => *i != 0,
         Value::Str(s) => !s.is_empty(),
         Value::Func(_) => true,
     }

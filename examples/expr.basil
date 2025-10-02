@@ -2,3 +2,12 @@ LET a = 2 + 3 * 4;
 PRINT a; // 14
 LET b = (2 + 3) * 4;
 PRINT b; // 20
+
+LET A$ = "Hello";
+PRINT A$;
+
+LET A% = 10;
+PRINT A%;
+
+PRINT A% + 20;
+

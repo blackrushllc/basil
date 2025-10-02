@@ -92,6 +92,7 @@ impl C {
             Stmt::Let { name, init } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 self.emit_expr_in(&mut chunk, init, None)?;
+                if name.ends_with('%') { chunk.push_op(Op::ToInt); }
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal);
                 chunk.push_u8(g);
@@ -123,6 +124,7 @@ impl C {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 // init: var = start
                 self.emit_expr_in(&mut chunk, start, None)?;
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 let g = self.gslot(var);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
 
@@ -182,6 +184,7 @@ impl C {
                     }
                 }
                 chunk.push_op(Op::Add);
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
 
                 // jump back (use JumpBack with u16 distance backwards)
@@ -232,6 +235,7 @@ impl C {
         match s {
             Stmt::Let { name, init } => {
                 self.emit_expr_in(chunk, init, Some(env))?;
+                if name.ends_with('%') { chunk.push_op(Op::ToInt); }
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal);
                 chunk.push_u8(slot);
@@ -264,6 +268,7 @@ impl C {
             Stmt::For { var, start, end, step, body } => {
                 // init var
                 self.emit_expr_in(chunk, start, Some(env))?;
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 if let Some(slot) = env.lookup(var) {
                     chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
                 } else {
@@ -342,6 +347,7 @@ impl C {
                     }
                 }
                 chunk.push_op(Op::Add);
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 if let Some(slot) = env.lookup(var) {
                     chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
                 } else {
