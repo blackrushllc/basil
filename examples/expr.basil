@@ -12,7 +12,12 @@ PRINT "A% IS",A%;
 LET B = 10.1;
 PRINT B;
 
+// Multi line statements are OK because we terminate lines with a semicolon.
+PRINT A%
++
+20;
 
-PRINT A% + 20;
-PRINT B + 20;
+PRINT
+B
+ + 20;
 
