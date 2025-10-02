@@ -153,3 +153,25 @@ It’s the smallest set that:
 
 This is implemented as a keyword that evaluates to a string literal; the optional empty parentheses are accepted for BASIC-style ergonomics.
 
+
+
+# FOR/NEXT loops
+
+- Syntax:
+  - FOR <ident> = <startExpr> TO <endExpr> [STEP <stepExpr>] <stmt | BEGIN ... END> NEXT [<ident>]
+- Semantics:
+  - Initializes the loop variable to startExpr.
+  - Evaluates stepExpr each iteration; default is 1 if omitted.
+  - If step >= 0 then the loop continues while var <= endExpr; otherwise while var >= endExpr.
+  - Body can be a single statement (e.g., PRINT i;) or a block delimited by BEGIN ... END.
+  - NEXT may optionally repeat the loop variable name; a semicolon after NEXT is optional.
+- Examples:
+```
+FOR i = 1 TO 5
+PRINT i;
+NEXT i;
+
+FOR j = 5 TO 1 STEP -1 BEGIN
+    PRINT j;
+END NEXT j;
+```

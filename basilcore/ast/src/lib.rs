@@ -65,6 +65,7 @@ pub enum Stmt {
     If { cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
     Block(Vec<Stmt>),
     Func { name: String, params: Vec<String>, body: Vec<Stmt> },
+    For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
 }
 
 pub type Program = Vec<Stmt>;
