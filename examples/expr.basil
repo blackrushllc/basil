@@ -7,7 +7,7 @@ LET A$ = "Hello";
 PRINT A$;
 
 LET A% = 10.1;
-PRINT A%;
+PRINT "A% IS",A%;
 
 LET B = 10.1;
 PRINT B;
