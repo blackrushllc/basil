@@ -126,6 +126,10 @@ impl VM {
                     let cond = self.pop()?;
                     if !is_truthy(&cond) { self.cur().ip += off; }
                 }
+                Op::JumpBack => {
+                    let off = self.read_u16()? as usize;
+                    self.cur().ip -= off;
+                }
 
                 Op::Call => {
                     let argc = self.read_u8()? as usize;
@@ -176,7 +180,7 @@ impl VM {
             11=>Op::LoadLocal, 12=>Op::StoreLocal,
             20=>Op::Add, 21=>Op::Sub, 22=>Op::Mul, 23=>Op::Div, 24=>Op::Neg,
             30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
-            40=>Op::Jump, 41=>Op::JumpIfFalse,
+            40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,
             60=>Op::Print, 61=>Op::Pop,
             255=>Op::Halt,

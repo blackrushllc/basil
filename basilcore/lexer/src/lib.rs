@@ -54,6 +54,8 @@ pub enum TokenKind {
     Func, Return, If, Then, Else, While, Do, Begin, End,
     Let, Print, True, False, Null, And, Or, Not,
     Author,
+    // New for FOR loop support
+    For, To, Step, Next,
     Eof,
 }
 
@@ -260,6 +262,10 @@ impl<'a> Lexer<'a> {
             "OR"     => TokenKind::Or,
             "NOT"    => TokenKind::Not,
             "AUTHOR" => TokenKind::Author,
+            "FOR"    => TokenKind::For,
+            "TO"     => TokenKind::To,
+            "STEP"   => TokenKind::Step,
+            "NEXT"   => TokenKind::Next,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))

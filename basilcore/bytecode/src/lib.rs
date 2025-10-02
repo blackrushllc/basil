@@ -99,6 +99,7 @@ pub enum Op {
     // control flow
     Jump = 40,           // +u16
     JumpIfFalse = 41,    // +u16
+    JumpBack = 42,       // +u16 (ip -= off)
 
     // calls
     Call = 50,           // +u8 (argc)
