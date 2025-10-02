@@ -47,6 +47,7 @@ pub enum Value {
     Null,
     Bool(bool),
     Num(f64),
+    Int(i64),
     Str(String),
     Func(Rc<Function>),
 }
@@ -57,6 +58,7 @@ impl PartialEq for Value {
             (Value::Null, Value::Null) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Num(a),  Value::Num(b))  => a == b,
+            (Value::Int(a),  Value::Int(b))  => a == b,
             (Value::Str(a),  Value::Str(b))  => a == b,
             (Value::Func(a), Value::Func(b)) => Rc::ptr_eq(a, b),
             _ => false,
@@ -71,6 +73,7 @@ impl fmt::Display for Value {
             Value::Null => write!(f, "null"),
             Value::Bool(b) => write!(f, "{b}"),
             Value::Num(n)  => write!(f, "{n}"),
+            Value::Int(i)  => write!(f, "{i}"),
             Value::Str(s)  => write!(f, "{s}"),
             Value::Func(fun) => write!(f, "<func {} /{}>", fun.name.as_deref().unwrap_or("_"), fun.arity),
         }
@@ -108,6 +111,8 @@ pub enum Op {
     // misc
     Print = 60,
     Pop   = 61,
+    ToInt = 62,
+    Builtin = 63,       // +u8 (builtin id), +u8 (argc)
     Halt  = 255,
 }
 

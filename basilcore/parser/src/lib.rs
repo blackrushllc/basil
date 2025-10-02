@@ -75,7 +75,14 @@ impl Parser {
         }
 
         if self.match_k(TokenKind::Print) {
-            let e = self.parse_expr_bp(0)?;
+            // Support PRINT with comma-separated expressions joined by TABs
+            let mut e = self.parse_expr_bp(0)?;
+            while self.match_k(TokenKind::Comma) {
+                let next = self.parse_expr_bp(0)?;
+                // e = e + "\t" + next
+                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(Expr::Str("\t".to_string())) };
+                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(next) };
+            }
             self.terminate_stmt()?;
             return Ok(Stmt::Print { expr: e });
         }
