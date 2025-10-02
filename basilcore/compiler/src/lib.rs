@@ -441,6 +441,10 @@ impl C {
                         "LEFT$" => Some(3u8),
                         "RIGHT$" => Some(4u8),
                         "INSTR" => Some(5u8),
+                        "INPUT$" => Some(6u8),
+                        "INPUT" => Some(6u8), // alias for convenience
+                        "INKEY$" => Some(7u8),
+                        "INKEY%" => Some(8u8),
                         _ => None,
                     };
                     if let Some(id) = bid {
