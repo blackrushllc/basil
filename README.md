@@ -15,6 +15,8 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+# 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
+
 # 🌿 STATUS UPDATE _CGI Working_ !!!
 
 ### (Along side html and Php files like normal)
