@@ -45,7 +45,7 @@ use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
 
 use basil_common::{Result, BasilError};
-use basil_bytecode::{Program as BCProgram, Chunk, Value, Op};
+use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
 
 struct Frame {
     chunk: Rc<Chunk>,
@@ -186,6 +186,93 @@ impl VM {
                     }
                 }
 
+                Op::ArrMake => {
+                    let rank = self.read_u8()? as usize;
+                    let et_code = self.read_u8()? as u8;
+                    let elem = match et_code { 0 => ElemType::Num, 1 => ElemType::Int, 2 => ElemType::Str, _ => return Err(BasilError("bad elem type".into())) };
+                    if rank == 0 || rank > 4 { return Err(BasilError("array rank must be 1..4".into())); }
+                    let mut uppers: Vec<i64> = Vec::with_capacity(rank);
+                    for _ in 0..rank {
+                        let v = self.pop()?;
+                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array dimension must be numeric".into())) };
+                        uppers.push(n);
+                    }
+                    uppers.reverse();
+                    let mut dims: Vec<usize> = Vec::with_capacity(rank);
+                    let mut total: usize = 1;
+                    for u in uppers {
+                        if u < 0 { return Err(BasilError("array dimension upper bound must be >= 0".into())); }
+                        let len = (u as usize) + 1;
+                        dims.push(len);
+                        total = total.saturating_mul(len);
+                    }
+                    let defv = match elem { ElemType::Num => Value::Num(0.0), ElemType::Int => Value::Int(0), ElemType::Str => Value::Str(String::new()) };
+                    let mut data = Vec::with_capacity(total);
+                    data.resize(total, defv);
+                    let arr = Rc::new(ArrayObj { elem, dims, data: std::cell::RefCell::new(data) });
+                    self.stack.push(Value::Array(arr));
+                }
+
+                Op::ArrGet => {
+                    let rank = self.read_u8()? as usize;
+                    let mut idxs: Vec<i64> = Vec::with_capacity(rank);
+                    for _ in 0..rank {
+                        let v = self.pop()?;
+                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
+                        idxs.push(n);
+                    }
+                    idxs.reverse();
+                    let arr_v = self.pop()?;
+                    let arr_rc = match arr_v { Value::Array(rc) => rc, _ => return Err(BasilError("array access on non-array or not DIMed".into())) };
+                    let arr = arr_rc.as_ref();
+                    if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
+                    for (dim_len, idx) in arr.dims.iter().zip(&idxs) {
+                        if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                    }
+                    // compute linear index (row-major)
+                    let mut lin: usize = 0;
+                    let mut stride: usize = 1;
+                    for d in 0..arr.dims.len() {
+                        let len = arr.dims[arr.dims.len() - 1 - d];
+                        let idx = idxs[arr.dims.len() - 1 - d] as usize;
+                        if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
+                    }
+                    let val = arr.data.borrow()[lin].clone();
+                    self.stack.push(val);
+                }
+
+                Op::ArrSet => {
+                    let rank = self.read_u8()? as usize;
+                    let val = self.pop()?;
+                    let mut idxs: Vec<i64> = Vec::with_capacity(rank);
+                    for _ in 0..rank {
+                        let v = self.pop()?;
+                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
+                        idxs.push(n);
+                    }
+                    idxs.reverse();
+                    let arr_v = self.pop()?;
+                    let arr_rc = match arr_v { Value::Array(rc) => rc, _ => return Err(BasilError("array write on non-array or not DIMed".into())) };
+                    let arr = arr_rc.as_ref();
+                    if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
+                    for (dim_len, idx) in arr.dims.iter().zip(&idxs) {
+                        if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                    }
+                    let mut lin: usize = 0;
+                    let mut stride: usize = 1;
+                    for d in 0..arr.dims.len() {
+                        let len = arr.dims[arr.dims.len() - 1 - d];
+                        let idx = idxs[arr.dims.len() - 1 - d] as usize;
+                        if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
+                    }
+                    let coerced = match arr.elem {
+                        ElemType::Num => match val { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into numeric array", other))) },
+                        ElemType::Int => match val { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into integer array", other))) },
+                        ElemType::Str => match val { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
+                    };
+                    arr.data.borrow_mut()[lin] = coerced;
+                }
+
                 Op::Builtin => {
                     let bid = self.read_u8()? as u8;
                     let argc = self.read_u8()? as usize;
@@ -201,6 +288,12 @@ impl VM {
                                 Value::Str(s) => {
                                     let n = s.chars().count() as i64;
                                     self.stack.push(Value::Int(n));
+                                }
+                                Value::Array(arr_rc) => {
+                                    let arr = arr_rc.as_ref();
+                                    let mut total: usize = 1;
+                                    for d in &arr.dims { total = total.saturating_mul(*d); }
+                                    self.stack.push(Value::Int(total as i64));
                                 }
                                 other => {
                                     // Fallback: coerce to string via Display and count chars
@@ -400,6 +493,7 @@ impl VM {
             40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,
             60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin,
+            70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
@@ -449,5 +543,6 @@ fn is_truthy(v: &Value) -> bool {
         Value::Int(i) => *i != 0,
         Value::Str(s) => !s.is_empty(),
         Value::Func(_) => true,
+        Value::Array(_) => true,
     }
 }

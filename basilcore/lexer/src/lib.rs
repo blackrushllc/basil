@@ -56,6 +56,7 @@ pub enum TokenKind {
     Author,
     // New for FOR loop support
     For, To, Step, Next,
+    Dim,
     Eof,
 }
 
@@ -273,6 +274,7 @@ impl<'a> Lexer<'a> {
             "TO"     => TokenKind::To,
             "STEP"   => TokenKind::Step,
             "NEXT"   => TokenKind::Next,
+            "DIM"    => TokenKind::Dim,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))
@@ -301,6 +303,23 @@ impl<'a> Lexer<'a> {
                     while let Some(ch) = self.cur {
                         if ch == '\n' { break; }
                         self.advance();
+                    }
+                }
+
+                // BASIC-style REM comment (case-insensitive): skip 'REM' and rest of line
+                Some('R') | Some('r') => {
+                    let mut it = self.chars.clone();
+                    let n1 = it.next();
+                    let n2 = it.next();
+                    if matches!(n1, Some('E') | Some('e')) && matches!(n2, Some('M') | Some('m')) {
+                        // consume R E M
+                        self.advance(); self.advance(); self.advance();
+                        while let Some(ch) = self.cur {
+                            if ch == '\n' { break; }
+                            self.advance();
+                        }
+                    } else {
+                        break;
                     }
                 }
 

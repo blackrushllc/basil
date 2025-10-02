@@ -41,6 +41,17 @@ SOFTWARE.
 //! Bytecode + values + function object + helpers (u16 jumps)
 use std::fmt;
 use std::rc::Rc;
+use std::cell::RefCell;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ElemType { Num, Int, Str }
+
+#[derive(Debug)]
+pub struct ArrayObj {
+    pub elem: ElemType,
+    pub dims: Vec<usize>, // lengths per dimension (0-based indices, inclusive upper bound yields length upper+1)
+    pub data: RefCell<Vec<Value>>,
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -50,6 +61,7 @@ pub enum Value {
     Int(i64),
     Str(String),
     Func(Rc<Function>),
+    Array(Rc<ArrayObj>),
 }
 
 impl PartialEq for Value {
@@ -61,6 +73,7 @@ impl PartialEq for Value {
             (Value::Int(a),  Value::Int(b))  => a == b,
             (Value::Str(a),  Value::Str(b))  => a == b,
             (Value::Func(a), Value::Func(b)) => Rc::ptr_eq(a, b),
+            (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -76,6 +89,13 @@ impl fmt::Display for Value {
             Value::Int(i)  => write!(f, "{i}"),
             Value::Str(s)  => write!(f, "{s}"),
             Value::Func(fun) => write!(f, "<func {} /{}>", fun.name.as_deref().unwrap_or("_"), fun.arity),
+            Value::Array(arr_rc) => {
+                // show like <array Num 10x20>
+                let arr = arr_rc.as_ref();
+                let et = match arr.elem { ElemType::Num => "Num", ElemType::Int => "Int", ElemType::Str => "Str" };
+                let dims = if arr.dims.is_empty() { "".to_string() } else { arr.dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x") };
+                write!(f, "<array {} {}>", et, dims)
+            }
         }
     }
 }
@@ -113,6 +133,12 @@ pub enum Op {
     Pop   = 61,
     ToInt = 62,
     Builtin = 63,       // +u8 (builtin id), +u8 (argc)
+
+    // arrays
+    ArrMake = 70,       // +u8 (rank), +u8 (elemType: 0=Num,1=Int,2=Str); pops rank dims (upper bounds)
+    ArrGet  = 71,       // +u8 (rank) -- stack: [..., array, i0, i1, ...] -> push elem
+    ArrSet  = 72,       // +u8 (rank) -- stack: [..., array, i0, i1, ..., value] -> (store) no push
+
     Halt  = 255,
 }
 
