@@ -16,6 +16,16 @@ and seamless interoperability with C and WebAssembly (WASI).
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
 # 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
++ Also String and Integer variable types (A$, MyNum%)
++ String concatenation with + (direct) or , (tab)
++ String functions LEN, LEFT\$, RIGHT\$, MID\$, INSTR
+
+TODO in this vein:
++ String functions UPPER, LOWER, LTRIM, RTRIM, TRIM
++ String functions ASC, CHR, OCT, HEX
++ Functions VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL
++ String functions REPLACE, STR, STRTOK
+
 
 # 🌿 STATUS UPDATE _CGI Working_ !!!
 
