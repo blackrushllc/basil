@@ -17,8 +17,9 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 # 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
 + Also String and Integer variable types (A$, MyNum%)
-+ String concatenation with + (direct) or , (tab)
++ String concatenation with "+" (direct) or "," (tab)
 + String functions LEN, LEFT\$, RIGHT\$, MID\$, INSTR
++ Example programs added
 
 TODO in this vein:
 + String functions UPPER, LOWER, LTRIM, RTRIM, TRIM
