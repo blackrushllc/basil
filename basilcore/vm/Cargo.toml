@@ -7,3 +7,4 @@ edition = "2021"
 [dependencies]
 basil-common = { path = "../common" }
 basil-bytecode = { path = "../bytecode" }
+crossterm = "0.27"

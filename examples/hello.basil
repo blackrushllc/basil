@@ -1,3 +1,5 @@
 PRINT "Hello, World. I'm BASIL!";
-PRINT AUTHOR;
-PRINT AUTHOR();
+PRINT "This was written by "+AUTHOR();
+LET A$ = INPUT$("Enter your name:");
+PRINT "Hello, "+A$+"!";
+
