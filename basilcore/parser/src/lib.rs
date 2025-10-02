@@ -170,6 +170,15 @@ impl Parser {
                 let t = self.next().unwrap();
                 if let Some(Literal::Str(s)) = t.literal { Ok(Expr::Str(s)) } else { Err(BasilError("string literal missing".into())) }
             }
+            Some(TokenKind::Author) => {
+                // Consume AUTHOR token
+                let _ = self.next().unwrap();
+                // Allow optional empty parentheses: AUTHOR or AUTHOR()
+                if self.match_k(TokenKind::LParen) {
+                    self.expect(TokenKind::RParen)?;
+                }
+                Ok(Expr::Str("Erik Olson".to_string()))
+            }
             Some(TokenKind::Ident) => Ok(Expr::Var(self.next().unwrap().lexeme)),
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("unexpected token in expression: {:?}", other))),

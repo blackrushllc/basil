@@ -142,3 +142,14 @@ It’s the smallest set that:
 1. **AST + Parser**: add `Func`, `Call`, `Return`, `If`, `Block`, comparisons, and call postfix loop.
 2. **Bytecode + Compiler**: add new opcodes; function compiler that creates a `Function` value; locals map for params; `if` jump patching; `return`.
 3. **VM**: convert to frame-based loop; implement `CALL`/`RET`, `LOAD/STORE_LOCAL`, `JUMP/JIF`, comparisons.
+
+# Built-in string function: AUTHOR
+
+- Syntax: AUTHOR or AUTHOR()
+- Returns: the string constant "Erik Olson".
+- Usage examples:
+  - PRINT AUTHOR
+  - PRINT AUTHOR()
+
+This is implemented as a keyword that evaluates to a string literal; the optional empty parentheses are accepted for BASIC-style ergonomics.
+

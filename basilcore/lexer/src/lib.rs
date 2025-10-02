@@ -53,6 +53,7 @@ pub enum TokenKind {
     // Keywords
     Func, Return, If, Then, Else, While, Do, Begin, End,
     Let, Print, True, False, Null, And, Or, Not,
+    Author,
     Eof,
 }
 
@@ -258,6 +259,7 @@ impl<'a> Lexer<'a> {
             "AND"    => TokenKind::And,
             "OR"     => TokenKind::Or,
             "NOT"    => TokenKind::Not,
+            "AUTHOR" => TokenKind::Author,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))
