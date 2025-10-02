@@ -1,0 +1,13 @@
+LET A$ = "Hi";
+LET B$ = "There";
+LET C$ = A$ + B$;
+PRINT C$; // expected HiThere
+PRINT A$, B$, C$; // expected Hi	There   HiThere
+//PRINT LEN(C$); // expected 7
+//PRINT MID$(C$, 3, 4); // expected There
+//PRINT MID$(C$, 3); // expected There
+//PRINT LEFT$(C$, 2); // expected Hi
+//PRINT RIGHT$(C$, 5); // expected There
+//PRINT INSTR(C$, "e"); // expected 4
+//PRINT INSTR(C$, "e", 5); // expected 6
+//PRINT INSTR(C$, "x"); // expected 0

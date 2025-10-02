@@ -100,7 +100,23 @@ impl VM {
                     self.stack[base + i] = v;
                 }
 
-                Op::Add => self.bin_num(|a,b| a+b)?,
+                Op::Add => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    match (&lb, &rb) {
+                        (Value::Str(_), _) | (_, Value::Str(_)) => {
+                            let ls = format!("{}", lb);
+                            let rs = format!("{}", rb);
+                            self.stack.push(Value::Str(format!("{}{}", ls, rs)));
+                        }
+                        _ => {
+                            // numeric addition (use existing numeric coercion)
+                            let a = self.as_num(lb)?;
+                            let b = self.as_num(rb)?;
+                            self.stack.push(Value::Num(a + b));
+                        }
+                    }
+                },
                 Op::Sub => self.bin_num(|a,b| a-b)?,
                 Op::Mul => self.bin_num(|a,b| a*b)?,
                 Op::Div => self.bin_num(|a,b| a/b)?,
