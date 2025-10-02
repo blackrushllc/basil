@@ -1,1 +1,3 @@
-PRINT "Hello, Basil!";
+PRINT "Hello, World. I'm BASIL!";
+PRINT AUTHOR;
+PRINT AUTHOR();

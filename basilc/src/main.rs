@@ -102,7 +102,7 @@ fn print_help() {
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
-    println!("  basilc sprout examples/hello.basil");
+    println!("  basilc sprout examples/expr.basil");
     println!("  basilc init myapp");
 
 }
