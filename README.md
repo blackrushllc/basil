@@ -15,6 +15,64 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+
+# 🌿 STATUS UPDATE _Arrays of Objects and FOR/EACH Loops_ !!!
+
+````basil
+
+#USE BMX_RIDER, BMX_TEAM
+
+DIM riders@(2) AS BMX_RIDER;
+LET riders@(0) = NEW BMX_RIDER("Alice", 17, "Expert", 12, 3);
+LET riders@(1) = NEW BMX_RIDER("Bob",   21, "Expert",  8, 9);
+LET riders@(2) = NEW BMX_RIDER("Carol", 19, "Pro",    30, 4);
+
+FOR EACH r@ IN riders@
+  PRINT "Rider - ",r@.Describe$();
+NEXT
+
+DIM nums%(4);
+FOR EACH n% IN nums%
+  LET nums%(n%) = n% * n%;
+NEXT
+
+DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+t@.AddRider(riders@(0)); t@.AddRider(riders@(1)); t@.AddRider(riders@(2));
+
+FOR EACH name$ IN t@.RiderNames$()
+  PRINT name$;
+NEXT
+
+FOR EACH desc$ IN t@.RiderDescriptions$()
+  PRINT desc$;
+NEXT
+
+````
+
+# 🌿 STATUS UPDATE _Objects Working_ !!!
++ (Windows) ```cargo run -q -p basilc --features obj-bmx -- run examples\objects.basil```
++ (Linux) ```cargo run -q -p basilc --features obj-bmx -- run examples/objects.basil```
++ See OBJECTS.md for more info
++ Refer to the link below for my feelings on this new feature:
++ https://youtube.com/clip/UgkxBpXcWlbjLM0n_YrEbR__yWX6a-gF8yOl?si=dvQHvcfwzRZ-yIC4
+
+
+# 🌿 STATUS UPDATE _Arrays Working_ !!!
++ String, Integer and Float arrays up to 4 dimensions
++ Array function LEN() returns number of elements in array
++ Array command DIM creates/recreates array with specified dimensions
+
++ Also added INPUT, INKEY%, INKEY\$ functions for keyboard input
++ Syntax error output shows line number
+
+TODO in this vein:
++ Array functions MID, LBOUND, UBOUND, REDIM, REDIM PRESERVE, REDIM SHARED
++ Copy / Slice etc
++ Maybe Array functions SORT, RESIZE, RESHAPE, TRANSPOSE, RANDOMIZE, REVERSE, FOR EACH Loops
++ Maybe Array types Byte(), Word(), Long(), Double()
+
+
+
 # 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
 + Also String and Integer variable types (A$, MyNum%)
 + String concatenation with "+" (direct) or "," (tab)

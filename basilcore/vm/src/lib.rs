@@ -40,9 +40,13 @@ SOFTWARE.
 
 //! Frame-based VM with calls, locals, jumps, comparisons
 use std::rc::Rc;
+use std::io::{self, Write};
+use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
+use crossterm::event::{read, Event, KeyEvent, KeyCode};
 
 use basil_common::{Result, BasilError};
-use basil_bytecode::{Program as BCProgram, Chunk, Value, Op};
+use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
+use basil_objects::{Registry, register_objects};
 
 struct Frame {
     chunk: Rc<Chunk>,
@@ -50,10 +54,18 @@ struct Frame {
     base: usize,
 }
 
+struct ArrEnum {
+    arr: Rc<ArrayObj>,
+    cur: isize,    // -1 before first element
+    total: usize,  // total elements
+}
+
 pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
     globals: Vec<Value>,
+    registry: Registry,
+    enums: Vec<ArrEnum>,
 }
 
 impl VM {
@@ -61,7 +73,9 @@ impl VM {
         let globals = vec![Value::Null; p.globals.len()];
         let top_chunk = Rc::new(p.chunk);
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
-        Self { frames: vec![frame], stack: Vec::new(), globals }
+        let mut registry = Registry::new();
+        register_objects(&mut registry);
+        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new() }
     }
 
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
@@ -183,6 +197,266 @@ impl VM {
                     }
                 }
 
+                Op::ArrMake => {
+                    let rank = self.read_u8()? as usize;
+                    let et_code = self.read_u8()? as u8;
+                    let type_cidx = self.read_u8()? as usize; // may be 255 if not applicable
+                    let elem = match et_code {
+                        0 => ElemType::Num,
+                        1 => ElemType::Int,
+                        2 => ElemType::Str,
+                        3 => {
+                            if type_cidx == 255 {
+                                ElemType::Obj(None)
+                            } else {
+                                let tn_v = self.cur().chunk.consts[type_cidx].clone();
+                                let tn = match tn_v { Value::Str(s) => s, _ => return Err(BasilError("ArrMake type expects string const".into())) };
+                                ElemType::Obj(Some(tn))
+                            }
+                        }
+                        _ => return Err(BasilError("bad elem type".into())),
+                    };
+                    if rank == 0 || rank > 4 { return Err(BasilError("array rank must be 1..4".into())); }
+                    let mut uppers: Vec<i64> = Vec::with_capacity(rank);
+                    for _ in 0..rank {
+                        let v = self.pop()?;
+                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array dimension must be numeric".into())) };
+                        uppers.push(n);
+                    }
+                    uppers.reverse();
+                    let mut dims: Vec<usize> = Vec::with_capacity(rank);
+                    let mut total: usize = 1;
+                    for u in uppers {
+                        if u < 0 { return Err(BasilError("array dimension upper bound must be >= 0".into())); }
+                        let len = (u as usize) + 1;
+                        dims.push(len);
+                        total = total.saturating_mul(len);
+                    }
+                    let defv = match &elem {
+                        ElemType::Num => Value::Num(0.0),
+                        ElemType::Int => Value::Int(0),
+                        ElemType::Str => Value::Str(String::new()),
+                        ElemType::Obj(_) => Value::Null,
+                    };
+                    let mut data = Vec::with_capacity(total);
+                    data.resize(total, defv);
+                    let arr = Rc::new(ArrayObj { elem, dims, data: std::cell::RefCell::new(data) });
+                    self.stack.push(Value::Array(arr));
+                }
+
+                Op::ArrGet => {
+                    let rank = self.read_u8()? as usize;
+                    let mut idxs: Vec<i64> = Vec::with_capacity(rank);
+                    for _ in 0..rank {
+                        let v = self.pop()?;
+                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
+                        idxs.push(n);
+                    }
+                    idxs.reverse();
+                    let arr_v = self.pop()?;
+                    let arr_rc = match arr_v { Value::Array(rc) => rc, _ => return Err(BasilError("array access on non-array or not DIMed".into())) };
+                    let arr = arr_rc.as_ref();
+                    if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
+                    for (dim_len, idx) in arr.dims.iter().zip(&idxs) {
+                        if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                    }
+                    // compute linear index (row-major)
+                    let mut lin: usize = 0;
+                    let mut stride: usize = 1;
+                    for d in 0..arr.dims.len() {
+                        let len = arr.dims[arr.dims.len() - 1 - d];
+                        let idx = idxs[arr.dims.len() - 1 - d] as usize;
+                        if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
+                    }
+                    let val = arr.data.borrow()[lin].clone();
+                    self.stack.push(val);
+                }
+
+                Op::ArrSet => {
+                    let rank = self.read_u8()? as usize;
+                    let val = self.pop()?;
+                    let mut idxs: Vec<i64> = Vec::with_capacity(rank);
+                    for _ in 0..rank {
+                        let v = self.pop()?;
+                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
+                        idxs.push(n);
+                    }
+                    idxs.reverse();
+                    let arr_v = self.pop()?;
+                    let arr_rc = match arr_v { Value::Array(rc) => rc, _ => return Err(BasilError("array write on non-array or not DIMed".into())) };
+                    let arr = arr_rc.as_ref();
+                    if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
+                    for (dim_len, idx) in arr.dims.iter().zip(&idxs) {
+                        if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                    }
+                    let mut lin: usize = 0;
+                    let mut stride: usize = 1;
+                    for d in 0..arr.dims.len() {
+                        let len = arr.dims[arr.dims.len() - 1 - d];
+                        let idx = idxs[arr.dims.len() - 1 - d] as usize;
+                        if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
+                    }
+                    let coerced = match &arr.elem {
+                        ElemType::Num => match val { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into numeric array", other))) },
+                        ElemType::Int => match val { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into integer array", other))) },
+                        ElemType::Str => match val { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
+                        ElemType::Obj(Some(tname)) => match val {
+                            Value::Object(rc) => {
+                                let got = rc.borrow().type_name().to_string();
+                                if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
+                                else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
+                            }
+                            Value::Null => Value::Null,
+                            other => return Err(BasilError(format!("cannot store non-object {:?} into typed OBJECT[] array", other))),
+                        },
+                        ElemType::Obj(None) => match val {
+                            Value::Object(_) | Value::Null => val,
+                            other => return Err(BasilError(format!("cannot store non-object {:?} into OBJECT[] array", other))),
+                        },
+                    };
+                    arr.data.borrow_mut()[lin] = coerced;
+                }
+
+                // enumeration over arrays
+                Op::EnumNew => {
+                    let it = self.pop()?;
+                    match it {
+                        Value::Array(rc) => {
+                            let total = rc.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
+                            let handle = self.enums.len();
+                            self.enums.push(ArrEnum { arr: rc, cur: -1, total });
+                            self.stack.push(Value::Int(handle as i64));
+                        }
+                        Value::Object(_) => {
+                            let ty = self.type_of(&it);
+                            return Err(BasilError(format!("FOR EACH expects an array or iterable object after IN (got TYPE={}).", ty)));
+                        }
+                        other => {
+                            let ty = self.type_of(&other);
+                            return Err(BasilError(format!("FOR EACH expects an array or iterable object after IN (got TYPE={}).", ty)));
+                        }
+                    }
+                }
+                Op::EnumMoveNext => {
+                    let handle = match self.stack.last() {
+                        Some(Value::Int(i)) => *i as usize,
+                        _ => return Err(BasilError("ENUM_MOVENEXT requires enumerator handle on stack".into())),
+                    };
+                    let e = self.enums.get_mut(handle).ok_or_else(|| BasilError("bad enumerator handle".into()))?;
+                    if (e.cur + 1) < e.total as isize { e.cur += 1; self.stack.push(Value::Bool(true)); }
+                    else { self.stack.push(Value::Bool(false)); }
+                }
+                Op::EnumCurrent => {
+                    let handle = match self.stack.last() {
+                        Some(Value::Int(i)) => *i as usize,
+                        _ => return Err(BasilError("ENUM_CURRENT requires enumerator handle on stack".into())),
+                    };
+                    let e = self.enums.get(handle).ok_or_else(|| BasilError("bad enumerator handle".into()))?;
+                    if e.cur < 0 { return Err(BasilError("ENUM_CURRENT before first element".into())); }
+                    let lin = e.cur as usize;
+                    let val = e.arr.data.borrow()[lin].clone();
+                    self.stack.push(val);
+                }
+                Op::EnumDispose => {
+                    let h = self.pop()?;
+                    match h {
+                        Value::Int(_i) => { /* no-op; freed with VM */ }
+                        _ => return Err(BasilError("ENUM_DISPOSE expects enumerator handle".into())),
+                    }
+                }
+
+                // --- Objects ---
+                Op::NewObj => {
+                    let type_cidx = self.read_u8()? as usize;
+                    let argc = self.read_u8()? as usize;
+                    let tname_v = self.cur().chunk.consts[type_cidx].clone();
+                    let type_name = match tname_v { Value::Str(s) => s, _ => return Err(BasilError("NEW_OBJ expects type name string const".into())) };
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc { args.push(self.pop()?); }
+                    args.reverse();
+                    let obj = self.registry.make(&type_name, &args)?;
+                    self.stack.push(Value::Object(obj));
+                }
+                Op::GetProp => {
+                    let prop_cidx = self.read_u8()? as usize;
+                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETPROP expects property name string const".into())) };
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let v = rc.borrow().get_prop(&prop)?;
+                            self.stack.push(v);
+                        }
+                        _ => return Err(BasilError("GETPROP on non-object".into())),
+                    }
+                }
+                Op::SetProp => {
+                    let prop_cidx = self.read_u8()? as usize;
+                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETPROP expects property name string const".into())) };
+                    let val = self.pop()?;
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            rc.borrow_mut().set_prop(&prop, val)?;
+                        }
+                        _ => return Err(BasilError("SETPROP on non-object".into())),
+                    }
+                }
+                Op::CallMethod => {
+                    let meth_cidx = self.read_u8()? as usize;
+                    let argc = self.read_u8()? as usize;
+                    let mname_v = self.cur().chunk.consts[meth_cidx].clone();
+                    let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMETHOD expects method name string const".into())) };
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc { args.push(self.pop()?); }
+                    args.reverse();
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let v = rc.borrow_mut().call(&method, &args)?;
+                            self.stack.push(v);
+                        }
+                        _ => return Err(BasilError("CALLMETHOD on non-object".into())),
+                    }
+                }
+                Op::DescribeObj => {
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let desc = rc.borrow().descriptor();
+                            // simple formatting
+                            let mut s = String::new();
+                            s.push_str(&format!("{} — v{}\n{}\n", desc.type_name, desc.version, desc.summary));
+                            if !desc.properties.is_empty() {
+                                s.push_str("Properties:\n");
+                                for p in desc.properties { s.push_str(&format!("  {} : {} {}{}\n", p.name, p.type_name, if p.readable {"R"} else {""}, if p.writable {"W"} else {""})); }
+                            }
+                            if !desc.methods.is_empty() {
+                                s.push_str("Methods:\n");
+                                for m in desc.methods { s.push_str(&format!("  {}({}) -> {}\n", m.name, m.arg_names.join(", "), m.return_type)); }
+                            }
+                            self.stack.push(Value::Str(s));
+                        }
+                        Value::Array(arr_rc) => {
+                            let arr = arr_rc.as_ref();
+                            let elem = match &arr.elem {
+                                ElemType::Num => "FLOAT".to_string(),
+                                ElemType::Int => "INTEGER".to_string(),
+                                ElemType::Str => "STRING".to_string(),
+                                ElemType::Obj(Some(t)) => t.clone(),
+                                ElemType::Obj(None) => "OBJECT".to_string(),
+                            };
+                            let mut total: usize = 1;
+                            for d in &arr.dims { total = total.saturating_mul(*d); }
+                            let dims = if arr.dims.is_empty() { "0".to_string() } else { arr.dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x") };
+                            let s = format!("Array — elem={}, dims={}, size={} (row-major)", elem, dims, total);
+                            self.stack.push(Value::Str(s));
+                        }
+                        other => return Err(BasilError(format!("DESCRIBE on unsupported value: {}", self.type_of(&other)))),
+                    }
+                }
+
                 Op::Builtin => {
                     let bid = self.read_u8()? as u8;
                     let argc = self.read_u8()? as usize;
@@ -198,6 +472,12 @@ impl VM {
                                 Value::Str(s) => {
                                     let n = s.chars().count() as i64;
                                     self.stack.push(Value::Int(n));
+                                }
+                                Value::Array(arr_rc) => {
+                                    let arr = arr_rc.as_ref();
+                                    let mut total: usize = 1;
+                                    for d in &arr.dims { total = total.saturating_mul(*d); }
+                                    self.stack.push(Value::Int(total as i64));
                                 }
                                 other => {
                                     // Fallback: coerce to string via Display and count chars
@@ -301,6 +581,79 @@ impl VM {
                                 }
                             }
                         }
+                        6 => { // INPUT$([prompt])
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("INPUT$ expects 0 or 1 argument".into())); }
+                            if argc == 1 {
+                                let prompt = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                                print!("{}", prompt);
+                                let _ = io::stdout().flush();
+                            }
+                            let mut input = String::new();
+                            io::stdin().read_line(&mut input).map_err(|e| BasilError(format!("INPUT$ read error: {}", e)))?;
+                            // Trim trailing CR/LF (Windows, Unix)
+                            while input.ends_with('\n') || input.ends_with('\r') { input.pop(); }
+                            self.stack.push(Value::Str(input));
+                        }
+                        7 => { // INKEY$()
+                            if argc != 0 { return Err(BasilError("INKEY$ expects 0 arguments".into())); }
+                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            let s = loop {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => {
+                                        let out = match code {
+                                            KeyCode::Char(c) => c.to_string(),
+                                            KeyCode::Enter => "\r".to_string(),
+                                            KeyCode::Backspace => "\u{0008}".to_string(),
+                                            KeyCode::Tab => "\t".to_string(),
+                                            KeyCode::Esc => "\u{001B}".to_string(),
+                                            _ => String::new(),
+                                        };
+                                        break out;
+                                    }
+                                    _ => { /* ignore other events */ }
+                                }
+                            };
+                            let _ = disable_raw_mode();
+                            self.stack.push(Value::Str(s));
+                        }
+                        8 => { // INKEY%()
+                            if argc != 0 { return Err(BasilError("INKEY% expects 0 arguments".into())); }
+                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            let code_i: i64 = loop {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => {
+                                        let val: i64 = match code {
+                                            KeyCode::Char(c) => c as i64,
+                                            KeyCode::Enter => 13,
+                                            KeyCode::Backspace => 8,
+                                            KeyCode::Tab => 9,
+                                            KeyCode::Esc => 27,
+                                            KeyCode::Up => 1000,
+                                            KeyCode::Down => 1001,
+                                            KeyCode::Left => 1002,
+                                            KeyCode::Right => 1003,
+                                            KeyCode::Home => 1004,
+                                            KeyCode::End => 1005,
+                                            KeyCode::PageUp => 1006,
+                                            KeyCode::PageDown => 1007,
+                                            KeyCode::Insert => 1008,
+                                            KeyCode::Delete => 1009,
+                                            KeyCode::F(n) => 1100 + n as i64,
+                                            _ => 0,
+                                        };
+                                        break val;
+                                    }
+                                    _ => { /* ignore */ }
+                                }
+                            };
+                            let _ = disable_raw_mode();
+                            self.stack.push(Value::Int(code_i));
+                        }
+                        9 => { // TYPE$(value)
+                            if argc != 1 { return Err(BasilError("TYPE$ expects 1 argument".into())); }
+                            let s = self.type_of(&args[0]);
+                            self.stack.push(Value::Str(s));
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -329,6 +682,9 @@ impl VM {
             40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,
             60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin,
+            70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
+            80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
+            90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
@@ -368,6 +724,29 @@ impl VM {
         let b = self.as_num(b)?; let a = self.as_num(a)?;
         self.stack.push(Value::Bool(f(a,b))); Ok(())
     }
+
+    fn type_of(&self, v: &Value) -> String {
+        match v {
+            Value::Null => "NULL".to_string(),
+            Value::Bool(_) => "BOOL".to_string(),
+            Value::Num(_) => "FLOAT".to_string(),
+            Value::Int(_) => "INTEGER".to_string(),
+            Value::Str(_) => "STRING".to_string(),
+            Value::Func(_) => "FUNCTION".to_string(),
+            Value::Array(arr_rc) => {
+                let arr = arr_rc.as_ref();
+                let base = match &arr.elem {
+                    ElemType::Num => "FLOAT".to_string(),
+                    ElemType::Int => "INTEGER".to_string(),
+                    ElemType::Str => "STRING".to_string(),
+                    ElemType::Obj(Some(tn)) => tn.clone(),
+                    ElemType::Obj(None) => "OBJECT".to_string(),
+                };
+                format!("{}[]", base)
+            }
+            Value::Object(rc) => rc.borrow().type_name().to_string(),
+        }
+    }
 }
 
 fn is_truthy(v: &Value) -> bool {
@@ -378,5 +757,7 @@ fn is_truthy(v: &Value) -> bool {
         Value::Int(i) => *i != 0,
         Value::Str(s) => !s.is_empty(),
         Value::Func(_) => true,
+        Value::Array(_) => true,
+        Value::Object(_) => true,
     }
 }

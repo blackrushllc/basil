@@ -41,8 +41,58 @@ SOFTWARE.
 //! Bytecode + values + function object + helpers (u16 jumps)
 use std::fmt;
 use std::rc::Rc;
+use std::cell::RefCell;
+use basil_common::Result;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ElemType { Num, Int, Str, Obj(Option<String>) }
+
+#[derive(Debug)]
+pub struct ArrayObj {
+    pub elem: ElemType,
+    pub dims: Vec<usize>, // lengths per dimension (0-based indices, inclusive upper bound yields length upper+1)
+    pub data: RefCell<Vec<Value>>,
+}
+
+// --- Object system core types ---
 
 #[derive(Debug, Clone)]
+pub struct PropDesc {
+    pub name: String,
+    pub type_name: String,
+    pub readable: bool,
+    pub writable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MethodDesc {
+    pub name: String,
+    pub arity: u8,
+    pub arg_names: Vec<String>,
+    pub return_type: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectDescriptor {
+    pub type_name: String,
+    pub version: String,
+    pub summary: String,
+    pub properties: Vec<PropDesc>,
+    pub methods: Vec<MethodDesc>,
+    pub examples: Vec<String>,
+}
+
+pub trait BasicObject {
+    fn type_name(&self) -> &str;
+    fn get_prop(&self, name: &str) -> Result<Value>;
+    fn set_prop(&mut self, name: &str, v: Value) -> Result<()>;
+    fn call(&mut self, method: &str, args: &[Value]) -> Result<Value>;
+    fn descriptor(&self) -> ObjectDescriptor;
+}
+
+pub type ObjectRef = Rc<RefCell<dyn BasicObject>>;
+
+#[derive(Clone)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -50,6 +100,8 @@ pub enum Value {
     Int(i64),
     Str(String),
     Func(Rc<Function>),
+    Array(Rc<ArrayObj>),
+    Object(ObjectRef),
 }
 
 impl PartialEq for Value {
@@ -61,6 +113,8 @@ impl PartialEq for Value {
             (Value::Int(a),  Value::Int(b))  => a == b,
             (Value::Str(a),  Value::Str(b))  => a == b,
             (Value::Func(a), Value::Func(b)) => Rc::ptr_eq(a, b),
+            (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
+            (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -76,6 +130,35 @@ impl fmt::Display for Value {
             Value::Int(i)  => write!(f, "{i}"),
             Value::Str(s)  => write!(f, "{s}"),
             Value::Func(fun) => write!(f, "<func {} /{}>", fun.name.as_deref().unwrap_or("_"), fun.arity),
+            Value::Array(arr_rc) => {
+                // show like <array Num 10x20>
+                let arr = arr_rc.as_ref();
+                let et = match &arr.elem { ElemType::Num => "Num".to_string(), ElemType::Int => "Int".to_string(), ElemType::Str => "Str".to_string(), ElemType::Obj(Some(t)) => t.clone(), ElemType::Obj(None) => "OBJECT".to_string() };
+                let dims = if arr.dims.is_empty() { "".to_string() } else { arr.dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x") };
+                write!(f, "<array {} {}>", et, dims)
+            }
+            Value::Object(obj_rc) => {
+                let obj = obj_rc.borrow();
+                write!(f, "<{}>", obj.type_name())
+            }
+        }
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Null => write!(f, "Null"),
+            Value::Bool(b) => write!(f, "Bool({b})"),
+            Value::Num(n) => write!(f, "Num({n})"),
+            Value::Int(i) => write!(f, "Int({i})"),
+            Value::Str(s) => write!(f, "Str(\"{}\")", s),
+            Value::Func(fun) => write!(f, "Func(name={:?}, arity={})", fun.name, fun.arity),
+            Value::Array(_) => write!(f, "Array(..)"),
+            Value::Object(obj_rc) => {
+                let obj = obj_rc.borrow();
+                write!(f, "Object(<{}>)", obj.type_name())
+            }
         }
     }
 }
@@ -113,6 +196,25 @@ pub enum Op {
     Pop   = 61,
     ToInt = 62,
     Builtin = 63,       // +u8 (builtin id), +u8 (argc)
+
+    // arrays
+    ArrMake = 70,       // +u8 (rank), +u8 (elemType: 0=Num,1=Int,2=Str,3=Object), +u8 (type-name const idx or 255 if none); then pops rank dims (upper bounds)
+    ArrGet  = 71,       // +u8 (rank) -- stack: [..., array, i0, i1, ...] -> push elem
+    ArrSet  = 72,       // +u8 (rank) -- stack: [..., array, i0, i1, ..., value] -> (store) no push
+
+    // objects (string-based slow path for names/types)
+    NewObj      = 80,   // +u8 (const index of type name), +u8 (argc). Stack: [..., args...] -> push object
+    GetProp     = 81,   // +u8 (const index of property name). Stack: [..., obj] -> push value
+    SetProp     = 82,   // +u8 (const index of property name). Stack: [..., obj, value] -> (store)
+    CallMethod  = 83,   // +u8 (const index of method name), +u8 (argc). Stack: [..., obj, args...] -> push ret
+    DescribeObj = 84,   // no extra. Stack: [..., obj or array] -> push string
+
+    // enumeration
+    EnumNew      = 90,  // expects iterable (array or object) on stack; pushes enumerator handle (object) or error
+    EnumMoveNext = 91,  // moves enumerator; pushes Bool
+    EnumCurrent  = 92,  // pushes current element Value
+    EnumDispose  = 93,  // best-effort cleanup
+
     Halt  = 255,
 }
 

@@ -68,10 +68,22 @@ impl Parser {
 
         if self.match_k(TokenKind::Let) {
             let name = self.expect_ident()?;
+            // Optional indices for array element assignment: name '(' exprlist ')'
+            let indices = if self.match_k(TokenKind::LParen) {
+                let mut idxs = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        idxs.push(self.parse_expr_bp(0)?);
+                        if !self.match_k(TokenKind::Comma) { break; }
+                    }
+                }
+                self.expect(TokenKind::RParen)?;
+                Some(idxs)
+            } else { None };
             self.expect(TokenKind::Assign)?;
             let init = self.parse_expr_bp(0)?;
             self.terminate_stmt()?;
-            return Ok(Stmt::Let { name, init });
+            return Ok(Stmt::Let { name, indices, init });
         }
 
         if self.match_k(TokenKind::Print) {
@@ -85,6 +97,12 @@ impl Parser {
             }
             self.terminate_stmt()?;
             return Ok(Stmt::Print { expr: e });
+        }
+
+        if self.match_k(TokenKind::Describe) {
+            let target = self.parse_expr_bp(0)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Describe { target });
         }
 
         if self.match_k(TokenKind::Return) {
@@ -101,24 +119,82 @@ impl Parser {
         if self.match_k(TokenKind::If) {
             let cond = self.parse_expr_bp(0)?;
             self.expect(TokenKind::Then)?;
-            let then_s = Box::new(self.parse_stmt()?);
-            let else_s = if self.match_k(TokenKind::Else) {
-                Some(Box::new(self.parse_stmt()?))
-            } else { None };
-            return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
+            // Support both single-statement and block IF forms.
+            // Block form: IF <cond> THEN BEGIN ... [ELSE ...] END
+            if self.match_k(TokenKind::Begin) {
+                // collect THEN block until ELSE or END
+                let mut then_body = Vec::new();
+                while !(self.check(TokenKind::Else) || self.check(TokenKind::End)) {
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated IF THEN BEGIN ...", self.peek_line()))); }
+                    then_body.push(self.parse_stmt()?);
+                }
+                let then_s = Box::new(Stmt::Block(then_body));
+                let else_s = if self.match_k(TokenKind::Else) {
+                    // Else can be BEGIN ... END or a single statement before END
+                    if self.match_k(TokenKind::Begin) {
+                        let mut else_body = Vec::new();
+                        while !self.match_k(TokenKind::End) {
+                            if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated ELSE BEGIN/END", self.peek_line()))); }
+                            else_body.push(self.parse_stmt()?);
+                        }
+                        Some(Box::new(Stmt::Block(else_body)))
+                    } else {
+                        let s = self.parse_stmt()?;
+                        // After a single-statement ELSE, require END to close the IF
+                        self.expect(TokenKind::End)?;
+                        Some(Box::new(s))
+                    }
+                } else {
+                    // No ELSE: require END to close the IF
+                    self.expect(TokenKind::End)?;
+                    None
+                };
+                return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
+            } else {
+                // Simple form: single statements for THEN and optional ELSE
+                let then_s = Box::new(self.parse_stmt()?);
+                let else_s = if self.match_k(TokenKind::Else) {
+                    Some(Box::new(self.parse_stmt()?))
+                } else { None };
+                return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
+            }
         }
 
         if self.match_k(TokenKind::Begin) {
             let mut inner = Vec::new();
             while !self.match_k(TokenKind::End) {
-                if self.check(TokenKind::Eof) { return Err(BasilError("unterminated BEGIN/END".into())); }
+                if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated BEGIN/END", self.peek_line()))); }
                 inner.push(self.parse_stmt()?);
             }
             return Ok(Stmt::Block(inner));
         }
 
         if self.match_k(TokenKind::For) {
-            // FOR var = start TO end [STEP step] <stmt-or-block> NEXT [var]
+            // Check FOR EACH form first
+            if self.match_k(TokenKind::Each) {
+                // FOR EACH ident IN expr <body> NEXT [ident]
+                let var = self.expect_ident()?;
+                self.expect(TokenKind::In)?;
+                let enumerable = self.parse_expr_bp(0)?;
+                // Body: either BEGIN..END or single statement
+                let body: Stmt = if self.match_k(TokenKind::Begin) {
+                    let mut inner = Vec::new();
+                    while !self.match_k(TokenKind::End) {
+                        if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH BEGIN/END", self.peek_line()))); }
+                        inner.push(self.parse_stmt()?);
+                    }
+                    Stmt::Block(inner)
+                } else {
+                    self.parse_stmt()?
+                };
+                // Expect NEXT [ident]
+                self.expect(TokenKind::Next)?;
+                if self.check(TokenKind::Ident) { let _ = self.next(); }
+                let _ = self.terminate_stmt();
+                return Ok(Stmt::ForEach { var, enumerable, body: Box::new(body) });
+            }
+
+            // Classic FOR var = start TO end [STEP step] <stmt-or-block> NEXT [var]
             let var = self.expect_ident()?;
             self.expect(TokenKind::Assign)?;
             let start = self.parse_expr_bp(0)?;
@@ -130,7 +206,7 @@ impl Parser {
             let body: Stmt = if self.match_k(TokenKind::Begin) {
                 let mut inner = Vec::new();
                 while !self.match_k(TokenKind::End) {
-                    if self.check(TokenKind::Eof) { return Err(BasilError("unterminated FOR BEGIN/END".into())); }
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR BEGIN/END", self.peek_line()))); }
                     inner.push(self.parse_stmt()?);
                 }
                 Stmt::Block(inner)
@@ -148,8 +224,64 @@ impl Parser {
             return Ok(Stmt::For { var, start, end, step, body: Box::new(body) });
         }
 
-        // Fallback: expression statement
+        if self.match_k(TokenKind::Dim) {
+            let name = self.expect_ident()?;
+            if self.match_k(TokenKind::LParen) {
+                let mut dims = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        dims.push(self.parse_expr_bp(0)?);
+                        if !self.match_k(TokenKind::Comma) { break; }
+                    }
+                }
+                self.expect(TokenKind::RParen)?;
+                // Optional: AS Type for object arrays
+                if self.match_k(TokenKind::As) {
+                    let tname = self.expect_ident()?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::DimObjectArray { name, dims, type_name: Some(tname) });
+                } else {
+                    // If name ends with '@', treat as untyped object array
+                    if name.ends_with('@') {
+                        self.terminate_stmt()?;
+                        return Ok(Stmt::DimObjectArray { name, dims, type_name: None });
+                    } else {
+                        self.terminate_stmt()?;
+                        return Ok(Stmt::Dim { name, dims });
+                    }
+                }
+            } else if self.match_k(TokenKind::As) {
+                let tname = self.expect_ident()?;
+                let mut args = Vec::new();
+                if self.match_k(TokenKind::LParen) {
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr_bp(0)?);
+                            if !self.match_k(TokenKind::Comma) { break; }
+                        }
+                    }
+                    self.expect(TokenKind::RParen)?;
+                }
+                self.terminate_stmt()?;
+                return Ok(Stmt::DimObject { name, type_name: tname, args });
+            } else {
+                return Err(BasilError(format!("parse error at line {}: expected '(' or AS after DIM name", self.peek_line())));
+            }
+        }
+
+        // Fallback: either member property assignment (without LET) or expression statement
         let e = self.parse_expr_bp(0)?;
+        if self.check(TokenKind::Assign) {
+            // Only allow assignment without LET for member property targets: obj.Prop = expr
+            if let Expr::MemberGet { target, name } = e.clone() {
+                let _ = self.next(); // consume '='
+                let value = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::SetProp { target: *target, prop: name, value });
+            } else {
+                return Err(BasilError(format!("parse error at line {}: assignment without LET is only allowed for object properties (obj.Prop = expr)", self.peek_line())));
+            }
+        }
         self.terminate_stmt()?;
         Ok(Stmt::ExprStmt(e))
     }
@@ -158,14 +290,14 @@ impl Parser {
     fn terminate_stmt(&mut self) -> Result<()> {
         if self.match_k(TokenKind::Semicolon) { return Ok(()); }
         if self.check(TokenKind::Eof) { return Ok(()); }
-        Err(BasilError("expected Semicolon".into()))
+        Err(BasilError(format!("parse error at line {}: expected Semicolon", self.peek_line())))
     }
 
     // Pratt parser with postfix call and comparisons
     fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr> {
         let mut lhs = self.parse_prefix()?;
 
-        // postfix calls (highest precedence)
+        // postfix calls and member access (highest precedence)
         loop {
             if self.match_k(TokenKind::LParen) {
                 let mut args = Vec::new();
@@ -177,6 +309,23 @@ impl Parser {
                 }
                 self.expect(TokenKind::RParen)?;
                 lhs = Expr::Call { callee: Box::new(lhs), args };
+                continue;
+            }
+            if self.match_k(TokenKind::Dot) {
+                let name = self.expect_ident()?;
+                if self.match_k(TokenKind::LParen) {
+                    let mut args = Vec::new();
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr_bp(0)?);
+                            if !self.match_k(TokenKind::Comma) { break; }
+                        }
+                    }
+                    self.expect(TokenKind::RParen)?;
+                    lhs = Expr::MemberCall { target: Box::new(lhs), method: name, args };
+                } else {
+                    lhs = Expr::MemberGet { target: Box::new(lhs), name };
+                }
                 continue;
             }
             break;
@@ -199,15 +348,21 @@ impl Parser {
             let e = self.parse_expr_bp(80)?;
             return Ok(Expr::UnaryNeg(Box::new(e)));
         }
+        if self.match_k(TokenKind::Not) {
+            let e = self.parse_expr_bp(80)?;
+            return Ok(Expr::UnaryNot(Box::new(e)));
+        }
         match self.peek_kind() {
             Some(TokenKind::Number) => {
                 let t = self.next().unwrap();
-                if let Some(Literal::Num(n)) = t.literal { Ok(Expr::Number(n)) } else { Err(BasilError("number literal missing".into())) }
+                if let Some(Literal::Num(n)) = t.literal { Ok(Expr::Number(n)) } else { Err(BasilError(format!("parse error at line {}: number literal missing", t.line))) }
             }
             Some(TokenKind::String) => {
                 let t = self.next().unwrap();
-                if let Some(Literal::Str(s)) = t.literal { Ok(Expr::Str(s)) } else { Err(BasilError("string literal missing".into())) }
+                if let Some(Literal::Str(s)) = t.literal { Ok(Expr::Str(s)) } else { Err(BasilError(format!("parse error at line {}: string literal missing", t.line))) }
             }
+            Some(TokenKind::True) => { let _ = self.next().unwrap(); Ok(Expr::Bool(true)) }
+            Some(TokenKind::False) => { let _ = self.next().unwrap(); Ok(Expr::Bool(false)) }
             Some(TokenKind::Author) => {
                 // Consume AUTHOR token
                 let _ = self.next().unwrap();
@@ -218,8 +373,23 @@ impl Parser {
                 Ok(Expr::Str("Erik Olson".to_string()))
             }
             Some(TokenKind::Ident) => Ok(Expr::Var(self.next().unwrap().lexeme)),
+            Some(TokenKind::New) => {
+                // NEW Type(args)
+                let _ = self.next().unwrap();
+                let type_name = self.expect_ident()?;
+                self.expect(TokenKind::LParen)?;
+                let mut args = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        args.push(self.parse_expr_bp(0)?);
+                        if !self.match_k(TokenKind::Comma) { break; }
+                    }
+                }
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::NewObject { type_name, args })
+            }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
-            other => Err(BasilError(format!("unexpected token in expression: {:?}", other))),
+            other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
         }
     }
 
@@ -236,11 +406,11 @@ impl Parser {
         self.expect(TokenKind::RParen)?;
         // function body is a block: BEGIN ... END
         if !self.match_k(TokenKind::Begin) {
-            return Err(BasilError("expected BEGIN after function header".into()));
+            return Err(BasilError(format!("parse error at line {}: expected BEGIN after function header", self.peek_line())));
         }
         let mut body = Vec::new();
         while !self.match_k(TokenKind::End) {
-            if self.check(TokenKind::Eof) { return Err(BasilError("unterminated function body".into())); }
+            if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated function body", self.peek_line()))); }
             body.push(self.parse_stmt()?);
         }
         Ok(Stmt::Func { name, params, body })
@@ -248,7 +418,10 @@ impl Parser {
 
     fn peek_binop_bp(&self) -> Option<(BinOp, u8, u8)> {
         match self.peek_kind()? {
-            // comparisons (lower precedence)
+            // logical (lowest precedence)
+            TokenKind::Or => Some((BinOp::Or, 20, 21)),
+            TokenKind::And => Some((BinOp::And, 30, 31)),
+            // comparisons
             TokenKind::EqEq => Some((BinOp::Eq, 40, 41)),
             TokenKind::BangEq => Some((BinOp::Ne, 40, 41)),
             TokenKind::Lt => Some((BinOp::Lt, 50, 51)),
@@ -267,13 +440,14 @@ impl Parser {
 
     // small helpers
     fn expect(&mut self, k: TokenKind) -> Result<Token> {
-        if self.check(k.clone()) { Ok(self.next().unwrap()) } else { Err(BasilError(format!("expected {:?}", k))) }
+        if self.check(k.clone()) { Ok(self.next().unwrap()) } else { Err(BasilError(format!("parse error at line {}: expected {:?}", self.peek_line(), k))) }
     }
     fn expect_ident(&mut self) -> Result<String> {
-        if self.check(TokenKind::Ident) { Ok(self.next().unwrap().lexeme) } else { Err(BasilError("expected identifier".into())) }
+        if self.check(TokenKind::Ident) { Ok(self.next().unwrap().lexeme) } else { Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))) }
     }
     fn check(&self, k: TokenKind) -> bool { self.peek_kind() == Some(k) }
     fn match_k(&mut self, k: TokenKind) -> bool { if self.check(k) { self.next(); true } else { false } }
     fn peek_kind(&self) -> Option<TokenKind> { self.tokens.get(self.i).map(|t| t.kind.clone()) }
+    fn peek_line(&self) -> u32 { self.tokens.get(self.i).map(|t| t.line).unwrap_or(0) }
     fn next(&mut self) -> Option<Token> { let t = self.tokens.get(self.i).cloned(); if t.is_some() { self.i+=1; } t }
 }
