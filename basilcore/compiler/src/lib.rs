@@ -119,6 +119,19 @@ impl C {
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
                 chunk.push_u8(et);
+                // primitive arrays: emit placeholder type-name const index 255
+                chunk.push_u8(255u8);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.chunk = chunk;
+            }
+            Stmt::DimObjectArray { name, dims, type_name } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                for d in dims { self.emit_expr_in(&mut chunk, d, None)?; }
+                chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
+                chunk.push_u8(3u8); // object array
+                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 255u8 };
+                chunk.push_u8(tci);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.chunk = chunk;
@@ -174,6 +187,36 @@ impl C {
             Stmt::If { cond, then_branch, else_branch } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 self.emit_if_tl_into(&mut chunk, cond, then_branch, else_branch)?;
+                self.chunk = chunk;
+            }
+
+            // FOR EACH at toplevel
+            Stmt::ForEach { var, enumerable, body } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                // Evaluate enumerable and create enumerator
+                self.emit_expr_in(&mut chunk, enumerable, None)?;
+                chunk.push_op(Op::EnumNew);
+                // test label
+                let test_here = chunk.here();
+                chunk.push_op(Op::EnumMoveNext);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_end = chunk.emit_u16_placeholder();
+                // current element -> assign to loop var
+                chunk.push_op(Op::EnumCurrent);
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
+                let g = self.gslot(var);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                // body
+                self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
+                // jump back to test
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
+                // end label
+                let end_here = chunk.here();
+                let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                // dispose enumerator (pops handle)
+                chunk.push_op(Op::EnumDispose);
                 self.chunk = chunk;
             }
 
@@ -319,6 +362,17 @@ impl C {
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
                 chunk.push_u8(et);
+                // primitive arrays: emit placeholder type-name const index 255
+                chunk.push_u8(255u8);
+                let slot = env.bind_next_if_absent(name.clone());
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+            }
+            Stmt::DimObjectArray { name, dims, type_name } => {
+                for d in dims { self.emit_expr_in(chunk, d, Some(env))?; }
+                chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
+                chunk.push_u8(3u8);
+                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 255u8 };
+                chunk.push_u8(tci);
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
@@ -365,6 +419,35 @@ impl C {
                 for s2 in stmts { self.emit_stmt_func(chunk, s2, env)?; }
             }
             Stmt::Func { .. } => { /* no nested funcs in MVP */ }
+            Stmt::ForEach { var, enumerable, body } => {
+                // Evaluate enumerable and create enumerator
+                self.emit_expr_in(chunk, enumerable, Some(env))?;
+                chunk.push_op(Op::EnumNew);
+                // test
+                let test_here = chunk.here();
+                chunk.push_op(Op::EnumMoveNext);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_end = chunk.emit_u16_placeholder();
+                // current -> assign to loop var (local if exists else global)
+                chunk.push_op(Op::EnumCurrent);
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
+                if let Some(slot) = env.lookup(var) {
+                    chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                } else {
+                    let g = self.gslot(var);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                }
+                // body
+                self.emit_stmt_func(chunk, body, env)?;
+                // back to test
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
+                // end
+                let end_here = chunk.here();
+                let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                chunk.push_op(Op::EnumDispose);
+            }
             Stmt::For { var, start, end, step, body } => {
                 // init var
                 self.emit_expr_in(chunk, start, Some(env))?;
@@ -646,6 +729,7 @@ impl C {
                         "INPUT" => Some(6u8), // alias for convenience
                         "INKEY$" => Some(7u8),
                         "INKEY%" => Some(8u8),
+                        "TYPE$" => Some(9u8),
                         _ => None,
                     };
                     if let Some(id) = bid {
@@ -690,6 +774,11 @@ impl C {
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 let ci = chunk.add_const(Value::Str(method.clone()));
                 chunk.push_op(Op::CallMethod); chunk.push_u8(ci); chunk.push_u8(args.len() as u8);
+            }
+            Expr::NewObject { type_name, args } => {
+                for a in args { self.emit_expr_in(chunk, a, env)?; }
+                let tci = chunk.add_const(Value::Str(type_name.clone()));
+                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
             }
         }
         Ok(())
@@ -761,6 +850,17 @@ impl C {
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
                 chunk.push_u8(et);
+                // primitive arrays: emit placeholder type-name const index 255
+                chunk.push_u8(255u8);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+            }
+            Stmt::DimObjectArray { name, dims, type_name } => {
+                for d in dims { self.emit_expr_in(chunk, d, None)?; }
+                chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
+                chunk.push_u8(3u8);
+                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 255u8 };
+                chunk.push_u8(tci);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }
@@ -804,6 +904,26 @@ impl C {
                 chunk.push_u8(idx);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+            }
+            Stmt::ForEach { var, enumerable, body } => {
+                // Evaluate enumerable and create enumerator
+                self.emit_expr_in(chunk, enumerable, None)?;
+                chunk.push_op(Op::EnumNew);
+                let test_here = chunk.here();
+                chunk.push_op(Op::EnumMoveNext);
+                chunk.push_op(Op::JumpIfFalse);
+                let j_end = chunk.emit_u16_placeholder();
+                chunk.push_op(Op::EnumCurrent);
+                if var.ends_with('%') { chunk.push_op(Op::ToInt); }
+                let g = self.gslot(var);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.emit_stmt_tl_in_chunk(chunk, body)?;
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
+                let end_here = chunk.here();
+                let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                chunk.push_op(Op::EnumDispose);
             }
             Stmt::For { var, start, end, step, body } => {
                 self.emit_for_toplevel_into(chunk, var, start, end, step, body)?;
