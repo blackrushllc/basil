@@ -45,6 +45,7 @@ pub enum TokenKind {
     // Single-char
     LParen, RParen, Comma, Semicolon,
     Plus, Minus, Star, Slash,
+    Dot,
     Lt, Gt, Assign,        // '<' '>' '='
     // Two-char
     EqEq, BangEq, LtEq, GtEq,
@@ -56,6 +57,11 @@ pub enum TokenKind {
     Author,
     // New for FOR loop support
     For, To, Step, Next,
+    Each, In, Foreach, Endfor,
+    Dim,
+    As,
+    Describe,
+    New,
     Eof,
 }
 
@@ -68,6 +74,7 @@ pub struct Token {
     pub lexeme: String,
     pub literal: Option<Literal>,
     pub span: Span,
+    pub line: u32,
 }
 
 pub struct Lexer<'a> {
@@ -76,11 +83,13 @@ pub struct Lexer<'a> {
     cur:   Option<char>,
     pos:   usize, // byte offset *after* `cur`
     start: usize, // byte offset start of current token
+    line:  usize, // 1-based current line number
+    tok_line: usize, // line number at start of current token
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0 };
+        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0, line: 1, tok_line: 1 };
         l.advance(); // prime `cur` and `pos`
         l
     }
@@ -98,6 +107,9 @@ impl<'a> Lexer<'a> {
 
     fn next_token(&mut self) -> Result<Token> {
         self.skip_ws_and_comments();
+
+        // Record the line number at the start of the token (or EOF)
+        self.tok_line = self.line;
 
         // If no current char, emit EOF
         let ch = match self.cur {
@@ -119,6 +131,7 @@ impl<'a> Lexer<'a> {
             '-' => { let tok = self.make(TokenKind::Minus);     self.advance(); Ok(tok) }
             '*' => { let tok = self.make(TokenKind::Star);      self.advance(); Ok(tok) }
             '/' => { let tok = self.make(TokenKind::Slash);     self.advance(); Ok(tok) }
+            '.' => { let tok = self.make(TokenKind::Dot);       self.advance(); Ok(tok) }
 
             // --- two-char possibilities: keep existing logic ---
             '=' => {
@@ -160,6 +173,7 @@ impl<'a> Lexer<'a> {
             lexeme: self.src[start..end].to_string(),
             literal: None,
             span: Span::new(start, end),
+            line: self.tok_line as u32,
         }
     }
 
@@ -266,6 +280,14 @@ impl<'a> Lexer<'a> {
             "TO"     => TokenKind::To,
             "STEP"   => TokenKind::Step,
             "NEXT"   => TokenKind::Next,
+            "EACH"   => TokenKind::Each,
+            "IN"     => TokenKind::In,
+            "FOREACH"=> TokenKind::Foreach,
+            "ENDFOR" => TokenKind::Endfor,
+            "DIM"    => TokenKind::Dim,
+            "AS"     => TokenKind::As,
+            "DESCRIBE" => TokenKind::Describe,
+            "NEW"    => TokenKind::New,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))
@@ -297,6 +319,31 @@ impl<'a> Lexer<'a> {
                     }
                 }
 
+                // Preprocessor-like directives starting with '#': treat as comment line (e.g., #USE ...)
+                Some('#') => {
+                    while let Some(ch) = self.cur {
+                        if ch == '\n' { break; }
+                        self.advance();
+                    }
+                }
+
+                // BASIC-style REM comment (case-insensitive): skip 'REM' and rest of line
+                Some('R') | Some('r') => {
+                    let mut it = self.chars.clone();
+                    let n1 = it.next();
+                    let n2 = it.next();
+                    if matches!(n1, Some('E') | Some('e')) && matches!(n2, Some('M') | Some('m')) {
+                        // consume R E M
+                        self.advance(); self.advance(); self.advance();
+                        while let Some(ch) = self.cur {
+                            if ch == '\n' { break; }
+                            self.advance();
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
                 _ => break,
             }
         }
@@ -306,6 +353,7 @@ impl<'a> Lexer<'a> {
     fn advance(&mut self) {
         self.cur = self.chars.next();
         if let Some(c) = self.cur {
+            if c == '\n' { self.line += 1; }
             self.pos += c.len_utf8();
         } else {
             self.pos = self.src.len();
@@ -322,4 +370,4 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_ident_start(c: char) -> bool { c.is_ascii_alphabetic() || c == '_' }
-fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' }
+fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' }

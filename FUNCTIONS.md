@@ -175,3 +175,56 @@ FOR j = 5 TO 1 STEP -1 BEGIN
     PRINT j;
 END NEXT j;
 ```
+
+# Arrays
+ - Syntax:
+  - DIM <ident> ( <sizeExpr> )
+  - DIM ident ( <sizeExpr>, <sizeExpr> )
+  - Arrays can be one-dimensional or two-dimensional.
+  - Arrays are zero-indexed.
+  - Array data types are String( A$(100) ), Integer( A%(100) ), and Float( A(100) ).
+  - Arrays are initialized to null.
+- Examples:
+```
+DIM A(10)          ; one-dimensional array of Float
+DIM B%(5, 5)      ; two-dimensional array of Integer
+DIM C$(20)        ; one-dimensional array of String   
+
+A(0) = 1.23
+A(1) = 4.56
+A(2) = 7.89
+
+PRINT A(0)
+```
+
+```
+REM Arrays example for BASIL /examples/arrays.basil
+REM Demonstrates DIM for string ($), integer (%), and float arrays, with up to 2 dimensions
+
+REM --- 1D integer array (0..5 inclusive => length 6) ---
+DIM N%(5);
+LET N%(0) = 10;
+LET N%(5) = 99;
+PRINT "N%(0)=", N%(0), ", N%(5)=", N%(5);
+PRINT "LEN(N%)=", LEN(N%);
+
+REM --- 1D float array (0..3 inclusive => length 4) ---
+DIM X(3);
+LET X(0) = 1.5;
+LET X(3) = 2.5;
+PRINT "X(0)=", X(0), ", X(3)=", X(3);
+PRINT "LEN(X)=", LEN(X);
+
+REM --- 2D string array (0..2 by 0..1 => 3 x 2 = 6 elements) ---
+DIM S$(2,1);
+LET S$(0,0) = "Hello";
+LET S$(2,1) = "World";
+PRINT "S$(0,0)=", S$(0,0), ", S$(2,1)=", S$(2,1);
+PRINT "LEN(S$)=", LEN(S$);
+
+REM Show that re-DIM resets the array
+DIM S$(1,0); REM now capacity is 2 x 1 = 2 elements, previous contents cleared
+LET S$(1,0) = "Reset";
+PRINT "After re-DIM, LEN(S$)=", LEN(S$), "; S$(1,0)=", S$(1,0);
+
+```

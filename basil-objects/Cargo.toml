@@ -1,0 +1,18 @@
+[package]
+name = "basil-objects"
+version = "0.1.0"
+authors = ["Blackrush LLC"]
+edition = "2021"
+
+[lib]
+name = "basil_objects"
+path = "src/lib.rs"
+
+[features]
+obj-bmx-rider = []
+obj-bmx-team = []
+obj-bmx = ["obj-bmx-rider", "obj-bmx-team"]
+
+[dependencies]
+basil-common = { workspace = true }
+basil-bytecode = { workspace = true }

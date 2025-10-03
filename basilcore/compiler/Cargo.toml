@@ -5,6 +5,6 @@ edition = "2021"
 
 
 [dependencies]
-basil-common = { path = "../common" }
-basil-ast = { path = "../ast" }
-basil-bytecode= { path = "../bytecode" }
+basil-common = { workspace = true }
+basil-ast = { workspace = true }
+basil-bytecode= { workspace = true }
