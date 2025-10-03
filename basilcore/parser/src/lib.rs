@@ -119,11 +119,45 @@ impl Parser {
         if self.match_k(TokenKind::If) {
             let cond = self.parse_expr_bp(0)?;
             self.expect(TokenKind::Then)?;
-            let then_s = Box::new(self.parse_stmt()?);
-            let else_s = if self.match_k(TokenKind::Else) {
-                Some(Box::new(self.parse_stmt()?))
-            } else { None };
-            return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
+            // Support both single-statement and block IF forms.
+            // Block form: IF <cond> THEN BEGIN ... [ELSE ...] END
+            if self.match_k(TokenKind::Begin) {
+                // collect THEN block until ELSE or END
+                let mut then_body = Vec::new();
+                while !(self.check(TokenKind::Else) || self.check(TokenKind::End)) {
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated IF THEN BEGIN ...", self.peek_line()))); }
+                    then_body.push(self.parse_stmt()?);
+                }
+                let then_s = Box::new(Stmt::Block(then_body));
+                let else_s = if self.match_k(TokenKind::Else) {
+                    // Else can be BEGIN ... END or a single statement before END
+                    if self.match_k(TokenKind::Begin) {
+                        let mut else_body = Vec::new();
+                        while !self.match_k(TokenKind::End) {
+                            if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated ELSE BEGIN/END", self.peek_line()))); }
+                            else_body.push(self.parse_stmt()?);
+                        }
+                        Some(Box::new(Stmt::Block(else_body)))
+                    } else {
+                        let s = self.parse_stmt()?;
+                        // After a single-statement ELSE, require END to close the IF
+                        self.expect(TokenKind::End)?;
+                        Some(Box::new(s))
+                    }
+                } else {
+                    // No ELSE: require END to close the IF
+                    self.expect(TokenKind::End)?;
+                    None
+                };
+                return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
+            } else {
+                // Simple form: single statements for THEN and optional ELSE
+                let then_s = Box::new(self.parse_stmt()?);
+                let else_s = if self.match_k(TokenKind::Else) {
+                    Some(Box::new(self.parse_stmt()?))
+                } else { None };
+                return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
+            }
         }
 
         if self.match_k(TokenKind::Begin) {
