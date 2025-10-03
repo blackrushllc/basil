@@ -5,4 +5,4 @@ edition = "2021"
 
 
 [dependencies]
-basil-common = { path = "../common" }
+basil-common = { workspace = true }

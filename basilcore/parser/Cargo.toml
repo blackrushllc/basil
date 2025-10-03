@@ -5,6 +5,6 @@ edition = "2021"
 
 
 [dependencies]
-basil-common = { path = "../common" }
-basil-lexer = { path = "../lexer" }
-basil-ast = { path = "../ast" }
+basil-common = { workspace = true }
+basil-lexer = { workspace = true }
+basil-ast = { workspace = true }

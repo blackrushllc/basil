@@ -5,12 +5,12 @@ edition = "2021"
 
 
 [dependencies]
-basil-lexer = { path = "../basilcore/lexer" }
-basil-common = { path = "../basilcore/common" }
+basil-lexer = { workspace = true }
+basil-common = { workspace = true }
 # New deps for end-to-end run:
-basil-parser = { path = "../basilcore/parser" }
-basil-compiler= { path = "../basilcore/compiler" }
-basil-vm = { path = "../basilcore/vm" }
+basil-parser = { workspace = true }
+basil-compiler= { workspace = true }
+basil-vm = { workspace = true }
 
 [features]
 obj-bmx = ["basil-vm/obj-bmx"]

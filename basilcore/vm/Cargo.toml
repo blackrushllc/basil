@@ -5,9 +5,9 @@ edition = "2021"
 
 
 [dependencies]
-basil-common = { path = "../common" }
-basil-bytecode = { path = "../bytecode" }
-basil-objects = { path = "..\\..\\basil-objects" }
+basil-common = { workspace = true }
+basil-bytecode = { workspace = true }
+basil-objects = { workspace = true }
 crossterm = "0.27"
 
 [features]
