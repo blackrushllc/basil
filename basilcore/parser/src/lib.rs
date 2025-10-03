@@ -311,6 +311,10 @@ impl Parser {
             let e = self.parse_expr_bp(80)?;
             return Ok(Expr::UnaryNeg(Box::new(e)));
         }
+        if self.match_k(TokenKind::Not) {
+            let e = self.parse_expr_bp(80)?;
+            return Ok(Expr::UnaryNot(Box::new(e)));
+        }
         match self.peek_kind() {
             Some(TokenKind::Number) => {
                 let t = self.next().unwrap();
@@ -320,6 +324,8 @@ impl Parser {
                 let t = self.next().unwrap();
                 if let Some(Literal::Str(s)) = t.literal { Ok(Expr::Str(s)) } else { Err(BasilError(format!("parse error at line {}: string literal missing", t.line))) }
             }
+            Some(TokenKind::True) => { let _ = self.next().unwrap(); Ok(Expr::Bool(true)) }
+            Some(TokenKind::False) => { let _ = self.next().unwrap(); Ok(Expr::Bool(false)) }
             Some(TokenKind::Author) => {
                 // Consume AUTHOR token
                 let _ = self.next().unwrap();
@@ -360,7 +366,10 @@ impl Parser {
 
     fn peek_binop_bp(&self) -> Option<(BinOp, u8, u8)> {
         match self.peek_kind()? {
-            // comparisons (lower precedence)
+            // logical (lowest precedence)
+            TokenKind::Or => Some((BinOp::Or, 20, 21)),
+            TokenKind::And => Some((BinOp::And, 30, 31)),
+            // comparisons
             TokenKind::EqEq => Some((BinOp::Eq, 40, 41)),
             TokenKind::BangEq => Some((BinOp::Ne, 40, 41)),
             TokenKind::Lt => Some((BinOp::Lt, 50, 51)),
