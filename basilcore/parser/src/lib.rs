@@ -160,6 +160,21 @@ impl Parser {
             }
         }
 
+        // WHILE <expr> BEGIN ... END
+        if self.match_k(TokenKind::While) {
+            let cond = self.parse_expr_bp(0)?;
+            self.expect(TokenKind::Begin)?;
+            let mut body = Vec::new();
+            while !self.match_k(TokenKind::End) {
+                if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated WHILE BEGIN/END", self.peek_line()))); }
+                body.push(self.parse_stmt()?);
+            }
+            return Ok(Stmt::While { cond, body: Box::new(Stmt::Block(body)) });
+        }
+
+        if self.match_k(TokenKind::Break) { self.terminate_stmt()?; return Ok(Stmt::Break); }
+        if self.match_k(TokenKind::Continue) { self.terminate_stmt()?; return Ok(Stmt::Continue); }
+
         if self.match_k(TokenKind::Begin) {
             let mut inner = Vec::new();
             while !self.match_k(TokenKind::End) {
