@@ -8,6 +8,7 @@ members = [
     "basilcore/bytecode",
     "basilcore/compiler",
     "basilcore/vm",
+    "basil-objects",
 ]
 resolver = "2"
 
