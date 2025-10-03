@@ -57,9 +57,11 @@ pub enum TokenKind {
     Author,
     // New for FOR loop support
     For, To, Step, Next,
+    Each, In, Foreach, Endfor,
     Dim,
     As,
     Describe,
+    New,
     Eof,
 }
 
@@ -278,9 +280,14 @@ impl<'a> Lexer<'a> {
             "TO"     => TokenKind::To,
             "STEP"   => TokenKind::Step,
             "NEXT"   => TokenKind::Next,
+            "EACH"   => TokenKind::Each,
+            "IN"     => TokenKind::In,
+            "FOREACH"=> TokenKind::Foreach,
+            "ENDFOR" => TokenKind::Endfor,
             "DIM"    => TokenKind::Dim,
             "AS"     => TokenKind::As,
             "DESCRIBE" => TokenKind::Describe,
+            "NEW"    => TokenKind::New,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))
