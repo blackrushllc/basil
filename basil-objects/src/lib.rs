@@ -45,6 +45,16 @@ impl Registry {
     }
 }
 
+// Describe this function: it registers all the objects in the registry.
+// This is the only function that should be called from the compiler.
+// The compiler will call this function with the appropriate registry.
+// The compiler will also call this function with a null registry,
+// which is used for testing.
+
+// Example: cargo run --features obj-bmx-rider --features obj-bmx-team -- run examples\objects.basil
+// Example: cargo run -q -p basilc --features obj-bmx -- run examples\objects.basil
+
+
 pub fn register_objects(_reg: &mut Registry) {
     // conditional registrations
     #[cfg(feature = "obj-bmx-rider")]
