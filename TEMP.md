@@ -144,6 +144,4 @@ NEXT
 * [ ] `DESCRIBE` and `TYPE$` show array element types and dims.
 * [ ] CI passes with and without object features enabled.
 
----
 
-If you want, I can also give you a one-file language spec snippet for `FOR EACH` (syntax + examples + exact diagnostics) to drop into your docs.

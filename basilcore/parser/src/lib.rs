@@ -170,7 +170,31 @@ impl Parser {
         }
 
         if self.match_k(TokenKind::For) {
-            // FOR var = start TO end [STEP step] <stmt-or-block> NEXT [var]
+            // Check FOR EACH form first
+            if self.match_k(TokenKind::Each) {
+                // FOR EACH ident IN expr <body> NEXT [ident]
+                let var = self.expect_ident()?;
+                self.expect(TokenKind::In)?;
+                let enumerable = self.parse_expr_bp(0)?;
+                // Body: either BEGIN..END or single statement
+                let body: Stmt = if self.match_k(TokenKind::Begin) {
+                    let mut inner = Vec::new();
+                    while !self.match_k(TokenKind::End) {
+                        if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH BEGIN/END", self.peek_line()))); }
+                        inner.push(self.parse_stmt()?);
+                    }
+                    Stmt::Block(inner)
+                } else {
+                    self.parse_stmt()?
+                };
+                // Expect NEXT [ident]
+                self.expect(TokenKind::Next)?;
+                if self.check(TokenKind::Ident) { let _ = self.next(); }
+                let _ = self.terminate_stmt();
+                return Ok(Stmt::ForEach { var, enumerable, body: Box::new(body) });
+            }
+
+            // Classic FOR var = start TO end [STEP step] <stmt-or-block> NEXT [var]
             let var = self.expect_ident()?;
             self.expect(TokenKind::Assign)?;
             let start = self.parse_expr_bp(0)?;
@@ -211,8 +235,21 @@ impl Parser {
                     }
                 }
                 self.expect(TokenKind::RParen)?;
-                self.terminate_stmt()?;
-                return Ok(Stmt::Dim { name, dims });
+                // Optional: AS Type for object arrays
+                if self.match_k(TokenKind::As) {
+                    let tname = self.expect_ident()?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::DimObjectArray { name, dims, type_name: Some(tname) });
+                } else {
+                    // If name ends with '@', treat as untyped object array
+                    if name.ends_with('@') {
+                        self.terminate_stmt()?;
+                        return Ok(Stmt::DimObjectArray { name, dims, type_name: None });
+                    } else {
+                        self.terminate_stmt()?;
+                        return Ok(Stmt::Dim { name, dims });
+                    }
+                }
             } else if self.match_k(TokenKind::As) {
                 let tname = self.expect_ident()?;
                 let mut args = Vec::new();
@@ -336,6 +373,21 @@ impl Parser {
                 Ok(Expr::Str("Erik Olson".to_string()))
             }
             Some(TokenKind::Ident) => Ok(Expr::Var(self.next().unwrap().lexeme)),
+            Some(TokenKind::New) => {
+                // NEW Type(args)
+                let _ = self.next().unwrap();
+                let type_name = self.expect_ident()?;
+                self.expect(TokenKind::LParen)?;
+                let mut args = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        args.push(self.parse_expr_bp(0)?);
+                        if !self.match_k(TokenKind::Comma) { break; }
+                    }
+                }
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::NewObject { type_name, args })
+            }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
         }

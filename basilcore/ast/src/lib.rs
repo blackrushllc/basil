@@ -54,6 +54,8 @@ pub enum Expr {
     // Object member access and method calls
     MemberGet { target: Box<Expr>, name: String },
     MemberCall { target: Box<Expr>, method: String, args: Vec<Expr> },
+    // NEW TYPE(args) expression
+    NewObject { type_name: String, args: Vec<Expr> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,11 +71,13 @@ pub enum Stmt {
     Let   { name: String, indices: Option<Vec<Expr>>, init: Expr },
     // DIM statement to create arrays (1–4 dimensions)
     Dim   { name: String, dims: Vec<Expr> },
-    // DIM x@ AS TYPE(args?)
+    // DIM x@ AS TYPE(args?) (scalar object)
     DimObject { name: String, type_name: String, args: Vec<Expr> },
+    // DIM arr@(dims) [AS Type] (object arrays)
+    DimObjectArray { name: String, dims: Vec<Expr>, type_name: Option<String> },
     // Property set: obj.Prop = expr (without LET)
     SetProp { target: Expr, prop: String, value: Expr },
-    // DESCRIBE obj
+    // DESCRIBE obj or array
     Describe { target: Expr },
     Print { expr: Expr },
     ExprStmt(Expr),
@@ -82,6 +86,8 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     Func { name: String, params: Vec<String>, body: Vec<Stmt> },
     For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
+    // FOR EACH var IN expr ... NEXT
+    ForEach { var: String, enumerable: Expr, body: Box<Stmt> },
 }
 
 pub type Program = Vec<Stmt>;
