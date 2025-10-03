@@ -17,3 +17,13 @@ edition = "2021"
 version = "0.0.1"
 license = "MIT"
 # (no `name` here)
+
+[workspace.dependencies]
+basil-ast       = { path = "basilcore/ast" }
+basil-lexer     = { path = "basilcore/lexer" }
+basil-parser    = { path = "basilcore/parser" }
+basil-compiler  = { path = "basilcore/compiler" }
+basil-vm        = { path = "basilcore/vm" }
+basil-objects   = { path = "basil-objects" }
+basil-common    = { path = "basilcore/common" }
+basil-bytecode  = { path = "basilcore/bytecode" }
