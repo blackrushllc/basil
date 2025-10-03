@@ -49,4 +49,6 @@ IF ans$ == "Y" THEN BEGIN
   PRINT DESCRIBE$(r1@);
   PRINT "\n--- DESCRIBE t@ ---";
   DESCRIBE t@;
+//ELSE
+//  PRINT "Okay then\n";
 END
