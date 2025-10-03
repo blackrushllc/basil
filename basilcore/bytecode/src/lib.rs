@@ -45,7 +45,7 @@ use std::cell::RefCell;
 use basil_common::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ElemType { Num, Int, Str }
+pub enum ElemType { Num, Int, Str, Obj(Option<String>) }
 
 #[derive(Debug)]
 pub struct ArrayObj {
@@ -133,7 +133,7 @@ impl fmt::Display for Value {
             Value::Array(arr_rc) => {
                 // show like <array Num 10x20>
                 let arr = arr_rc.as_ref();
-                let et = match arr.elem { ElemType::Num => "Num", ElemType::Int => "Int", ElemType::Str => "Str" };
+                let et = match &arr.elem { ElemType::Num => "Num".to_string(), ElemType::Int => "Int".to_string(), ElemType::Str => "Str".to_string(), ElemType::Obj(Some(t)) => t.clone(), ElemType::Obj(None) => "OBJECT".to_string() };
                 let dims = if arr.dims.is_empty() { "".to_string() } else { arr.dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x") };
                 write!(f, "<array {} {}>", et, dims)
             }
@@ -198,7 +198,7 @@ pub enum Op {
     Builtin = 63,       // +u8 (builtin id), +u8 (argc)
 
     // arrays
-    ArrMake = 70,       // +u8 (rank), +u8 (elemType: 0=Num,1=Int,2=Str); pops rank dims (upper bounds)
+    ArrMake = 70,       // +u8 (rank), +u8 (elemType: 0=Num,1=Int,2=Str,3=Object), +u8 (type-name const idx or 255 if none); then pops rank dims (upper bounds)
     ArrGet  = 71,       // +u8 (rank) -- stack: [..., array, i0, i1, ...] -> push elem
     ArrSet  = 72,       // +u8 (rank) -- stack: [..., array, i0, i1, ..., value] -> (store) no push
 
@@ -207,7 +207,13 @@ pub enum Op {
     GetProp     = 81,   // +u8 (const index of property name). Stack: [..., obj] -> push value
     SetProp     = 82,   // +u8 (const index of property name). Stack: [..., obj, value] -> (store)
     CallMethod  = 83,   // +u8 (const index of method name), +u8 (argc). Stack: [..., obj, args...] -> push ret
-    DescribeObj = 84,   // no extra. Stack: [..., obj] -> push string
+    DescribeObj = 84,   // no extra. Stack: [..., obj or array] -> push string
+
+    // enumeration
+    EnumNew      = 90,  // expects iterable (array or object) on stack; pushes enumerator handle (object) or error
+    EnumMoveNext = 91,  // moves enumerator; pushes Bool
+    EnumCurrent  = 92,  // pushes current element Value
+    EnumDispose  = 93,  // best-effort cleanup
 
     Halt  = 255,
 }
