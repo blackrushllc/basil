@@ -44,8 +44,10 @@ SOFTWARE.
 pub enum Expr {
     Number(f64),
     Str(String),
+    Bool(bool),
     Var(String),
     UnaryNeg(Box<Expr>),
+    UnaryNot(Box<Expr>),
     Binary { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr> },
     // Postfix parentheses used for either function calls or array indexing (disambiguated in compiler)
     Call { callee: Box<Expr>, args: Vec<Expr> },
@@ -58,6 +60,7 @@ pub enum Expr {
 pub enum BinOp {
     Add, Sub, Mul, Div,
     Eq, Ne, Lt, Le, Gt, Ge,
+    And, Or,
 }
 
 #[derive(Debug, Clone)]
