@@ -511,6 +511,10 @@ impl C {
                 let idx = chunk.add_const(Value::Str(s.clone()));
                 chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
             }
+            Expr::Bool(b) => {
+                let idx = chunk.add_const(Value::Bool(*b));
+                chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+            }
             Expr::Var(name) => {
                 // Minimal constants for object features
                 let uname = name.to_ascii_uppercase();
@@ -533,14 +537,92 @@ impl C {
                 chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
             }
             Expr::UnaryNeg(inner) => { self.emit_expr_in(chunk, inner, env)?; chunk.push_op(Op::Neg); }
+            Expr::UnaryNot(inner) => {
+                // NOT with truthiness
+                self.emit_expr_in(chunk, inner, env)?;
+                chunk.push_op(Op::JumpIfFalse);
+                let jf = chunk.emit_u16_placeholder();
+                // truthy path: push false
+                let cf = chunk.add_const(Value::Bool(false));
+                chunk.push_op(Op::ConstU8); chunk.push_u8(cf);
+                chunk.push_op(Op::Jump);
+                let jend = chunk.emit_u16_placeholder();
+                // falsey path label
+                let after_jf = chunk.here();
+                let off_jf = (after_jf - (jf + 2)) as u16; chunk.patch_u16_at(jf, off_jf);
+                let ct = chunk.add_const(Value::Bool(true));
+                chunk.push_op(Op::ConstU8); chunk.push_u8(ct);
+                // end label
+                let end_here = chunk.here();
+                let off_end = (end_here - (jend + 2)) as u16; chunk.patch_u16_at(jend, off_end);
+            }
             Expr::Binary { op, lhs, rhs } => {
-                self.emit_expr_in(chunk, lhs, env)?;
-                self.emit_expr_in(chunk, rhs, env)?;
-                chunk.push_op(match op {
-                    BinOp::Add => Op::Add, BinOp::Sub => Op::Sub, BinOp::Mul => Op::Mul, BinOp::Div => Op::Div,
-                    BinOp::Eq  => Op::Eq,  BinOp::Ne  => Op::Ne,
-                    BinOp::Lt  => Op::Lt,  BinOp::Le  => Op::Le, BinOp::Gt => Op::Gt, BinOp::Ge => Op::Ge,
-                });
+                match op {
+                    BinOp::And => {
+                        // Short-circuit AND producing Bool
+                        self.emit_expr_in(chunk, lhs, env)?;
+                        chunk.push_op(Op::JumpIfFalse);
+                        let jf_lhs = chunk.emit_u16_placeholder();
+                        self.emit_expr_in(chunk, rhs, env)?;
+                        chunk.push_op(Op::JumpIfFalse);
+                        let jf_rhs = chunk.emit_u16_placeholder();
+                        // both truthy
+                        let ct = chunk.add_const(Value::Bool(true));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(ct);
+                        chunk.push_op(Op::Jump);
+                        let jend = chunk.emit_u16_placeholder();
+                        // false label
+                        let l_false = chunk.here();
+                        let off_lhs = (l_false - (jf_lhs + 2)) as u16; chunk.patch_u16_at(jf_lhs, off_lhs);
+                        let off_rhs = (l_false - (jf_rhs + 2)) as u16; chunk.patch_u16_at(jf_rhs, off_rhs);
+                        let cf = chunk.add_const(Value::Bool(false));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(cf);
+                        // end label
+                        let l_end = chunk.here();
+                        let off_end = (l_end - (jend + 2)) as u16; chunk.patch_u16_at(jend, off_end);
+                    }
+                    BinOp::Or => {
+                        // Short-circuit OR producing Bool
+                        self.emit_expr_in(chunk, lhs, env)?;
+                        chunk.push_op(Op::JumpIfFalse);
+                        let j_eval_rhs = chunk.emit_u16_placeholder();
+                        // lhs truthy => true
+                        let ct = chunk.add_const(Value::Bool(true));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(ct);
+                        chunk.push_op(Op::Jump);
+                        let jend = chunk.emit_u16_placeholder();
+                        // evaluate rhs label
+                        let l_rhs = chunk.here();
+                        let off_rhs = (l_rhs - (j_eval_rhs + 2)) as u16; chunk.patch_u16_at(j_eval_rhs, off_rhs);
+                        self.emit_expr_in(chunk, rhs, env)?;
+                        chunk.push_op(Op::JumpIfFalse);
+                        let jf_false = chunk.emit_u16_placeholder();
+                        // rhs truthy => true
+                        let ct2 = chunk.add_const(Value::Bool(true));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(ct2);
+                        chunk.push_op(Op::Jump);
+                        let jend2 = chunk.emit_u16_placeholder();
+                        // false label
+                        let l_false = chunk.here();
+                        let off_false = (l_false - (jf_false + 2)) as u16; chunk.patch_u16_at(jf_false, off_false);
+                        let cf = chunk.add_const(Value::Bool(false));
+                        chunk.push_op(Op::ConstU8); chunk.push_u8(cf);
+                        // end label
+                        let l_end = chunk.here();
+                        let off_end1 = (l_end - (jend + 2)) as u16; chunk.patch_u16_at(jend, off_end1);
+                        let off_end2 = (l_end - (jend2 + 2)) as u16; chunk.patch_u16_at(jend2, off_end2);
+                    }
+                    _ => {
+                        self.emit_expr_in(chunk, lhs, env)?;
+                        self.emit_expr_in(chunk, rhs, env)?;
+                        chunk.push_op(match op {
+                            BinOp::Add => Op::Add, BinOp::Sub => Op::Sub, BinOp::Mul => Op::Mul, BinOp::Div => Op::Div,
+                            BinOp::Eq  => Op::Eq,  BinOp::Ne  => Op::Ne,
+                            BinOp::Lt  => Op::Lt,  BinOp::Le  => Op::Le, BinOp::Gt => Op::Gt, BinOp::Ge => Op::Ge,
+                            BinOp::And | BinOp::Or => unreachable!(),
+                        });
+                    }
+                }
             }
             Expr::Call { callee, args } => {
                 // Detect DESCRIBE$(obj) pseudo-builtin
