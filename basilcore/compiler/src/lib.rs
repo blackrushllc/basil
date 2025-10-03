@@ -42,7 +42,7 @@ SOFTWARE.
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use basil_common::Result;
+use basil_common::{Result, BasilError};
 use basil_ast::{Program, Stmt, Expr, BinOp};
 use basil_bytecode::{Chunk, Program as BCProgram, Value, Op, Function};
 
@@ -60,11 +60,12 @@ struct C {
     globals: Vec<String>,
     gmap: HashMap<String, u8>,
     fn_names: HashSet<String>,
+    loop_stack: Vec<LoopCtx>,
 }
 
 impl C {
     fn new() -> Self {
-        Self { chunk: Chunk::default(), globals: Vec::new(), gmap: HashMap::new(), fn_names: HashSet::new() }
+        Self { chunk: Chunk::default(), globals: Vec::new(), gmap: HashMap::new(), fn_names: HashSet::new(), loop_stack: Vec::new() }
     }
 
     fn gslot(&mut self, name: &str) -> u8 {
@@ -189,6 +190,33 @@ impl C {
                 self.emit_if_tl_into(&mut chunk, cond, then_branch, else_branch)?;
                 self.chunk = chunk;
             }
+
+            // WHILE at toplevel
+            Stmt::While { cond, body } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                let test_here = chunk.here();
+                self.emit_expr_in(&mut chunk, cond, None)?;
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit = chunk.emit_u16_placeholder();
+                // push loop ctx
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new() });
+                // body
+                self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
+                // back to test
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
+                // exit label
+                let exit_here = chunk.here();
+                let off_exit = (exit_here - (j_exit + 2)) as u16; chunk.patch_u16_at(j_exit, off_exit);
+                // patch BREAKs
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.break_sites { let off = (exit_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                self.chunk = chunk;
+            }
+
+            Stmt::Break => { return Err(BasilError("BREAK used outside of loop".into())); }
+            Stmt::Continue => { return Err(BasilError("CONTINUE used outside of loop".into())); }
 
             // FOR EACH at toplevel
             Stmt::ForEach { var, enumerable, body } => {
@@ -414,6 +442,35 @@ impl C {
             }
             Stmt::If { cond, then_branch, else_branch } => {
                 self.emit_if_func(chunk, cond, then_branch, else_branch, env)?;
+            }
+            // WHILE in function
+            Stmt::While { cond, body } => {
+                let test_here = chunk.here();
+                self.emit_expr_in(chunk, cond, Some(env))?;
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit = chunk.emit_u16_placeholder();
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new() });
+                self.emit_stmt_func(chunk, body, env)?;
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
+                let exit_here = chunk.here();
+                let off_exit = (exit_here - (j_exit + 2)) as u16; chunk.patch_u16_at(j_exit, off_exit);
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.break_sites { let off = (exit_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+            }
+            Stmt::Break => {
+                if self.loop_stack.is_empty() { return Err(BasilError("BREAK used outside of loop".into())); }
+                chunk.push_op(Op::Jump);
+                let site = chunk.emit_u16_placeholder();
+                if let Some(ctx) = self.loop_stack.last_mut() { ctx.break_sites.push(site); }
+            }
+            Stmt::Continue => {
+                if self.loop_stack.is_empty() { return Err(BasilError("CONTINUE used outside of loop".into())); }
+                let test_here = self.loop_stack.last().unwrap().test_here;
+                chunk.push_op(Op::JumpBack);
+                let jb = chunk.emit_u16_placeholder();
+                let off = (jb + 2 - test_here) as u16; chunk.patch_u16_at(jb, off);
             }
             Stmt::Block(stmts) => {
                 for s2 in stmts { self.emit_stmt_func(chunk, s2, env)?; }
@@ -894,6 +951,35 @@ impl C {
             Stmt::If { cond, then_branch, else_branch } => {
                 self.emit_if_tl_into(chunk, cond, then_branch, else_branch)?;
             }
+            // WHILE inside toplevel chunk
+            Stmt::While { cond, body } => {
+                let test_here = chunk.here();
+                self.emit_expr_in(chunk, cond, None)?;
+                chunk.push_op(Op::JumpIfFalse);
+                let j_exit = chunk.emit_u16_placeholder();
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new() });
+                self.emit_stmt_tl_in_chunk(chunk, body)?;
+                chunk.push_op(Op::JumpBack);
+                let j_back = chunk.emit_u16_placeholder();
+                let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
+                let exit_here = chunk.here();
+                let off_exit = (exit_here - (j_exit + 2)) as u16; chunk.patch_u16_at(j_exit, off_exit);
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.break_sites { let off = (exit_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+            }
+            Stmt::Break => {
+                if self.loop_stack.is_empty() { return Err(BasilError("BREAK used outside of loop".into())); }
+                chunk.push_op(Op::Jump);
+                let site = chunk.emit_u16_placeholder();
+                if let Some(ctx) = self.loop_stack.last_mut() { ctx.break_sites.push(site); }
+            }
+            Stmt::Continue => {
+                if self.loop_stack.is_empty() { return Err(BasilError("CONTINUE used outside of loop".into())); }
+                let test_here = self.loop_stack.last().unwrap().test_here;
+                chunk.push_op(Op::JumpBack);
+                let jb = chunk.emit_u16_placeholder();
+                let off = (jb + 2 - test_here) as u16; chunk.patch_u16_at(jb, off);
+            }
             Stmt::Block(stmts) => {
                 for s2 in stmts { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
             }
@@ -998,3 +1084,7 @@ impl C {
         Ok(())
     }
 }
+
+
+// loop context for BREAK/CONTINUE within WHILE loops
+struct LoopCtx { test_here: usize, break_sites: Vec<usize> }
