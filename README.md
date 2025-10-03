@@ -15,6 +15,13 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+# 🌿 STATUS UPDATE _Objects Working_ !!!
++ ```cargo run -q -p basilc --features obj-bmx -- run examples\objects.basil```
++ See OBJECTS.md for more info
++ Refer to the link below for my feelings on this new feature:
++ https://youtube.com/clip/UgkxBpXcWlbjLM0n_YrEbR__yWX6a-gF8yOl?si=dvQHvcfwzRZ-yIC4
+
+
 # 🌿 STATUS UPDATE _Arrays Working_ !!!
 + String, Integer and Float arrays up to 4 dimensions
 + Array function LEN() returns number of elements in array
