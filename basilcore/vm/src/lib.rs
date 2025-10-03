@@ -46,6 +46,7 @@ use crossterm::event::{read, Event, KeyEvent, KeyCode};
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
+use basil_objects::{Registry, register_objects};
 
 struct Frame {
     chunk: Rc<Chunk>,
@@ -57,6 +58,7 @@ pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
     globals: Vec<Value>,
+    registry: Registry,
 }
 
 impl VM {
@@ -64,7 +66,9 @@ impl VM {
         let globals = vec![Value::Null; p.globals.len()];
         let top_chunk = Rc::new(p.chunk);
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
-        Self { frames: vec![frame], stack: Vec::new(), globals }
+        let mut registry = Registry::new();
+        register_objects(&mut registry);
+        Self { frames: vec![frame], stack: Vec::new(), globals, registry }
     }
 
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
@@ -271,6 +275,83 @@ impl VM {
                         ElemType::Str => match val { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
                     };
                     arr.data.borrow_mut()[lin] = coerced;
+                }
+
+                // --- Objects ---
+                Op::NewObj => {
+                    let type_cidx = self.read_u8()? as usize;
+                    let argc = self.read_u8()? as usize;
+                    let tname_v = self.cur().chunk.consts[type_cidx].clone();
+                    let type_name = match tname_v { Value::Str(s) => s, _ => return Err(BasilError("NEW_OBJ expects type name string const".into())) };
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc { args.push(self.pop()?); }
+                    args.reverse();
+                    let obj = self.registry.make(&type_name, &args)?;
+                    self.stack.push(Value::Object(obj));
+                }
+                Op::GetProp => {
+                    let prop_cidx = self.read_u8()? as usize;
+                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETPROP expects property name string const".into())) };
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let v = rc.borrow().get_prop(&prop)?;
+                            self.stack.push(v);
+                        }
+                        _ => return Err(BasilError("GETPROP on non-object".into())),
+                    }
+                }
+                Op::SetProp => {
+                    let prop_cidx = self.read_u8()? as usize;
+                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETPROP expects property name string const".into())) };
+                    let val = self.pop()?;
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            rc.borrow_mut().set_prop(&prop, val)?;
+                        }
+                        _ => return Err(BasilError("SETPROP on non-object".into())),
+                    }
+                }
+                Op::CallMethod => {
+                    let meth_cidx = self.read_u8()? as usize;
+                    let argc = self.read_u8()? as usize;
+                    let mname_v = self.cur().chunk.consts[meth_cidx].clone();
+                    let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMETHOD expects method name string const".into())) };
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc { args.push(self.pop()?); }
+                    args.reverse();
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let v = rc.borrow_mut().call(&method, &args)?;
+                            self.stack.push(v);
+                        }
+                        _ => return Err(BasilError("CALLMETHOD on non-object".into())),
+                    }
+                }
+                Op::DescribeObj => {
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let desc = rc.borrow().descriptor();
+                            // simple formatting
+                            let mut s = String::new();
+                            s.push_str(&format!("{} — v{}\n{}\n", desc.type_name, desc.version, desc.summary));
+                            if !desc.properties.is_empty() {
+                                s.push_str("Properties:\n");
+                                for p in desc.properties { s.push_str(&format!("  {} : {} {}{}\n", p.name, p.type_name, if p.readable {"R"} else {""}, if p.writable {"W"} else {""})); }
+                            }
+                            if !desc.methods.is_empty() {
+                                s.push_str("Methods:\n");
+                                for m in desc.methods { s.push_str(&format!("  {}({}) -> {}\n", m.name, m.arg_names.join(", "), m.return_type)); }
+                            }
+                            self.stack.push(Value::Str(s));
+                        }
+                        _ => return Err(BasilError("DESCRIBE on non-object".into())),
+                    }
                 }
 
                 Op::Builtin => {
@@ -494,6 +575,7 @@ impl VM {
             50=>Op::Call, 51=>Op::Ret,
             60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin,
             70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
+            80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
@@ -544,5 +626,6 @@ fn is_truthy(v: &Value) -> bool {
         Value::Str(s) => !s.is_empty(),
         Value::Func(_) => true,
         Value::Array(_) => true,
+        Value::Object(_) => true,
     }
 }

@@ -45,6 +45,7 @@ pub enum TokenKind {
     // Single-char
     LParen, RParen, Comma, Semicolon,
     Plus, Minus, Star, Slash,
+    Dot,
     Lt, Gt, Assign,        // '<' '>' '='
     // Two-char
     EqEq, BangEq, LtEq, GtEq,
@@ -57,6 +58,8 @@ pub enum TokenKind {
     // New for FOR loop support
     For, To, Step, Next,
     Dim,
+    As,
+    Describe,
     Eof,
 }
 
@@ -126,6 +129,7 @@ impl<'a> Lexer<'a> {
             '-' => { let tok = self.make(TokenKind::Minus);     self.advance(); Ok(tok) }
             '*' => { let tok = self.make(TokenKind::Star);      self.advance(); Ok(tok) }
             '/' => { let tok = self.make(TokenKind::Slash);     self.advance(); Ok(tok) }
+            '.' => { let tok = self.make(TokenKind::Dot);       self.advance(); Ok(tok) }
 
             // --- two-char possibilities: keep existing logic ---
             '=' => {
@@ -275,6 +279,8 @@ impl<'a> Lexer<'a> {
             "STEP"   => TokenKind::Step,
             "NEXT"   => TokenKind::Next,
             "DIM"    => TokenKind::Dim,
+            "AS"     => TokenKind::As,
+            "DESCRIBE" => TokenKind::Describe,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))
@@ -300,6 +306,14 @@ impl<'a> Lexer<'a> {
                     self.advance(); // consumed first '/'
                     self.advance(); // consumed second '/'
                     // then consume until newline or EOF
+                    while let Some(ch) = self.cur {
+                        if ch == '\n' { break; }
+                        self.advance();
+                    }
+                }
+
+                // Preprocessor-like directives starting with '#': treat as comment line (e.g., #USE ...)
+                Some('#') => {
                     while let Some(ch) = self.cur {
                         if ch == '\n' { break; }
                         self.advance();
@@ -349,4 +363,4 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_ident_start(c: char) -> bool { c.is_ascii_alphabetic() || c == '_' }
-fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' }
+fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' }

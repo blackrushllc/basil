@@ -7,4 +7,10 @@ edition = "2021"
 [dependencies]
 basil-common = { path = "../common" }
 basil-bytecode = { path = "../bytecode" }
+basil-objects = { path = "..\\..\\basil-objects" }
 crossterm = "0.27"
+
+[features]
+obj-bmx = ["basil-objects/obj-bmx"]
+obj-bmx-rider = ["basil-objects/obj-bmx-rider"]
+obj-bmx-team = ["basil-objects/obj-bmx-team"]
