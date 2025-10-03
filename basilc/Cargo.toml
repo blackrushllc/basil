@@ -11,3 +11,8 @@ basil-common = { path = "../basilcore/common" }
 basil-parser = { path = "../basilcore/parser" }
 basil-compiler= { path = "../basilcore/compiler" }
 basil-vm = { path = "../basilcore/vm" }
+
+[features]
+obj-bmx = ["basil-vm/obj-bmx"]
+obj-bmx-rider = ["basil-vm/obj-bmx-rider"]
+obj-bmx-team = ["basil-vm/obj-bmx-team"]
