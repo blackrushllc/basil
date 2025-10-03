@@ -707,6 +707,7 @@ impl VM {
         match v {
             Value::Num(n) => Ok(n),
             Value::Int(i) => Ok(i as f64),
+            Value::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
             _ => Err(BasilError("expected number".into())),
         }
     }
