@@ -129,6 +129,34 @@ impl C {
                 chunk.push_op(Op::Print);
                 self.chunk = chunk;
             }
+            Stmt::Describe { target } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, target, None)?;
+                chunk.push_op(Op::DescribeObj);
+                chunk.push_op(Op::Print);
+                self.chunk = chunk;
+            }
+            Stmt::DimObject { name, type_name, args } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                // push args
+                for a in args { self.emit_expr_in(&mut chunk, a, None)?; }
+                // get type name constant index
+                let tci = chunk.add_const(Value::Str(type_name.clone()));
+                // emit NEW_OBJ (note: VM expects type const index operand then argc)
+                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.chunk = chunk;
+            }
+            Stmt::SetProp { target, prop, value } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, target, None)?;
+                self.emit_expr_in(&mut chunk, value, None)?;
+                // property name const index
+                let pci = chunk.add_const(Value::Str(prop.clone()));
+                chunk.push_op(Op::SetProp); chunk.push_u8(pci);
+                self.chunk = chunk;
+            }
             Stmt::ExprStmt(e) => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 self.emit_expr_in(&mut chunk, e, None)?;
@@ -141,8 +169,13 @@ impl C {
                 for s2 in stmts { self.emit_stmt_toplevel(s2)?; }
             }
 
-            // Ignore RETURN/IF at toplevel for MVP (could be supported later).
-            Stmt::Return(_) | Stmt::If { .. } => {}
+            // Ignore RETURN at toplevel (harmless), but support IF blocks.
+            Stmt::Return(_) => {}
+            Stmt::If { cond, then_branch, else_branch } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_if_tl_into(&mut chunk, cond, then_branch, else_branch)?;
+                self.chunk = chunk;
+            }
 
             // FOR at toplevel
             Stmt::For { var, start, end, step, body } => {
@@ -292,6 +325,24 @@ impl C {
             Stmt::Print { expr } => {
                 self.emit_expr_in(chunk, expr, Some(env))?;
                 chunk.push_op(Op::Print);
+            }
+            Stmt::Describe { target } => {
+                self.emit_expr_in(chunk, target, Some(env))?;
+                chunk.push_op(Op::DescribeObj);
+                chunk.push_op(Op::Print);
+            }
+            Stmt::DimObject { name, type_name, args } => {
+                for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
+                let tci = chunk.add_const(Value::Str(type_name.clone()));
+                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                let slot = env.bind_next_if_absent(name.clone());
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+            }
+            Stmt::SetProp { target, prop, value } => {
+                self.emit_expr_in(chunk, target, Some(env))?;
+                self.emit_expr_in(chunk, value, Some(env))?;
+                let pci = chunk.add_const(Value::Str(prop.clone()));
+                chunk.push_op(Op::SetProp); chunk.push_u8(pci);
             }
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, Some(env))?;
@@ -461,6 +512,17 @@ impl C {
                 chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
             }
             Expr::Var(name) => {
+                // Minimal constants for object features
+                let uname = name.to_ascii_uppercase();
+                if uname == "PRO" {
+                    let ci = chunk.add_const(Value::Int(1));
+                    chunk.push_op(Op::ConstU8); chunk.push_u8(ci);
+                    return Ok(());
+                } else if uname == "NOT_PRO" {
+                    let ci = chunk.add_const(Value::Int(0));
+                    chunk.push_op(Op::ConstU8); chunk.push_u8(ci);
+                    return Ok(());
+                }
                 if let Some(env) = env {
                     if let Some(slot) = env.lookup(name) {
                         chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
@@ -481,9 +543,17 @@ impl C {
                 });
             }
             Expr::Call { callee, args } => {
-                // Detect built-in string functions by name and emit a Builtin opcode instead of a call
+                // Detect DESCRIBE$(obj) pseudo-builtin
                 if let Expr::Var(name) = &**callee {
                     let uname = name.to_ascii_uppercase();
+                    if uname == "DESCRIBE$" {
+                        if args.len() != 1 { /* fall through to regular call for error later */ } else {
+                            for a in args { self.emit_expr_in(chunk, a, env)?; }
+                            chunk.push_op(Op::DescribeObj);
+                            return Ok(());
+                        }
+                    }
+                    // Detect other built-in string functions by name and emit a Builtin opcode instead of a call
                     let bid = match &*uname {
                         "LEN" => Some(1u8),
                         "MID$" => Some(2u8),
@@ -527,6 +597,17 @@ impl C {
                 self.emit_expr_in(chunk, callee, env)?;
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
+            }
+            Expr::MemberGet { target, name } => {
+                self.emit_expr_in(chunk, target, env)?;
+                let ci = chunk.add_const(Value::Str(name.clone()));
+                chunk.push_op(Op::GetProp); chunk.push_u8(ci);
+            }
+            Expr::MemberCall { target, method, args } => {
+                self.emit_expr_in(chunk, target, env)?;
+                for a in args { self.emit_expr_in(chunk, a, env)?; }
+                let ci = chunk.add_const(Value::Str(method.clone()));
+                chunk.push_op(Op::CallMethod); chunk.push_u8(ci); chunk.push_u8(args.len() as u8);
             }
         }
         Ok(())
@@ -604,6 +685,24 @@ impl C {
             Stmt::Print { expr } => {
                 self.emit_expr_in(chunk, expr, None)?;
                 chunk.push_op(Op::Print);
+            }
+            Stmt::Describe { target } => {
+                self.emit_expr_in(chunk, target, None)?;
+                chunk.push_op(Op::DescribeObj);
+                chunk.push_op(Op::Print);
+            }
+            Stmt::DimObject { name, type_name, args } => {
+                for a in args { self.emit_expr_in(chunk, a, None)?; }
+                let tci = chunk.add_const(Value::Str(type_name.clone()));
+                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+            }
+            Stmt::SetProp { target, prop, value } => {
+                self.emit_expr_in(chunk, target, None)?;
+                self.emit_expr_in(chunk, value, None)?;
+                let pci = chunk.add_const(Value::Str(prop.clone()));
+                chunk.push_op(Op::SetProp); chunk.push_u8(pci);
             }
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, None)?;

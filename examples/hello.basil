@@ -3,3 +3,9 @@ PRINT "This was written by "+AUTHOR();
 LET A$ = INPUT$("Enter your name:");
 PRINT "Hello, "+A$+"!";
 
+LET ans$ = INPUT$("Show object DESCRIBE info for BMX_RIDER and BMX_TEAM? (Y/N): ");
+IF ans$ == "Y" THEN BEGIN
+  PRINT "\nxxxxxxxxxxxxxxxxxxxx";
+  PRINT "\nxxxxxxxxxxxxxxxxxxxx";
+  PRINT "\nxxxxxxxxxxxxxxxxxxxx";
+  END

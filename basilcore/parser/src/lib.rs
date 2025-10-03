@@ -99,6 +99,12 @@ impl Parser {
             return Ok(Stmt::Print { expr: e });
         }
 
+        if self.match_k(TokenKind::Describe) {
+            let target = self.parse_expr_bp(0)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Describe { target });
+        }
+
         if self.match_k(TokenKind::Return) {
             // optional expression before terminator
             let expr = if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) {
@@ -162,21 +168,49 @@ impl Parser {
 
         if self.match_k(TokenKind::Dim) {
             let name = self.expect_ident()?;
-            self.expect(TokenKind::LParen)?;
-            let mut dims = Vec::new();
-            if !self.check(TokenKind::RParen) {
-                loop {
-                    dims.push(self.parse_expr_bp(0)?);
-                    if !self.match_k(TokenKind::Comma) { break; }
+            if self.match_k(TokenKind::LParen) {
+                let mut dims = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        dims.push(self.parse_expr_bp(0)?);
+                        if !self.match_k(TokenKind::Comma) { break; }
+                    }
                 }
+                self.expect(TokenKind::RParen)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::Dim { name, dims });
+            } else if self.match_k(TokenKind::As) {
+                let tname = self.expect_ident()?;
+                let mut args = Vec::new();
+                if self.match_k(TokenKind::LParen) {
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr_bp(0)?);
+                            if !self.match_k(TokenKind::Comma) { break; }
+                        }
+                    }
+                    self.expect(TokenKind::RParen)?;
+                }
+                self.terminate_stmt()?;
+                return Ok(Stmt::DimObject { name, type_name: tname, args });
+            } else {
+                return Err(BasilError(format!("parse error at line {}: expected '(' or AS after DIM name", self.peek_line())));
             }
-            self.expect(TokenKind::RParen)?;
-            self.terminate_stmt()?;
-            return Ok(Stmt::Dim { name, dims });
         }
 
-        // Fallback: expression statement
+        // Fallback: either member property assignment (without LET) or expression statement
         let e = self.parse_expr_bp(0)?;
+        if self.check(TokenKind::Assign) {
+            // Only allow assignment without LET for member property targets: obj.Prop = expr
+            if let Expr::MemberGet { target, name } = e.clone() {
+                let _ = self.next(); // consume '='
+                let value = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::SetProp { target: *target, prop: name, value });
+            } else {
+                return Err(BasilError(format!("parse error at line {}: assignment without LET is only allowed for object properties (obj.Prop = expr)", self.peek_line())));
+            }
+        }
         self.terminate_stmt()?;
         Ok(Stmt::ExprStmt(e))
     }
@@ -192,7 +226,7 @@ impl Parser {
     fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr> {
         let mut lhs = self.parse_prefix()?;
 
-        // postfix calls (highest precedence)
+        // postfix calls and member access (highest precedence)
         loop {
             if self.match_k(TokenKind::LParen) {
                 let mut args = Vec::new();
@@ -204,6 +238,23 @@ impl Parser {
                 }
                 self.expect(TokenKind::RParen)?;
                 lhs = Expr::Call { callee: Box::new(lhs), args };
+                continue;
+            }
+            if self.match_k(TokenKind::Dot) {
+                let name = self.expect_ident()?;
+                if self.match_k(TokenKind::LParen) {
+                    let mut args = Vec::new();
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr_bp(0)?);
+                            if !self.match_k(TokenKind::Comma) { break; }
+                        }
+                    }
+                    self.expect(TokenKind::RParen)?;
+                    lhs = Expr::MemberCall { target: Box::new(lhs), method: name, args };
+                } else {
+                    lhs = Expr::MemberGet { target: Box::new(lhs), name };
+                }
                 continue;
             }
             break;
