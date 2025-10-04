@@ -15,6 +15,11 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+### Known limitations
+
+- Interactive console input (INPUT$, INPUTC$, INKEY$, INKEY%): On Windows, these functions require a real console/TTY. When running basilc via an IDE’s Run/Debug console (e.g., RustRover Run menu), the IDE’s pseudo-terminal may not support raw-mode keyboard polling and can cause hangs or repeated key echo. Run interactive examples from a regular terminal (PowerShell, cmd.exe) for correct behavior. Non-interactive scripts and normal terminal usage are unaffected.
+- If you must run from an IDE, configure the run target to use an external console or disable input features in your script.
+
 🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
 ### 🌿 STATUS UPDATE _CGI scripts run like Php scripts with <?basil .. ?>_ !!!
 
