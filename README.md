@@ -21,7 +21,7 @@ and seamless interoperability with C and WebAssembly (WASI).
 - If you must run from an IDE, configure the run target to use an external console or disable input features in your script.
 
 🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
-### 🌿 STATUS UPDATE _CGI scripts run like Php scripts with <?basil .. ?>_ !!!
+### 🌿 STATUS UPDATE _CGI scripts run like Php scripts with \<?basil .. ?>_ !!!
 
 ### 🌿 STATUS UPDATE _Lots of bug fixes and improvements_ !!!
 
