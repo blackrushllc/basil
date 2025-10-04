@@ -172,14 +172,21 @@ fn cmd_run(path: Option<String>) {
         }
     };
 
-    // Decide whether this is a template or plain Basil: use tags or parser success
-    let looks_like_template = src.contains("<?") || parse(&src).is_err();
+    // Decide whether this is a template or plain Basil.
+    // In CLI mode, do NOT fall back to templating on parse errors — that would echo source.
+    // Only treat as template if explicit template markers are present.
+    let looks_like_template = src.contains("<?");
+    if env::var("BASIL_DEBUG").ok().as_deref() == Some("1") {
+        eprintln!("[basilc] CLI run: looks_like_template={} (contains'<?'={})", looks_like_template, src.contains("<?"));
+    }
     let pre = if looks_like_template {
+        if env::var("BASIL_DEBUG").ok().as_deref() == Some("1") { eprintln!("[basilc] Using template precompiler in CLI"); }
         match precompile_template(&src) {
             Ok(r) => r,
             Err(e) => { eprintln!("template error: {}", e); std::process::exit(1); }
         }
     } else {
+        if env::var("BASIL_DEBUG").ok().as_deref() == Some("1") { eprintln!("[basilc] Treating as plain Basil"); }
         template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() }
     };
 
