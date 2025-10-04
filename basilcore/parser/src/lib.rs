@@ -60,7 +60,10 @@ impl Parser {
             // Skip any stray semicolons (e.g., from newline insertion)
             while self.match_k(TokenKind::Semicolon) {}
             if self.check(TokenKind::Eof) { break; }
-            stmts.push(self.parse_stmt()?);
+            let line = self.peek_line();
+            let s = self.parse_stmt()?;
+            stmts.push(Stmt::Line(line));
+            stmts.push(s);
         }
         Ok(stmts)
     }
@@ -149,7 +152,10 @@ impl Parser {
                     while self.match_k(TokenKind::Semicolon) {}
                     if self.check(TokenKind::Else) || self.check(TokenKind::End) { break; }
                     if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated IF THEN BEGIN ...", self.peek_line()))); }
-                    then_body.push(self.parse_stmt()?);
+                    let line = self.peek_line();
+                    let stmt = self.parse_stmt()?;
+                    then_body.push(Stmt::Line(line));
+                    then_body.push(stmt);
                 }
                 let then_s = Box::new(Stmt::Block(then_body));
                 let else_s = if self.match_k(TokenKind::Else) {
@@ -162,7 +168,10 @@ impl Parser {
                             while self.match_k(TokenKind::Semicolon) {}
                             if self.match_k(TokenKind::End) { break; }
                             if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated ELSE BEGIN/END", self.peek_line()))); }
-                            else_body.push(self.parse_stmt()?);
+                            let line = self.peek_line();
+                            let stmt = self.parse_stmt()?;
+                            else_body.push(Stmt::Line(line));
+                            else_body.push(stmt);
                         }
                         Some(Box::new(Stmt::Block(else_body)))
                     } else {
@@ -181,9 +190,13 @@ impl Parser {
                 return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
             } else {
                 // Simple form: single statements for THEN and optional ELSE
-                let then_s = Box::new(self.parse_stmt()?);
+                let then_line = self.peek_line();
+                let then_stmt = self.parse_stmt()?;
+                let then_s = Box::new(Stmt::Block(vec![Stmt::Line(then_line), then_stmt]));
                 let else_s = if self.match_k(TokenKind::Else) {
-                    Some(Box::new(self.parse_stmt()?))
+                    let else_line = self.peek_line();
+                    let es = self.parse_stmt()?;
+                    Some(Box::new(Stmt::Block(vec![Stmt::Line(else_line), es])))
                 } else { None };
                 return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
             }
@@ -198,7 +211,10 @@ impl Parser {
                 while self.match_k(TokenKind::Semicolon) {}
                 if self.match_k(TokenKind::End) { break; }
                 if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated WHILE BEGIN/END", self.peek_line()))); }
-                body.push(self.parse_stmt()?);
+                let line = self.peek_line();
+                let stmt = self.parse_stmt()?;
+                body.push(Stmt::Line(line));
+                body.push(stmt);
             }
             return Ok(Stmt::While { cond, body: Box::new(Stmt::Block(body)) });
         }
@@ -212,7 +228,10 @@ impl Parser {
                 while self.match_k(TokenKind::Semicolon) {}
                 if self.match_k(TokenKind::End) { break; }
                 if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated BEGIN/END", self.peek_line()))); }
-                inner.push(self.parse_stmt()?);
+                let line = self.peek_line();
+                let stmt = self.parse_stmt()?;
+                inner.push(Stmt::Line(line));
+                inner.push(stmt);
             }
             return Ok(Stmt::Block(inner));
         }
@@ -235,7 +254,9 @@ impl Parser {
                     }
                     Stmt::Block(inner)
                 } else {
-                    self.parse_stmt()?
+                    let line = self.peek_line();
+                    let s = self.parse_stmt()?;
+                    Stmt::Block(vec![Stmt::Line(line), s])
                 };
                 // Expect NEXT [ident]
                 while self.match_k(TokenKind::Semicolon) {}
@@ -260,12 +281,17 @@ impl Parser {
                     while self.match_k(TokenKind::Semicolon) {}
                     if self.match_k(TokenKind::End) { break; }
                     if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR BEGIN/END", self.peek_line()))); }
-                    inner.push(self.parse_stmt()?);
+                    let line = self.peek_line();
+                    let stmt = self.parse_stmt()?;
+                    inner.push(Stmt::Line(line));
+                    inner.push(stmt);
                 }
                 Stmt::Block(inner)
             } else {
                 // Single statement body
-                self.parse_stmt()?
+                let line = self.peek_line();
+                let s = self.parse_stmt()?;
+                Stmt::Block(vec![Stmt::Line(line), s])
             };
 
             // Expect NEXT [ident]
@@ -469,7 +495,10 @@ impl Parser {
             while self.match_k(TokenKind::Semicolon) {}
             if self.match_k(TokenKind::End) { break; }
             if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated function body", self.peek_line()))); }
-            body.push(self.parse_stmt()?);
+            let line = self.peek_line();
+            let stmt = self.parse_stmt()?;
+            body.push(Stmt::Line(line));
+            body.push(stmt);
         }
         Ok(Stmt::Func { name, params, body })
     }

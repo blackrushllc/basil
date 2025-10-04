@@ -69,6 +69,7 @@ pub struct VM {
     globals: Vec<Value>,
     registry: Registry,
     enums: Vec<ArrEnum>,
+    current_line: u32,
     // Caches for CGI params
     get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
     post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
@@ -81,8 +82,10 @@ impl VM {
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
-        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new(), get_params_cache: None, post_params_cache: None }
+        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new(), current_line: 0, get_params_cache: None, post_params_cache: None }
     }
+
+    pub fn current_line(&self) -> u32 { self.current_line }
 
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
 
@@ -245,6 +248,11 @@ impl VM {
                         }
                         _ => return Err(BasilError("CALL target is not a function".into())),
                     }
+                }
+
+                Op::SetLine => {
+                    let line = self.read_u16()? as u32;
+                    self.current_line = line;
                 }
 
                 Op::Ret => {
@@ -789,9 +797,24 @@ impl VM {
                             let code: i64 = s.chars().next().map(|c| c as u32 as i64).unwrap_or(0);
                             self.stack.push(Value::Int(code));
                         }
-                        19 => { // INPUTC$()
-                            if argc != 0 { return Err(BasilError("INPUTC$ expects 0 arguments".into())); }
+                        19 => { // INPUTC$([prompt])
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("INPUTC$ expects 0 or 1 argument".into())); }
+                            if argc == 1 {
+                                let prompt = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                                print!("{}", prompt);
+                                let _ = io::stdout().flush();
+                            }
+                            // Enable raw mode and ensure we only capture a single key (no echo from console)
                             enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            // Drain any pending events (typeahead) to avoid consuming earlier keys
+                            loop {
+                                match poll(Duration::from_millis(0)) {
+                                    Ok(true) => { let _ = read(); }
+                                    Ok(false) => break,
+                                    Err(e) => { let _ = disable_raw_mode(); return Err(BasilError(format!("poll: {}", e))); }
+                                }
+                            }
+                            // Wait for the next key event (any kind). Capture only ASCII chars; others => "".
                             let s = loop {
                                 match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
                                     Event::Key(KeyEvent { code, .. }) => {
@@ -801,9 +824,11 @@ impl VM {
                                         };
                                         break out;
                                     }
-                                    _ => { /* ignore other events */ }
+                                    _ => { /* ignore non-key events */ }
                                 }
                             };
+                            // Echo the captured ASCII character exactly once
+                            if !s.is_empty() { print!("{}", s); let _ = io::stdout().flush(); }
                             let _ = disable_raw_mode();
                             self.stack.push(Value::Str(s));
                         }
@@ -834,7 +859,7 @@ impl VM {
             30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
             40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,
-            60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin,
+            60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin, 64=>Op::SetLine,
             70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
             80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,

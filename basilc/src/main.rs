@@ -215,7 +215,7 @@ fn cmd_run(path: Option<String>) {
             let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
             let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
             let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+            if fmt_ver == 3 && abi_ver == 2 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
                 let prog_bytes = &bytes[32..];
                 match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
             }
@@ -248,7 +248,9 @@ fn cmd_run(path: Option<String>) {
     // Run VM
     let mut vm = VM::new(program);
     if let Err(e) = vm.run() {
-        eprintln!("runtime error: {}", e);
+        let line = vm.current_line();
+        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
+        else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
     }
 }

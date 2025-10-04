@@ -196,6 +196,7 @@ pub enum Op {
     Pop   = 61,
     ToInt = 62,
     Builtin = 63,       // +u8 (builtin id), +u8 (argc)
+    SetLine = 64,       // +u16 (line number)
 
     // arrays
     ArrMake = 70,       // +u8 (rank), +u8 (elemType: 0=Num,1=Int,2=Str,3=Object), +u8 (type-name const idx or 255 if none); then pops rank dims (upper bounds)
