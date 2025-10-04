@@ -1,23 +1,8 @@
-PRINT "Hello, World. I'm BASIL!";
-PRINT "This was written by "+AUTHOR();
-LET A$ = INPUT$("Enter your name:");
-PRINT "Hello, "+A$+"!";
-
-LET ans$ = INPUT$("Do you want to do something else? (Y/N): ");
-
-// Block IF:
-
-IF ans$ == "Y" THEN
-    BEGIN
-      PRINT "\nWinken";
-      PRINT "\nBLinken";
-      PRINT "\nNod";
-    ELSE
-        PRINT "Okay, I'll skip that.";
-    END
-
-// Immediate IF:
-
-IF ans$ == "Y" THEN PRINT "yes"; ELSE PRINT "no";
-
+REM Simple Hello World
+PRINTLN "Hello World!";
+    FOR I% = 1 TO 5
+        BEGIN
+        PRINTLN "This is loop number ", I%;
+        END
+    NEXT
 PRINT "Goodbye!";

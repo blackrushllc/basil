@@ -21,9 +21,9 @@ DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
 t@.AddRider(riders@(0)); t@.AddRider(riders@(1)); t@.AddRider(riders@(2));
 
 FOR EACH name$ IN t@.RiderNames$()
-  PRINT name$;
+  PRINTLN name$;
 NEXT
 
 FOR EACH desc$ IN t@.RiderDescriptions$()
-  PRINT desc$;
+  PRINTLN desc$;
 NEXT
