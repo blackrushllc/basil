@@ -3,8 +3,7 @@
 LET A$ = "Bob";
 PRINT "\nHello, "+A$+"!";
 
-//LET ans$ = UCASE$(INPUTC$("\nDo you want to do something else? (Y/N): "));
-LET ans$ = yINPUTC$("\nDo you want to do something else? (Y/N): ");
+LET ans$ = UCASE$(INPUTC$("\nDo you want to do something else? (Y/N): "));
 
 // Block IF:
 
