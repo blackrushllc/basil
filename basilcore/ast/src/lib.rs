@@ -91,6 +91,8 @@ pub enum Stmt {
     For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
     // FOR EACH var IN expr ... NEXT
     ForEach { var: String, enumerable: Expr, body: Box<Stmt> },
+    // Line marker for runtime error reporting
+    Line(u32),
 }
 
 pub type Program = Vec<Stmt>;

@@ -177,6 +177,12 @@ impl C {
                 chunk.push_op(Op::Pop);
                 self.chunk = chunk;
             }
+            Stmt::Line(line) => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                chunk.push_op(Op::SetLine);
+                chunk.push_u16((*line as u16).min(u16::MAX));
+                self.chunk = chunk;
+            }
 
             // Not needed for `fib`, but harmless if someone writes a block at top level.
             Stmt::Block(stmts) => {
@@ -429,6 +435,10 @@ impl C {
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, Some(env))?;
                 chunk.push_op(Op::Pop);
+            }
+            Stmt::Line(line) => {
+                chunk.push_op(Op::SetLine);
+                chunk.push_u16((*line as u16).min(u16::MAX));
             }
             Stmt::Return(eopt) => {
                 if let Some(e) = eopt {
@@ -787,6 +797,17 @@ impl C {
                         "INKEY$" => Some(7u8),
                         "INKEY%" => Some(8u8),
                         "TYPE$" => Some(9u8),
+                        "HTML$" => Some(10u8),
+                        "HTML" => Some(10u8),
+                        "GET$" => Some(11u8),
+                        "POST$" => Some(12u8),
+                        "REQUEST$" => Some(13u8),
+                        "UCASE$" => Some(14u8),
+                        "LCASE$" => Some(15u8),
+                        "TRIM$"  => Some(16u8),
+                        "CHR$"   => Some(17u8),
+                        "ASC%"   => Some(18u8),
+                        "INPUTC$"=> Some(19u8),
                         _ => None,
                     };
                     if let Some(id) = bid {
@@ -946,6 +967,10 @@ impl C {
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, None)?;
                 chunk.push_op(Op::Pop);
+            }
+            Stmt::Line(line) => {
+                chunk.push_op(Op::SetLine);
+                chunk.push_u16((*line as u16).min(u16::MAX));
             }
             Stmt::Return(_) => { /* ignore at top level inside FOR body */ }
             Stmt::If { cond, then_branch, else_branch } => {

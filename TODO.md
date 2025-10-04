@@ -4,45 +4,40 @@ Boom! 🌿 We now have:
 * `IF/THEN[/ELSE]` + comparisons
 * locals/params + recursion
 * working VM frames & globals
+* WHILE/END loops
+* FOR/NEXT loops
+* `INPUT$()` + `PRINT`
+* `DIM` + arrays
+* `NEW` + Objects
+* Boolean ops (`AND/OR/NOT`)
+* `FUNC` / `RETURN` / `END`
+* `BREAK`
+* `CONTINUE`
 
-🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱
 
-NEXT UP: control flow (loops) and boolean ops.
+Maybe later:
+* `GOTO` + `ON ERROR GOTO`
+* `END` + `EXIT`
+* `TYPE` + `END TYPE`
+* `WITH` + `END WITH`
+* `OPEN` + `CLOSE`
 
-1. **WHILE/DO/END loops**
 
-    * Add `Loop` (backward jump) opcode and compile:
-
-      ```
-      start:
-        cond
-        JumpIfFalse → end
-        body
-        Loop → start
-      end:
-      ```
-    * ~30–40 lines across parser/compiler/vm.
-
-2. **Boolean ops (`AND/OR/NOT`) with short-circuit**
-
-    * Compile `A AND B` as `A; JumpIfFalse → end; B; end:`
-    * Uses existing `JumpIfFalse`; minimal VM changes.
-
-3. **Pretty errors with spans**
+**Pretty errors with spans**
 
     * Map byte spans → line/column + caret diagnostics.
     * Massive QoL when the language grows.
 
-4. **Disassembler/trace**
+**Disassembler/trace**
 
     * `basilc run --trace` to print executed opcodes & stack.
     * Super handy for debugging new control flow.
 
-5. **String ops**
+**String ops**
 
     * Add `&` (or `+`) for string concat and a `toString` for numbers.
 
-6. **Standard lib seeds**
+**Standard lib seeds**
 
     * Built-ins like `clock()`, `len()`, `println()`, maybe `assert()` for tiny tests.
 
@@ -343,8 +338,8 @@ PRINT p.name; " is "; p.age
 
 # 11) Rust TODOs (quick pointers)
 
-* **lexer**: add keywords: `FOR, NEXT, STEP, TO, WHILE, WEND, DO, LOOP, UNTIL, WITH, OPEN, AS, TYPE, END, REDIM, PRESERVE, EACH, IN`.
-* **parser**: new AST nodes (`ForStmt`, `WhileStmt`, `DoStmt`, `WithStmt`, `DimStmt`, `RedimStmt`, `TypeDecl`, `ForEachStmt`, `MemberExpr`).
+* **lexer**: add keywords: ` WITH, OPEN, AS, TYPE, REDIM, PRESERVE`.
+* **parser**: new AST nodes (`DoStmt`, `WithStmt`, `DimStmt`, `RedimStmt`, `TypeDecl`, `MemberExpr`).
 * **bytecode**: loop labels & fixups; object model tags (Array, Struct, File).
 * **vm**:
 

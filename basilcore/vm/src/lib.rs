@@ -40,9 +40,12 @@ SOFTWARE.
 
 //! Frame-based VM with calls, locals, jumps, comparisons
 use std::rc::Rc;
-use std::io::{self, Write};
+use std::io::{self, Write, Read};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
+use std::env;
+use std::time::Duration;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
+use crossterm::event::poll;
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
@@ -66,6 +69,10 @@ pub struct VM {
     globals: Vec<Value>,
     registry: Registry,
     enums: Vec<ArrEnum>,
+    current_line: u32,
+    // Caches for CGI params
+    get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
+    post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
 }
 
 impl VM {
@@ -75,10 +82,75 @@ impl VM {
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
-        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new() }
+        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new(), current_line: 0, get_params_cache: None, post_params_cache: None }
     }
 
+    pub fn current_line(&self) -> u32 { self.current_line }
+
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
+
+    // --- CGI param helpers ---
+    fn url_decode_form(&self, s: &str) -> String {
+        let bytes = s.as_bytes();
+        let mut out = String::with_capacity(bytes.len());
+        let mut i = 0usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'+' => { out.push(' '); i += 1; }
+                b'%' if i + 2 < bytes.len() => {
+                    let h1 = bytes[i+1] as char; let h2 = bytes[i+2] as char;
+                    let hex = [h1, h2];
+                    let hv = u8::from_str_radix(&hex.iter().collect::<String>(), 16).ok();
+                    if let Some(b) = hv { out.push(b as char); i += 3; } else { out.push('%'); i += 1; }
+                }
+                b => { out.push(b as char); i += 1; }
+            }
+        }
+        out
+    }
+    fn parse_pairs(&self, s: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for part in s.split('&') {
+            if part.is_empty() { continue; }
+            let mut it = part.splitn(2, '=');
+            let k = it.next().unwrap_or("");
+            let v = it.next().unwrap_or("");
+            let kd = self.url_decode_form(k);
+            let vd = self.url_decode_form(v);
+            out.push(format!("{}={}", kd, vd));
+        }
+        out
+    }
+    fn ensure_get_params(&mut self) {
+        if self.get_params_cache.is_none() {
+            let q = env::var("QUERY_STRING").unwrap_or_default();
+            let v = self.parse_pairs(&q);
+            self.get_params_cache = Some(v);
+        }
+    }
+    fn ensure_post_params(&mut self) {
+        if self.post_params_cache.is_some() { return; }
+        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+        if clen == 0 { self.post_params_cache = Some(Vec::new()); return; }
+        let ctype = env::var("CONTENT_TYPE").unwrap_or_default();
+        if !ctype.to_ascii_lowercase().starts_with("application/x-www-form-urlencoded") {
+            // unsupported type for now
+            self.post_params_cache = Some(Vec::new());
+            return;
+        }
+        let mut body = Vec::with_capacity(clen);
+        let _ = io::stdin().take(clen as u64).read_to_end(&mut body);
+        let s = String::from_utf8_lossy(&body).to_string();
+        let v = self.parse_pairs(&s);
+        self.post_params_cache = Some(v);
+    }
+    fn make_string_array(vals: Vec<String>) -> Value {
+        use std::cell::RefCell;
+        let dims = vec![vals.len()];
+        let data: Vec<Value> = vals.into_iter().map(Value::Str).collect();
+        let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: RefCell::new(data) });
+        Value::Array(arr)
+    }
 
     pub fn run(&mut self) -> Result<()> {
         loop {
@@ -178,6 +250,11 @@ impl VM {
                     }
                 }
 
+                Op::SetLine => {
+                    let line = self.read_u16()? as u32;
+                    self.current_line = line;
+                }
+
                 Op::Ret => {
                     let retv = self.pop().unwrap_or(Value::Null);
                     let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
@@ -186,7 +263,7 @@ impl VM {
                     if self.frames.is_empty() { break; }
                 }
 
-                Op::Print => { let v = self.pop()?; println!("{}", v); }
+                Op::Print => { let v = self.pop()?; print!("{}", v); }
                 Op::Pop   => { let _ = self.pop()?; }
                 Op::ToInt => {
                     let v = self.pop()?;
@@ -594,35 +671,32 @@ impl VM {
                             while input.ends_with('\n') || input.ends_with('\r') { input.pop(); }
                             self.stack.push(Value::Str(input));
                         }
-                        7 => { // INKEY$()
+                        7 => { // INKEY$() — non-blocking, returns "" if no key available
                             if argc != 0 { return Err(BasilError("INKEY$ expects 0 arguments".into())); }
                             enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            let s = loop {
+                            let s = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
                                 match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                    Event::Key(KeyEvent { code, .. }) => {
-                                        let out = match code {
-                                            KeyCode::Char(c) => c.to_string(),
-                                            KeyCode::Enter => "\r".to_string(),
-                                            KeyCode::Backspace => "\u{0008}".to_string(),
-                                            KeyCode::Tab => "\t".to_string(),
-                                            KeyCode::Esc => "\u{001B}".to_string(),
-                                            _ => String::new(),
-                                        };
-                                        break out;
-                                    }
-                                    _ => { /* ignore other events */ }
+                                    Event::Key(KeyEvent { code, .. }) => match code {
+                                        KeyCode::Char(c) => c.to_string(),
+                                        KeyCode::Enter => "\r".to_string(),
+                                        KeyCode::Backspace => "\u{0008}".to_string(),
+                                        KeyCode::Tab => "\t".to_string(),
+                                        KeyCode::Esc => "\u{001B}".to_string(),
+                                        _ => String::new(),
+                                    },
+                                    _ => String::new(),
                                 }
-                            };
+                            } else { String::new() };
                             let _ = disable_raw_mode();
                             self.stack.push(Value::Str(s));
                         }
-                        8 => { // INKEY%()
+                        8 => { // INKEY%() — non-blocking, returns 0 if no key available
                             if argc != 0 { return Err(BasilError("INKEY% expects 0 arguments".into())); }
                             enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            let code_i: i64 = loop {
+                            let code_i: i64 = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
                                 match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
                                     Event::Key(KeyEvent { code, .. }) => {
-                                        let val: i64 = match code {
+                                        match code {
                                             KeyCode::Char(c) => c as i64,
                                             KeyCode::Enter => 13,
                                             KeyCode::Backspace => 8,
@@ -640,18 +714,122 @@ impl VM {
                                             KeyCode::Delete => 1009,
                                             KeyCode::F(n) => 1100 + n as i64,
                                             _ => 0,
-                                        };
-                                        break val;
+                                        }
                                     }
-                                    _ => { /* ignore */ }
+                                    _ => 0,
                                 }
-                            };
+                            } else { 0 };
                             let _ = disable_raw_mode();
                             self.stack.push(Value::Int(code_i));
                         }
                         9 => { // TYPE$(value)
                             if argc != 1 { return Err(BasilError("TYPE$ expects 1 argument".into())); }
                             let s = self.type_of(&args[0]);
+                            self.stack.push(Value::Str(s));
+                        }
+                        10 => { // HTML/HTML$(x)
+                            if argc != 1 { return Err(BasilError("HTML expects 1 argument".into())); }
+                            let s = format!("{}", args[0]);
+                            let mut out = String::with_capacity(s.len());
+                            for ch in s.chars() {
+                                match ch {
+                                    '&' => out.push_str("&amp;"),
+                                    '<' => out.push_str("&lt;"),
+                                    '>' => out.push_str("&gt;"),
+                                    '"' => out.push_str("&quot;"),
+                                    '\'' => out.push_str("&#39;"),
+                                    _ => out.push(ch),
+                                }
+                            }
+                            self.stack.push(Value::Str(out));
+                        },
+                        11 => { // GET$()
+                            if argc != 0 { return Err(BasilError("GET$ expects 0 arguments".into())); }
+                            self.ensure_get_params();
+                            let vals = self.get_params_cache.clone().unwrap_or_default();
+                            let arr = VM::make_string_array(vals);
+                            self.stack.push(arr);
+                        }
+                        12 => { // POST$()
+                            if argc != 0 { return Err(BasilError("POST$ expects 0 arguments".into())); }
+                            self.ensure_post_params();
+                            let vals = self.post_params_cache.clone().unwrap_or_default();
+                            let arr = VM::make_string_array(vals);
+                            self.stack.push(arr);
+                        }
+                        13 => { // REQUEST$()
+                            if argc != 0 { return Err(BasilError("REQUEST$ expects 0 arguments".into())); }
+                            self.ensure_get_params();
+                            self.ensure_post_params();
+                            let mut vals = self.get_params_cache.clone().unwrap_or_default();
+                            if let Some(mut p) = self.post_params_cache.clone() { vals.append(&mut p); }
+                            let arr = VM::make_string_array(vals);
+                            self.stack.push(arr);
+                        }
+                        14 => { // UCASE$(s)
+                            if argc != 1 { return Err(BasilError("UCASE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("UCASE$ arg must be string".into())) };
+                            self.stack.push(Value::Str(s.to_uppercase()));
+                        }
+                        15 => { // LCASE$(s)
+                            if argc != 1 { return Err(BasilError("LCASE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("LCASE$ arg must be string".into())) };
+                            self.stack.push(Value::Str(s.to_lowercase()));
+                        }
+                        16 => { // TRIM$(s)
+                            if argc != 1 { return Err(BasilError("TRIM$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("TRIM$ arg must be string".into())) };
+                            self.stack.push(Value::Str(s.trim().to_string()));
+                        }
+                        17 => { // CHR$(n)
+                            if argc != 1 { return Err(BasilError("CHR$ expects 1 argument".into())); }
+                            let n = match &args[0] {
+                                Value::Int(i) => *i,
+                                Value::Num(f) => f.trunc() as i64,
+                                _ => return Err(BasilError("CHR$ arg must be numeric".into())),
+                            };
+                            let out = if n < 0 || n > 0x10FFFF { String::new() } else { std::char::from_u32(n as u32).map(|c| c.to_string()).unwrap_or_default() };
+                            self.stack.push(Value::Str(out));
+                        }
+                        18 => { // ASC%(s)
+                            if argc != 1 { return Err(BasilError("ASC% expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s, _ => return Err(BasilError("ASC% arg must be string".into())) };
+                            let code: i64 = s.chars().next().map(|c| c as u32 as i64).unwrap_or(0);
+                            self.stack.push(Value::Int(code));
+                        }
+                        19 => { // INPUTC$([prompt])
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("INPUTC$ expects 0 or 1 argument".into())); }
+                            if argc == 1 {
+                                let prompt = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                                print!("{}", prompt);
+                                let _ = io::stdout().flush();
+                            }
+                            // Enable raw mode and ensure we only capture a single key (no echo from console)
+                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            // Drain any pending events (typeahead) to avoid consuming earlier keys
+                            loop {
+                                match poll(Duration::from_millis(0)) {
+                                    Ok(true) => { let _ = read(); }
+                                    Ok(false) => break,
+                                    Err(e) => { let _ = disable_raw_mode(); return Err(BasilError(format!("poll: {}", e))); }
+                                }
+                            }
+                            // Wait for the next key event (any kind). Capture only ASCII chars; others => "".
+                            let s = loop {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => {
+                                        let out = match code {
+                                            KeyCode::Char(c) if c.is_ascii() => c.to_string(),
+                                            _ => String::new(),
+                                        };
+                                        break out;
+                                    }
+                                    _ => { /* ignore non-key events */ }
+                                }
+                            };
+                            // Echo the captured ASCII character exactly once
+                            if !s.is_empty() { print!("{}", s); let _ = io::stdout().flush(); }
+                            let _ = disable_raw_mode();
                             self.stack.push(Value::Str(s));
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
@@ -681,7 +859,7 @@ impl VM {
             30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
             40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,
-            60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin,
+            60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin, 64=>Op::SetLine,
             70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
             80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
