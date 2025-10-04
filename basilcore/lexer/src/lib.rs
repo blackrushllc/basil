@@ -86,11 +86,12 @@ pub struct Lexer<'a> {
     start: usize, // byte offset start of current token
     line:  usize, // 1-based current line number
     tok_line: usize, // line number at start of current token
+    pending_nl_semi: bool, // if true, emit a Semicolon token before next real token
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0, line: 1, tok_line: 1 };
+        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0, line: 1, tok_line: 1, pending_nl_semi: false };
         l.advance(); // prime `cur` and `pos`
         l
     }
@@ -111,6 +112,17 @@ impl<'a> Lexer<'a> {
 
         // Record the line number at the start of the token (or EOF)
         self.tok_line = self.line;
+
+        // If we saw a newline earlier, emit a virtual semicolon (unless at EOF)
+        if self.pending_nl_semi {
+            if self.cur.is_some() {
+                self.pending_nl_semi = false;
+                return Ok(self.make_with_span(TokenKind::Semicolon, self.pos, self.pos));
+            } else {
+                // At EOF, don't bother emitting a trailing semicolon
+                self.pending_nl_semi = false;
+            }
+        }
 
         // If no current char, emit EOF
         let ch = match self.cur {
@@ -301,7 +313,12 @@ impl<'a> Lexer<'a> {
     fn skip_ws_and_comments(&mut self) {
         loop {
             match self.cur {
-                Some(c) if c.is_whitespace() => { self.advance(); }
+                Some(c) if c.is_whitespace() => {
+                    if c == '\n' {
+                        self.pending_nl_semi = true;
+                    }
+                    self.advance();
+                }
 
                 // BASIC-style single-quote comment
                 Some('\'') => {
