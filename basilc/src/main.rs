@@ -41,14 +41,18 @@ SOFTWARE.
 use std::env;
 use std::io::{self, Read, Write};
 use std::process::{Command, Stdio};
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
-//use std::{env, fs, io, path::Path};
 use basil_parser::parse;
 use basil_compiler::compile;
 use basil_vm::VM;
 use basil_lexer::Lexer; // add this near the other use lines
+use basil_bytecode::{serialize_program, deserialize_program};
+
+mod template;
+use template::{precompile_template, parse_directives_and_bom, Directives};
 
 
 
@@ -168,25 +172,77 @@ fn cmd_run(path: Option<String>) {
         }
     };
 
-    // Parse → compile → run
-    match parse(&src) {
-        Ok(ast) => match compile(&ast) {
-            Ok(prog) => {
-                let mut vm = VM::new(prog);
-                if let Err(e) = vm.run() {
-                    eprintln!("runtime error: {}", e);
-                    std::process::exit(1);
-                }
-            }
-            Err(e) => {
-                eprintln!("compile error: {}", e);
-                std::process::exit(1);
-            }
-        },
-        Err(e) => {
-            eprintln!("parse error: {}", e);
-            std::process::exit(1);
+    // Decide whether this is a template or plain Basil: use tags or parser success
+    let looks_like_template = src.contains("<?") || parse(&src).is_err();
+    let pre = if looks_like_template {
+        match precompile_template(&src) {
+            Ok(r) => r,
+            Err(e) => { eprintln!("template error: {}", e); std::process::exit(1); }
         }
+    } else {
+        template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() }
+    };
+
+    // Prepare cache fingerprint
+    let meta = match fs::metadata(&path) { Ok(m)=>m, Err(e)=>{ eprintln!("stat {}: {}", path, e); std::process::exit(1);} };
+    let source_size = meta.len();
+    let source_mtime_ns: u64 = meta.modified().ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    // Flags for cache: bit0 = short_tags_on, bit1 = templating_used
+    let templating_used = src.contains("<?");
+    let flags: u32 = (if pre.directives.short_tags_on { 1u32 } else { 0u32 })
+                   | (if templating_used { 2u32 } else { 0u32 });
+
+    // Cache path
+    let mut cache_path = PathBuf::from(&path);
+    cache_path.set_extension("basilx");
+
+    // Try cache load
+    let mut program_opt: Option<basil_bytecode::Program> = None;
+    if let Ok(bytes) = fs::read(&cache_path) {
+        if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
+            let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
+            let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
+            let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
+            let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+            let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+            if fmt_ver == 2 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+                let prog_bytes = &bytes[32..];
+                match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
+            }
+        }
+    }
+
+    let program = if let Some(p) = program_opt { p } else {
+        // Parse → compile the precompiled Basil source
+        let ast = match parse(&pre.basil_source) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
+        let prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+        // Write cache atomically
+        let body = serialize_program(&prog);
+        let mut hdr = Vec::with_capacity(32 + body.len());
+        hdr.extend_from_slice(b"BSLX");
+        hdr.extend_from_slice(&2u32.to_le_bytes()); // fmt ver
+        hdr.extend_from_slice(&1u32.to_le_bytes()); // abi ver
+        hdr.extend_from_slice(&flags.to_le_bytes());
+        hdr.extend_from_slice(&source_size.to_le_bytes());
+        hdr.extend_from_slice(&source_mtime_ns.to_le_bytes());
+        hdr.extend_from_slice(&body);
+        let tmp = cache_path.with_extension("basilx.tmp");
+        if let Ok(mut f) = File::create(&tmp) {
+            let _ = f.write_all(&hdr);
+            let _ = f.sync_all();
+            let _ = fs::rename(&tmp, &cache_path);
+        }
+        prog
+    };
+
+    // Run VM
+    let mut vm = VM::new(program);
+    if let Err(e) = vm.run() {
+        eprintln!("runtime error: {}", e);
+        std::process::exit(1);
     }
 }
 
@@ -327,31 +383,31 @@ fn cgi_main() {
         eprintln!("{}", String::from_utf8_lossy(&output.stderr));
     }
 
-    // 6) If the Basil program already prints CGI headers, pass them through.
-    //    Otherwise, default to HTML.
-    let stdout = output.stdout;
-    let looks_like_cgi = stdout.starts_with(b"Content-Type:")
-        || stdout.starts_with(b"Status:")
-        || stdout.windows(2).position(|w| w == b"\r\n").is_some();
+    // Parse directives from the source to determine header policy
+    let src_for_dirs = match fs::read_to_string(&script_path) { Ok(s)=>s, Err(_)=>String::new() };
+    let (dirs, _) = parse_directives_and_bom(&src_for_dirs);
 
-    if looks_like_cgi {
-        // Assume full CGI response
-        io::stdout().write_all(&stdout).ok();
+    let stdout = output.stdout;
+
+    if dirs.cgi_no_header {
+        // Manual header mode: verify the program sent valid CGI headers (terminated by blank line)
+        let has_blank = stdout.windows(4).any(|w| w == b"\r\n\r\n");
+        if has_blank {
+            io::stdout().write_all(&stdout).ok();
+        } else {
+            println!("Status: 500 Internal Server Error");
+            println!("Content-Type: text/plain; charset=utf-8");
+            println!();
+            println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
+        }
         return;
     }
 
-    // Minimal wrapper headers
-    if output.status.success() {
-        println!("Status: 200 OK");
-        println!("Content-Type: text/html; charset=utf-8");
-        println!();
-        io::stdout().write_all(&stdout).ok();
-    } else {
-        println!("Status: 500 Internal Server Error");
-        println!("Content-Type: text/plain; charset=utf-8");
-        println!();
-        io::stdout().write_all(&stdout).ok();
-    }
+    // Automatic header mode: send default header (override if provided) right before body
+    let header = if let Some(h) = dirs.cgi_default_header { h } else { "Content-Type: text/html; charset=utf-8".to_string() };
+    println!("{}", header);
+    println!("");
+    io::stdout().write_all(&stdout).ok();
 }
 
 // use std::env;

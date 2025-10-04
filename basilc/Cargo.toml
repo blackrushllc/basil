@@ -11,6 +11,7 @@ basil-common = { workspace = true }
 basil-parser = { workspace = true }
 basil-compiler= { workspace = true }
 basil-vm = { workspace = true }
+basil-bytecode = { workspace = true }
 
 [features]
 obj-bmx = ["basil-vm/obj-bmx"]

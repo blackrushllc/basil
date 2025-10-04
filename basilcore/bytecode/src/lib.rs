@@ -258,3 +258,78 @@ pub struct Program {
     pub chunk:   Chunk,        // top-level code
     pub globals: Vec<String>,  // names → indices for global array
 }
+
+// --- Simple (de)serializer for Program used by .basilx cache ---
+pub fn serialize_program(p: &Program) -> Vec<u8> {
+    fn w_u8(b: &mut Vec<u8>, v: u8) { b.push(v); }
+    fn w_u32(b: &mut Vec<u8>, v: u32) { b.extend_from_slice(&v.to_le_bytes()); }
+    fn w_str(b: &mut Vec<u8>, s: &str) { w_u32(b, s.len() as u32); b.extend_from_slice(s.as_bytes()); }
+    fn ser_value(b: &mut Vec<u8>, v: &Value) {
+        match v {
+            Value::Null => { w_u8(b,0); }
+            Value::Bool(x) => { w_u8(b,1); w_u8(b, if *x {1} else {0}); }
+            Value::Num(n) => { w_u8(b,2); b.extend_from_slice(&n.to_le_bytes()); }
+            Value::Int(i) => { w_u8(b,3); b.extend_from_slice(&i.to_le_bytes()); }
+            Value::Str(s) => { w_u8(b,4); w_str(b, s); }
+            Value::Func(f) => {
+                w_u8(b,5);
+                w_u8(b, f.arity);
+                match &f.name { Some(n)=>{ w_u8(b,1); w_str(b,n); }, None=>{ w_u8(b,0); } }
+                ser_chunk(b, &f.chunk);
+            }
+            Value::Array(_) => { w_u8(b,250); } // unsupported in consts
+            Value::Object(_) => { w_u8(b,251); }
+        }
+    }
+    fn ser_chunk(b: &mut Vec<u8>, c: &Chunk) {
+        w_u32(b, c.code.len() as u32); b.extend_from_slice(&c.code);
+        w_u32(b, c.consts.len() as u32);
+        for v in &c.consts { ser_value(b, v); }
+    }
+    let mut b = Vec::new();
+    ser_chunk(&mut b, &p.chunk);
+    w_u32(&mut b, p.globals.len() as u32);
+    for g in &p.globals { w_str(&mut b, g); }
+    b
+}
+
+pub fn deserialize_program(data: &[u8]) -> basil_common::Result<Program> {
+    use basil_common::{Result, BasilError};
+    fn r_u8(p: &mut usize, data: &[u8]) -> Result<u8> { if *p >= data.len() { return Err(BasilError("eof".into())); } let v=data[*p]; *p+=1; Ok(v) }
+    fn r_u32(p: &mut usize, data: &[u8]) -> Result<u32> { if *p+4>data.len(){return Err(BasilError("eof".into()));} let v = u32::from_le_bytes([data[*p],data[*p+1],data[*p+2],data[*p+3]]); *p+=4; Ok(v) }
+    fn r_f64(p: &mut usize, data: &[u8]) -> Result<f64> { if *p+8>data.len(){return Err(BasilError("eof".into()));} let mut a=[0u8;8]; a.copy_from_slice(&data[*p..*p+8]); *p+=8; Ok(f64::from_le_bytes(a)) }
+    fn r_i64(p: &mut usize, data: &[u8]) -> Result<i64> { if *p+8>data.len(){return Err(BasilError("eof".into()));} let mut a=[0u8;8]; a.copy_from_slice(&data[*p..*p+8]); *p+=8; Ok(i64::from_le_bytes(a)) }
+    fn r_str(p: &mut usize, data: &[u8]) -> Result<String> { let n = r_u32(p,data)? as usize; if *p+n>data.len(){return Err(BasilError("eof".into()));} let s = String::from_utf8(data[*p..*p+n].to_vec()).map_err(|e| BasilError(format!("utf8: {}", e)))?; *p+=n; Ok(s) }
+    fn de_chunk(p: &mut usize, data: &[u8]) -> Result<Chunk> {
+        let code_len = r_u32(p,data)? as usize; if *p+code_len>data.len(){return Err(BasilError("eof".into()));}
+        let code = data[*p..*p+code_len].to_vec(); *p+=code_len;
+        let nconst = r_u32(p,data)? as usize; let mut consts = Vec::with_capacity(nconst);
+        for _ in 0..nconst { consts.push(de_value(p,data)?); }
+        Ok(Chunk { code, consts })
+    }
+    fn de_value(p: &mut usize, data: &[u8]) -> Result<Value> {
+        use std::rc::Rc;
+        let tag = r_u8(p,data)?;
+        Ok(match tag {
+            0 => Value::Null,
+            1 => { let b = r_u8(p,data)? != 0; Value::Bool(b) },
+            2 => { let n = r_f64(p,data)?; Value::Num(n) },
+            3 => { let i = r_i64(p,data)?; Value::Int(i) },
+            4 => { let s = r_str(p,data)?; Value::Str(s) },
+            5 => {
+                let ar = r_u8(p,data)?;
+                let has = r_u8(p,data)? != 0;
+                let name = if has { Some(r_str(p,data)?) } else { None };
+                let chunk = de_chunk(p,data)?;
+                Value::Func(Rc::new(Function { arity: ar, name, chunk: std::rc::Rc::new(chunk) }))
+            }
+            250|251 => Value::Null, // placeholder for unsupported
+            _ => return Err(BasilError("bad const tag".into())),
+        })
+    }
+    let mut p = 0usize;
+    let chunk = de_chunk(&mut p, data)?;
+    let n = r_u32(&mut p,data)? as usize; let mut globals = Vec::with_capacity(n);
+    for _ in 0..n { globals.push(r_str(&mut p,data)?); }
+    Ok(Program { chunk, globals })
+}
