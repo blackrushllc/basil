@@ -208,7 +208,7 @@ fn cmd_run(path: Option<String>) {
             let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
             let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
             let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 2 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
                 let prog_bytes = &bytes[32..];
                 match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
             }
@@ -223,7 +223,7 @@ fn cmd_run(path: Option<String>) {
         let body = serialize_program(&prog);
         let mut hdr = Vec::with_capacity(32 + body.len());
         hdr.extend_from_slice(b"BSLX");
-        hdr.extend_from_slice(&2u32.to_le_bytes()); // fmt ver
+        hdr.extend_from_slice(&3u32.to_le_bytes()); // fmt ver
         hdr.extend_from_slice(&1u32.to_le_bytes()); // abi ver
         hdr.extend_from_slice(&flags.to_le_bytes());
         hdr.extend_from_slice(&source_size.to_le_bytes());

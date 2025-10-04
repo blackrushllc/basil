@@ -40,8 +40,9 @@ SOFTWARE.
 
 //! Frame-based VM with calls, locals, jumps, comparisons
 use std::rc::Rc;
-use std::io::{self, Write};
+use std::io::{self, Write, Read};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
+use std::env;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
 
 use basil_common::{Result, BasilError};
@@ -66,6 +67,9 @@ pub struct VM {
     globals: Vec<Value>,
     registry: Registry,
     enums: Vec<ArrEnum>,
+    // Caches for CGI params
+    get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
+    post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
 }
 
 impl VM {
@@ -75,10 +79,73 @@ impl VM {
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
-        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new() }
+        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new(), get_params_cache: None, post_params_cache: None }
     }
 
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
+
+    // --- CGI param helpers ---
+    fn url_decode_form(&self, s: &str) -> String {
+        let bytes = s.as_bytes();
+        let mut out = String::with_capacity(bytes.len());
+        let mut i = 0usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'+' => { out.push(' '); i += 1; }
+                b'%' if i + 2 < bytes.len() => {
+                    let h1 = bytes[i+1] as char; let h2 = bytes[i+2] as char;
+                    let hex = [h1, h2];
+                    let hv = u8::from_str_radix(&hex.iter().collect::<String>(), 16).ok();
+                    if let Some(b) = hv { out.push(b as char); i += 3; } else { out.push('%'); i += 1; }
+                }
+                b => { out.push(b as char); i += 1; }
+            }
+        }
+        out
+    }
+    fn parse_pairs(&self, s: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for part in s.split('&') {
+            if part.is_empty() { continue; }
+            let mut it = part.splitn(2, '=');
+            let k = it.next().unwrap_or("");
+            let v = it.next().unwrap_or("");
+            let kd = self.url_decode_form(k);
+            let vd = self.url_decode_form(v);
+            out.push(format!("{}={}", kd, vd));
+        }
+        out
+    }
+    fn ensure_get_params(&mut self) {
+        if self.get_params_cache.is_none() {
+            let q = env::var("QUERY_STRING").unwrap_or_default();
+            let v = self.parse_pairs(&q);
+            self.get_params_cache = Some(v);
+        }
+    }
+    fn ensure_post_params(&mut self) {
+        if self.post_params_cache.is_some() { return; }
+        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+        if clen == 0 { self.post_params_cache = Some(Vec::new()); return; }
+        let ctype = env::var("CONTENT_TYPE").unwrap_or_default();
+        if !ctype.to_ascii_lowercase().starts_with("application/x-www-form-urlencoded") {
+            // unsupported type for now
+            self.post_params_cache = Some(Vec::new());
+            return;
+        }
+        let mut body = Vec::with_capacity(clen);
+        let _ = io::stdin().take(clen as u64).read_to_end(&mut body);
+        let s = String::from_utf8_lossy(&body).to_string();
+        let v = self.parse_pairs(&s);
+        self.post_params_cache = Some(v);
+    }
+    fn make_string_array(vals: Vec<String>) -> Value {
+        use std::cell::RefCell;
+        let dims = vec![vals.len()];
+        let data: Vec<Value> = vals.into_iter().map(Value::Str).collect();
+        let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: RefCell::new(data) });
+        Value::Array(arr)
+    }
 
     pub fn run(&mut self) -> Result<()> {
         loop {
@@ -670,6 +737,29 @@ impl VM {
                             }
                             self.stack.push(Value::Str(out));
                         },
+                        11 => { // GET$()
+                            if argc != 0 { return Err(BasilError("GET$ expects 0 arguments".into())); }
+                            self.ensure_get_params();
+                            let vals = self.get_params_cache.clone().unwrap_or_default();
+                            let arr = VM::make_string_array(vals);
+                            self.stack.push(arr);
+                        }
+                        12 => { // POST$()
+                            if argc != 0 { return Err(BasilError("POST$ expects 0 arguments".into())); }
+                            self.ensure_post_params();
+                            let vals = self.post_params_cache.clone().unwrap_or_default();
+                            let arr = VM::make_string_array(vals);
+                            self.stack.push(arr);
+                        }
+                        13 => { // REQUEST$()
+                            if argc != 0 { return Err(BasilError("REQUEST$ expects 0 arguments".into())); }
+                            self.ensure_get_params();
+                            self.ensure_post_params();
+                            let mut vals = self.get_params_cache.clone().unwrap_or_default();
+                            if let Some(mut p) = self.post_params_cache.clone() { vals.append(&mut p); }
+                            let arr = VM::make_string_array(vals);
+                            self.stack.push(arr);
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
