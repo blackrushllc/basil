@@ -186,7 +186,7 @@ impl VM {
                     if self.frames.is_empty() { break; }
                 }
 
-                Op::Print => { let v = self.pop()?; println!("{}", v); }
+                Op::Print => { let v = self.pop()?; print!("{}", v); }
                 Op::Pop   => { let _ = self.pop()?; }
                 Op::ToInt => {
                     let v = self.pop()?;
@@ -654,6 +654,22 @@ impl VM {
                             let s = self.type_of(&args[0]);
                             self.stack.push(Value::Str(s));
                         }
+                        10 => { // HTML/HTML$(x)
+                            if argc != 1 { return Err(BasilError("HTML expects 1 argument".into())); }
+                            let s = format!("{}", args[0]);
+                            let mut out = String::with_capacity(s.len());
+                            for ch in s.chars() {
+                                match ch {
+                                    '&' => out.push_str("&amp;"),
+                                    '<' => out.push_str("&lt;"),
+                                    '>' => out.push_str("&gt;"),
+                                    '"' => out.push_str("&quot;"),
+                                    '\'' => out.push_str("&#39;"),
+                                    _ => out.push(ch),
+                                }
+                            }
+                            self.stack.push(Value::Str(out));
+                        },
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }

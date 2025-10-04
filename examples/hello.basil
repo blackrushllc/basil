@@ -1,9 +1,9 @@
-PRINT "Hello, World. I'm BASIL!";
+PRINT "Hello, World. I'm BASIL!\n";
 PRINT "This was written by "+AUTHOR();
-LET A$ = INPUT$("Enter your name:");
-PRINT "Hello, "+A$+"!";
+LET A$ = INPUT$("\nEnter your name:");
+PRINT "\nHello, "+A$+"!";
 
-LET ans$ = INPUT$("Do you want to do something else? (Y/N): ");
+LET ans$ = INPUT$("\nDo you want to do something else? (Y/N): ");
 
 // Block IF:
 
@@ -13,11 +13,11 @@ IF ans$ == "Y" THEN
       PRINT "\nBLinken";
       PRINT "\nNod";
     ELSE
-        PRINT "Okay, I'll skip that.";
+        PRINT "\nOkay, I'll skip that.";
     END
 
 // Immediate IF:
 
 IF ans$ == "Y" THEN PRINT "yes"; ELSE PRINT "no";
 
-PRINT "Goodbye!";
+PRINT "\nGoodbye!";

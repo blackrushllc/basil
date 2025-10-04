@@ -787,6 +787,8 @@ impl C {
                         "INKEY$" => Some(7u8),
                         "INKEY%" => Some(8u8),
                         "TYPE$" => Some(9u8),
+                        "HTML$" => Some(10u8),
+                        "HTML" => Some(10u8),
                         _ => None,
                     };
                     if let Some(id) = bid {
