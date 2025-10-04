@@ -17,13 +17,62 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 ### Known limitations
 
-- Interactive console input (INPUT$, INPUTC$, INKEY$, INKEY%): On Windows, these functions require a real console/TTY. When running basilc via an IDE’s Run/Debug console (e.g., RustRover Run menu), the IDE’s pseudo-terminal may not support raw-mode keyboard polling and can cause hangs or repeated key echo. Run interactive examples from a regular terminal (PowerShell, cmd.exe) for correct behavior. Non-interactive scripts and normal terminal usage are unaffected.
+- Interactive console input (INPUT\$, INPUTC\$, INKEY\$, INKEY%): On Windows, these functions require a real console/TTY. When running basilc via an IDE’s Run/Debug console (e.g., RustRover Run menu), the IDE’s pseudo-terminal may not support raw-mode keyboard polling and can cause hangs or repeated key echo. Run interactive examples from a regular terminal or the Terminal window in your IDE (PowerShell, cmd.exe) for correct behavior. Non-interactive scripts and normal terminal usage are unaffected.
 - If you must run from an IDE, configure the run target to use an external console or disable input features in your script.
+- Alternative there will be a "test" option to run non-interactively, mock input, and output comments
+-
+- 
+
+# TODO next
+
+🌿 "test" CLI command to run non-interactively, mock input, and output comments
 
 🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
+
+# 🌱 WHAT'S NEW 🌱
+
+### 🌿 STATUS UPDATE _Bytecode is compiled and stored in a .basilx file_ !!!
++ Bytecode automatically recompiles whenever the source file is changed
++ Bytecode is stored in a .basilx file
++ Bytecode runs faster than the original source code
++ Bytecode is portable between platforms (Windows, Linux, MacOS) using the Basil VM
+
+
 ### 🌿 STATUS UPDATE _CGI scripts run like Php scripts with \<?basil .. ?>_ !!!
 
-### 🌿 STATUS UPDATE _Lots of bug fixes and improvements_ !!!
+```html
+#CGI_NO_HEADER
+<?basil
+  // Manual header mode: send headers explicitly, then a blank line
+  PRINT "Status: 200 OK\r\n";
+  PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
+?>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Basil CGI Demo</title>
+</head>
+<body>
+  <h1>Hello, World</h1>
+  <p>This page is rendered by a Basil CGI template.</p>
+
+  <h2>Request parameters</h2>
+  <p>Any GET or POST parameters will be listed below.</p>
+  <ul>
+  <?basil
+    FOR EACH p$ IN REQUEST$()
+      PRINT "<li>" + HTML$(p$) + "</li>\n";
+    NEXT
+  ?>
+  </ul>
+</body>
+</html>
+```
+
+### 🌿 STATUS UPDATE _Lots of bug fixes and improvements, better error msgs_ !!!
+
+### 🌿 STATUS UPDATE _Added INPUTC$, PRINTLN_, updated examples !!!
 
 ### 🌿 STATUS UPDATE _Added UCASE, LCASE, TRIM, STR, ASC, CHR, LEFT, RIGHT, MID, INSTR, FIND, STR$ and INKEY%_ !!!
 
@@ -122,6 +171,48 @@ NEXT
 + Refer to the link below for my feelings on this new feature:
 + https://youtube.com/clip/UgkxBpXcWlbjLM0n_YrEbR__yWX6a-gF8yOl?si=dvQHvcfwzRZ-yIC4
 
+#### Link in Rust objects crate:
+```cargo run -q -p basilc --features obj-bmx -- run examples/objects.basil```
+
+#### Link in C objects crate:
+```cargo run -q -p basilc --features obj-c -- run examples/objects.basil```
+
+Reference objects in BASIL:
+
+```
+REM Objects demo: BMX_RIDER and BMX_TEAM
+REM This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+#USE BMX_RIDER, BMX_TEAM
+
+DIM riders@(2) AS BMX_RIDER;
+LET riders@(0) = NEW BMX_RIDER("Alice", 17, "Expert", 12, 3);
+LET riders@(1) = NEW BMX_RIDER("Bob",   21, "Expert",  8, 9);
+LET riders@(2) = NEW BMX_RIDER("Carol", 19, "Pro",    30, 4);
+
+FOR EACH r@ IN riders@
+  PRINT "Rider - ",r@.Describe$();
+NEXT
+
+DIM nums%(4);
+FOR EACH n% IN nums%
+  LET nums%(n%) = n% * n%;
+NEXT
+
+DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+t@.AddRider(riders@(0)); t@.AddRider(riders@(1)); t@.AddRider(riders@(2));
+
+FOR EACH name$ IN t@.RiderNames$()
+  PRINTLN name$;
+NEXT
+
+FOR EACH desc$ IN t@.RiderDescriptions$()
+  PRINTLN desc$;
+NEXT
+
+```
+
+
 
 ### 🌿 STATUS UPDATE _Arrays Working_ !!!
 + String, Integer and Float arrays up to 4 dimensions
@@ -137,7 +228,39 @@ TODO in this vein:
 + Maybe Array functions SORT, RESIZE, RESHAPE, TRANSPOSE, RANDOMIZE, REVERSE, FOR EACH Loops
 + Maybe Array types Byte(), Word(), Long(), Double()
 
+```
 
+REM Arrays example for BASIL
+REM Demonstrates DIM for string ($), integer (%), and float arrays, with up to 2 dimensions
+
+REM --- 1D integer array (0..5 inclusive => length 6) ---
+DIM N%(5);
+LET N%(0) = 10;
+LET N%(5) = 99;
+PRINT "N%(0)=", N%(0), ", N%(5)=", N%(5);
+PRINT "LEN(N%)=", LEN(N%);
+
+REM --- 1D float array (0..3 inclusive => length 4) ---
+DIM X(3);
+LET X(0) = 1.5;
+LET X(3) = 2.5;
+PRINT "X(0)=", X(0), ", X(3)=", X(3);
+PRINT "LEN(X)=", LEN(X);
+
+REM --- 2D string array (0..2 by 0..1 => 3 x 2 = 6 elements) ---
+DIM S$(2,1);
+LET S$(0,0) = "Hello";
+LET S$(2,1) = "World";
+PRINT "S$(0,0)=", S$(0,0), ", S$(2,1)=", S$(2,1);
+PRINT "LEN(S$)=", LEN(S$);
+
+REM Show that re-DIM resets the array
+DIM S$(1,0); REM now capacity is 2 x 1 = 2 elements, previous contents cleared
+LET S$(1,0) = "Reset";
+PRINT "After re-DIM, LEN(S$)=", LEN(S$), "; S$(1,0)=", S$(1,0);
+
+
+```
 
 ### 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
 + Also String and Integer variable types (A$, MyNum%)
@@ -151,10 +274,31 @@ TODO in this vein:
 + Functions VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL
 + String functions REPLACE, STR, STRTOK
 
+```
+
+FOR i = 1 TO 5
+    PRINTLN i;
+NEXT i;
+
+FOR j = 5 TO 1 STEP -1
+    BEGIN
+        PRINT j;
+        FOR i = 1 TO 5
+            PRINTLN i;
+        NEXT i;
+    END
+NEXT j;
+
+
+
+```
+
 
 ### 🌿 STATUS UPDATE _CGI Working_ !!!
 
-#### (Along side html and Php files like normal)
++ See bigger example above and in examples/cgi.basil etc
++ Apache config is described further below
++ Runs Along side html and Php files like normal
 
 🌱 Basil executable can tell the difference between running in CLI mode vs web mode, and you can 
 write Basil scripts that respond to HTTP requests or run as normal CLI programs.
