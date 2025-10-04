@@ -26,20 +26,20 @@ t@.AddRider(r2@);
 t@.AddRider(r3@);
 
 REM --- Show team summary and rider list ---
-PRINT "Team:", t@.Info$();
-PRINT "WinPct:", t@.WinPct();
+PRINTLN "Team:", t@.Info$();
+PRINTLN "WinPct:", t@.WinPct();
 
 LET names$ = t@.RiderNames$();
-PRINT "Riders (", LEN(names$), "):";
+PRINTLN "Riders (", LEN(names$), "):";
 FOR i% = 0 TO LEN(names$)-1
-  PRINT "  - ", names$(i%);
+  PRINTLN "  - ", names$(i%);
 NEXT i%
 
-REM Also print descriptions from the riders for variety
+REM Also PRINTLN descriptions from the riders for variety
 LET descs$ = t@.RiderDescriptions$();
-PRINT "Descriptions:";
+PRINTLN "Descriptions:";
 FOR i% = 0 TO LEN(descs$)-1
-  PRINT "  ", descs$(i%);
+  PRINTLN "  ", descs$(i%);
 NEXT i%
 
 REM --- Optionally show full object descriptors ---
@@ -47,8 +47,8 @@ REM LET ans$ = INPUT$("Show object DESCRIBE info for BMX_RIDER and BMX_TEAM? (Y/
 LET ans$ = "Y"; REM auto-answer yes for automated testing
 IF ans$ == "Y" THEN
 BEGIN
-  PRINT "\n--- DESCRIBE$(r1@) ---";
-  PRINT DESCRIBE$(r1@);
-  PRINT "\n--- DESCRIBE t@ ---";
+  PRINTLN "\n--- DESCRIBE$(r1@) ---";
+  PRINTLN DESCRIBE$(r1@);
+  PRINTLN "\n--- DESCRIBE t@ ---";
   DESCRIBE t@;
 END

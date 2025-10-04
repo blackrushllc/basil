@@ -1,9 +1,8 @@
 REM Simple Hello World
-PRINT "Hello World!"
+PRINTLN "Hello World!";
     FOR I% = 1 TO 5
         BEGIN
-        PRINT "This is loop number ", I%;
-        PRINT "\n"
+        PRINTLN "This is loop number ", I%;
         END
     NEXT
-PRINT "Goodbye!"
+PRINT "Goodbye!";
