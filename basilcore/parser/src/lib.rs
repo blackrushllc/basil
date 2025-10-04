@@ -104,6 +104,20 @@ impl Parser {
             return Ok(Stmt::Print { expr: e });
         }
 
+        if self.match_k(TokenKind::Println) {
+            // PRINTLN works like PRINT but always appends a newline
+            let mut e = self.parse_expr_bp(0)?;
+            while self.match_k(TokenKind::Comma) {
+                let next = self.parse_expr_bp(0)?;
+                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(Expr::Str("\t".to_string())) };
+                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(next) };
+            }
+            // append newline
+            e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(Expr::Str("\n".to_string())) };
+            self.terminate_stmt()?;
+            return Ok(Stmt::Print { expr: e });
+        }
+
         if self.match_k(TokenKind::Describe) {
             let target = self.parse_expr_bp(0)?;
             self.terminate_stmt()?;
@@ -124,6 +138,8 @@ impl Parser {
         if self.match_k(TokenKind::If) {
             let cond = self.parse_expr_bp(0)?;
             self.expect(TokenKind::Then)?;
+            // Allow optional semicolons/newlines before BEGIN
+            while self.match_k(TokenKind::Semicolon) {}
             // Support both single-statement and block IF forms.
             // Block form: IF <cond> THEN BEGIN ... [ELSE ...] END
             if self.match_k(TokenKind::Begin) {
@@ -137,6 +153,8 @@ impl Parser {
                 }
                 let then_s = Box::new(Stmt::Block(then_body));
                 let else_s = if self.match_k(TokenKind::Else) {
+                    // Allow optional semicolons/newlines before BEGIN
+                    while self.match_k(TokenKind::Semicolon) {}
                     // Else can be BEGIN ... END or a single statement before END
                     if self.match_k(TokenKind::Begin) {
                         let mut else_body = Vec::new();
@@ -150,11 +168,13 @@ impl Parser {
                     } else {
                         let s = self.parse_stmt()?;
                         // After a single-statement ELSE, require END to close the IF
+                        while self.match_k(TokenKind::Semicolon) {}
                         self.expect(TokenKind::End)?;
                         Some(Box::new(s))
                     }
                 } else {
                     // No ELSE: require END to close the IF
+                    while self.match_k(TokenKind::Semicolon) {}
                     self.expect(TokenKind::End)?;
                     None
                 };

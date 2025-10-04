@@ -3,8 +3,8 @@ A modern BASIC‑flavored language focused on web/back‑end with the
 ability to compile binaries, transpile to C, NodeJS and WebAssembly, 
 and leverages a lot of existing libraries from other environments.
 
-🌱 Basil is inspired by Bob Zale's PowerBASIC and the warmth and simplicity of BASIC,
-but reimagined for today's developer needs with modern features, a robust standard library,
+🌱 Basil is inspired by Bob Zale's PowerBASIC and the warmth and simplicity of BASIC, 
+but reimagined for today's developer needs with modern features, a robust standard library, 
 and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Basil is written in Rust for safety and performance, and aims to provide a delightful developer experience.
@@ -15,7 +15,14 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
-# 🌿 STATUS UPDATE _Added WHILE Loop, BREAK, CONTINUE and Boolean Constants_ !!!
+🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
+### 🌿 STATUS UPDATE _CGI scripts run like Php scripts with <?basil .. ?>_ !!!
+
+### 🌿 STATUS UPDATE _Lots of bug fixes and improvements_ !!!
+
+### 🌿 STATUS UPDATE _Added UCASE, LCASE, TRIM, STR, ASC, CHR, LEFT, RIGHT, MID, INSTR, FIND, STR$ and INKEY%_ !!!
+
+### 🌿 STATUS UPDATE _Added WHILE Loop, BREAK, CONTINUE and Boolean Constants_ !!!
 
 ````basil
 
@@ -70,7 +77,7 @@ END
 
 ````
 
-# 🌿 STATUS UPDATE _Arrays of Objects and FOR/EACH Loops_ !!!
+### 🌿 STATUS UPDATE _Arrays of Objects and FOR/EACH Loops_ !!!
 
 ````basil
 
@@ -82,7 +89,7 @@ LET riders@(1) = NEW BMX_RIDER("Bob",   21, "Expert",  8, 9);
 LET riders@(2) = NEW BMX_RIDER("Carol", 19, "Pro",    30, 4);
 
 FOR EACH r@ IN riders@
-  PRINT "Rider - ",r@.Describe$();
+  PRINT "Rider - ", r@.Describe$();
 NEXT
 
 DIM nums%(4);
@@ -103,7 +110,7 @@ NEXT
 
 ````
 
-# 🌿 STATUS UPDATE _Objects Working_ !!!
+### 🌿 STATUS UPDATE _Objects Working_ !!!
 + (Windows) ```cargo run -q -p basilc --features obj-bmx -- run examples\objects.basil```
 + (Linux) ```cargo run -q -p basilc --features obj-bmx -- run examples/objects.basil```
 + See OBJECTS.md for more info
@@ -111,7 +118,7 @@ NEXT
 + https://youtube.com/clip/UgkxBpXcWlbjLM0n_YrEbR__yWX6a-gF8yOl?si=dvQHvcfwzRZ-yIC4
 
 
-# 🌿 STATUS UPDATE _Arrays Working_ !!!
+### 🌿 STATUS UPDATE _Arrays Working_ !!!
 + String, Integer and Float arrays up to 4 dimensions
 + Array function LEN() returns number of elements in array
 + Array command DIM creates/recreates array with specified dimensions
@@ -127,9 +134,9 @@ TODO in this vein:
 
 
 
-# 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
+### 🌿 STATUS UPDATE _FOR/NEXT Loops Working_ !!!
 + Also String and Integer variable types (A$, MyNum%)
-+ String concatenation with "+" (direct) or "," (tab)
++ String concatenation with "+" (direct) or ", " (tab)
 + String functions LEN, LEFT\$, RIGHT\$, MID\$, INSTR
 + Example programs added
 
@@ -140,9 +147,9 @@ TODO in this vein:
 + String functions REPLACE, STR, STRTOK
 
 
-# 🌿 STATUS UPDATE _CGI Working_ !!!
+### 🌿 STATUS UPDATE _CGI Working_ !!!
 
-### (Along side html and Php files like normal)
+#### (Along side html and Php files like normal)
 
 🌱 Basil executable can tell the difference between running in CLI mode vs web mode, and you can 
 write Basil scripts that respond to HTTP requests or run as normal CLI programs.
@@ -179,7 +186,7 @@ install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
 
         # Alternatively, map URL like /app/foo.basil -> sets SCRIPT_FILENAME to /var/www/app/foo.basil
         # RewriteCond %{REQUEST_FILENAME} !-f
-        # RewriteRule ^/app/(.+\.basil)$ /cgi-bin/basil.cgi [QSA,PT,E=SCRIPT_FILENAME:/var/www/app/$1]
+        # RewriteRule ^/app/(.+\.basil)$ /cgi-bin/basil.cgi [QSA, PT, E=SCRIPT_FILENAME:/var/www/app/$1]
 
         # Make sure CGI sees the real file path
         RewriteEngine On
@@ -194,7 +201,7 @@ install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
             RewriteEngine on
             RewriteCond %{REQUEST_FILENAME} !-f
             RewriteCond %{REQUEST_FILENAME} !-d
-            RewriteRule ^(.*)$ /index.php/$1 [NC,L]
+            RewriteRule ^(.*)$ /index.php/$1 [NC, L]
         </Directory>
 
         ServerAdmin webmaster@localhost
@@ -388,7 +395,7 @@ declaration := "FUNC" ident "(" [parameters] ")" [":" type] block
              | "LET" ident [":" type] "=" expression ";"
              | statement ;
 
-parameters  := ident [":" type] { "," ident [":" type] } ;
+parameters  := ident [":" type] { ", " ident [":" type] } ;
 
 statement   := expr_stmt
              | if_stmt
@@ -415,7 +422,7 @@ unary       := ("NOT" | "-" | "+") unary | call ;
 call        := primary { "(" [ arguments ] ")" } ;
 primary     := NUMBER | STRING | TRUE | FALSE | NULL | IDENT | "(" expression ")" ;
 
-arguments   := expression { "," expression } ;
+arguments   := expression { ", " expression } ;
 
 type        := IDENT ; // placeholder for v0, optional annotations only
 ```
@@ -427,17 +434,17 @@ type        := IDENT ; // placeholder for v0, optional annotations only
 ```
 Enum TokenKind {
   // single char
-  LParen, RParen, Comma, Semicolon,
-  Plus, Minus, Star, Slash,
-  Lt, Gt,
+  LParen, RParen, Comma, Semicolon, 
+  Plus, Minus, Star, Slash, 
+  Lt, Gt, 
   // one or two char
-  Assign, EqEq, BangEq, LtEq, GtEq,
+  Assign, EqEq, BangEq, LtEq, GtEq, 
   // literals/identifiers
-  Ident, Number, String,
+  Ident, Number, String, 
   // keywords
-  Func, Return, If, Then, Else, While, Do, Begin, End,
-  Let, True, False, Null, And, Or, Not,
-  Eof,
+  Func, Return, If, Then, Else, While, Do, Begin, End, 
+  Let, True, False, Null, And, Or, Not, 
+  Eof, 
 }
 ```
 
@@ -487,22 +494,22 @@ fn parse_bp(&mut self, min_bp: u8) -> Expr {
 
 ```rust
 enum Stmt {
-  Let { name: IdentId, init: Expr },
-  Expr(Expr),
-  If { cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
-  While { cond: Expr, body: Box<Stmt> },
-  Return(Option<Expr>),
-  Block(Vec<Stmt>),
-  Func { name: IdentId, params: Vec<IdentId>, body: Vec<Stmt> },
+  Let { name: IdentId, init: Expr }, 
+  Expr(Expr), 
+  If { cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> }, 
+  While { cond: Expr, body: Box<Stmt> }, 
+  Return(Option<Expr>), 
+  Block(Vec<Stmt>), 
+  Func { name: IdentId, params: Vec<IdentId>, body: Vec<Stmt> }, 
 }
 
 enum Expr {
   Literal(ValueLit),              // Number(f64), String(InternId), Bool, Null
-  Var(IdentId),
-  Assign { name: IdentId, value: Box<Expr> },
-  Unary { op: TokenKind, rhs: Box<Expr> },
-  Binary { op: TokenKind, lhs: Box<Expr>, rhs: Box<Expr> },
-  Call { callee: Box<Expr>, args: Vec<Expr> },
+  Var(IdentId), 
+  Assign { name: IdentId, value: Box<Expr> }, 
+  Unary { op: TokenKind, rhs: Box<Expr> }, 
+  Binary { op: TokenKind, lhs: Box<Expr>, rhs: Box<Expr> }, 
+  Call { callee: Box<Expr>, args: Vec<Expr> }, 
 }
 ```
 
@@ -566,24 +573,24 @@ HALT
 
 ```rust
 enum Value {
-  Null,
-  Bool(bool),
-  Num(f64),
-  Str(InternId),
-  Func(FuncObjId),
-  Native(NativeFnId),
+  Null, 
+  Bool(bool), 
+  Num(f64), 
+  Str(InternId), 
+  Func(FuncObjId), 
+  Native(NativeFnId), 
 }
 
 struct CallFrame {
-  func: FuncObjId,
+  func: FuncObjId, 
   ip: usize,         // instruction pointer into chunk
   base: usize,       // stack base for locals
 }
 
 struct VM {
-  stack: Vec<Value>,
-  frames: Vec<CallFrame>,
-  globals: Vec<Value>,
+  stack: Vec<Value>, 
+  frames: Vec<CallFrame>, 
+  globals: Vec<Value>, 
 }
 ```
 
@@ -619,18 +626,18 @@ fn run(&mut self) -> Result<(), VMError> {
                 self.stack[base + i] = v;
             }
 
-            ADD => bin_num(self, |a,b| a+b)?,
-            SUB => bin_num(self, |a,b| a-b)?,
-            MUL => bin_num(self, |a,b| a*b)?,
-            DIV => bin_num(self, |a,b| a/b)?,
+            ADD => bin_num(self, |a, b| a+b)?, 
+            SUB => bin_num(self, |a, b| a-b)?, 
+            MUL => bin_num(self, |a, b| a*b)?, 
+            DIV => bin_num(self, |a, b| a/b)?, 
             NEG => { let a = as_num(self.pop())?; self.stack.push(Value::Num(-a)); }
 
-            EQ => bin_cmp(self, |a,b| a==b)?,
-            NE => bin_cmp(self, |a,b| a!=b)?,
-            LT => bin_num_cmp(self, |a,b| a<b)?,
-            LE => bin_num_cmp(self, |a,b| a<=b)?,
-            GT => bin_num_cmp(self, |a,b| a>b)?,
-            GE => bin_num_cmp(self, |a,b| a>=b)?,
+            EQ => bin_cmp(self, |a, b| a==b)?, 
+            NE => bin_cmp(self, |a, b| a!=b)?, 
+            LT => bin_num_cmp(self, |a, b| a<b)?, 
+            LE => bin_num_cmp(self, |a, b| a<=b)?, 
+            GT => bin_num_cmp(self, |a, b| a>b)?, 
+            GE => bin_num_cmp(self, |a, b| a>=b)?, 
 
             NOT => { let t = is_truthy(&self.pop()); self.stack.push(Value::Bool(!t)); }
 
@@ -649,7 +656,7 @@ fn run(&mut self) -> Result<(), VMError> {
                 if !self.ret()? { return Ok(()); } // false -> returned from top
             }
             PRINT => { println!("{:?}", self.pop()); }
-            HALT => return Ok(()),
+            HALT => return Ok(()), 
         }
     }
 }
@@ -658,13 +665,13 @@ fn run(&mut self) -> Result<(), VMError> {
 Helpers (sketch):
 
 ```rust
-fn bin_num<F: Fn(f64,f64)->f64>(vm: &mut VM, f: F) -> Result<(), VMError> {
+fn bin_num<F: Fn(f64, f64)->f64>(vm: &mut VM, f: F) -> Result<(), VMError> {
     let b = as_num(vm.pop())?; let a = as_num(vm.pop())?;
-    vm.stack.push(Value::Num(f(a,b))); Ok(())
+    vm.stack.push(Value::Num(f(a, b))); Ok(())
 }
-fn bin_cmp<F: Fn(&Value,&Value)->bool>(vm: &mut VM, f: F) -> Result<(), VMError> {
+fn bin_cmp<F: Fn(&Value, &Value)->bool>(vm: &mut VM, f: F) -> Result<(), VMError> {
     let b = vm.pop(); let a = vm.pop();
-    vm.stack.push(Value::Bool(f(&a,&b))); Ok(())
+    vm.stack.push(Value::Bool(f(&a, &b))); Ok(())
 }
 ```
 
@@ -698,8 +705,8 @@ fn emit_expr(&mut self, e: &Expr) {
     Expr::Unary { op, rhs } => { self.emit_expr(rhs); match op { TokenKind::Minus => self.emit(Op::NEG), TokenKind::Not => self.emit(Op::NOT), _ => unreachable!() } }
     Expr::Binary { op, lhs, rhs } => {
       self.emit_expr(lhs); self.emit_expr(rhs);
-      self.emit(match op { TokenKind::Plus=>Op::ADD, TokenKind::Minus=>Op::SUB, TokenKind::Star=>Op::MUL, TokenKind::Slash=>Op::DIV,
-                           TokenKind::EqEq=>Op::EQ, TokenKind::BangEq=>Op::NE, TokenKind::Lt=>Op::LT, TokenKind::Le=>Op::LE,
+      self.emit(match op { TokenKind::Plus=>Op::ADD, TokenKind::Minus=>Op::SUB, TokenKind::Star=>Op::MUL, TokenKind::Slash=>Op::DIV, 
+                           TokenKind::EqEq=>Op::EQ, TokenKind::BangEq=>Op::NE, TokenKind::Lt=>Op::LT, TokenKind::Le=>Op::LE, 
                            TokenKind::Gt=>Op::GT, TokenKind::Ge=>Op::GE, _=>unreachable!() });
     }
     Expr::Call { callee, args } => {

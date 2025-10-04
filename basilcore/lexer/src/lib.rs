@@ -54,7 +54,7 @@ pub enum TokenKind {
     // Keywords
     Func, Return, If, Then, Else, While, Do, Begin, End,
     Break, Continue,
-    Let, Print, True, False, Null, And, Or, Not,
+    Let, Print, Println, True, False, Null, And, Or, Not,
     Author,
     // New for FOR loop support
     For, To, Step, Next,
@@ -285,6 +285,7 @@ impl<'a> Lexer<'a> {
             "CONTINUE" => TokenKind::Continue,
             "LET"    => TokenKind::Let,
             "PRINT"  => TokenKind::Print,
+            "PRINTLN"=> TokenKind::Println,
             "TRUE"   => TokenKind::True,
             "FALSE"  => TokenKind::False,
             "NULL"   => TokenKind::Null,

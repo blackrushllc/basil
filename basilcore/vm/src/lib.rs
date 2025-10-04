@@ -43,7 +43,9 @@ use std::rc::Rc;
 use std::io::{self, Write, Read};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 use std::env;
+use std::time::Duration;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
+use crossterm::event::poll;
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
@@ -661,35 +663,32 @@ impl VM {
                             while input.ends_with('\n') || input.ends_with('\r') { input.pop(); }
                             self.stack.push(Value::Str(input));
                         }
-                        7 => { // INKEY$()
+                        7 => { // INKEY$() — non-blocking, returns "" if no key available
                             if argc != 0 { return Err(BasilError("INKEY$ expects 0 arguments".into())); }
                             enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            let s = loop {
+                            let s = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
                                 match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                    Event::Key(KeyEvent { code, .. }) => {
-                                        let out = match code {
-                                            KeyCode::Char(c) => c.to_string(),
-                                            KeyCode::Enter => "\r".to_string(),
-                                            KeyCode::Backspace => "\u{0008}".to_string(),
-                                            KeyCode::Tab => "\t".to_string(),
-                                            KeyCode::Esc => "\u{001B}".to_string(),
-                                            _ => String::new(),
-                                        };
-                                        break out;
-                                    }
-                                    _ => { /* ignore other events */ }
+                                    Event::Key(KeyEvent { code, .. }) => match code {
+                                        KeyCode::Char(c) => c.to_string(),
+                                        KeyCode::Enter => "\r".to_string(),
+                                        KeyCode::Backspace => "\u{0008}".to_string(),
+                                        KeyCode::Tab => "\t".to_string(),
+                                        KeyCode::Esc => "\u{001B}".to_string(),
+                                        _ => String::new(),
+                                    },
+                                    _ => String::new(),
                                 }
-                            };
+                            } else { String::new() };
                             let _ = disable_raw_mode();
                             self.stack.push(Value::Str(s));
                         }
-                        8 => { // INKEY%()
+                        8 => { // INKEY%() — non-blocking, returns 0 if no key available
                             if argc != 0 { return Err(BasilError("INKEY% expects 0 arguments".into())); }
                             enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            let code_i: i64 = loop {
+                            let code_i: i64 = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
                                 match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
                                     Event::Key(KeyEvent { code, .. }) => {
-                                        let val: i64 = match code {
+                                        match code {
                                             KeyCode::Char(c) => c as i64,
                                             KeyCode::Enter => 13,
                                             KeyCode::Backspace => 8,
@@ -707,12 +706,11 @@ impl VM {
                                             KeyCode::Delete => 1009,
                                             KeyCode::F(n) => 1100 + n as i64,
                                             _ => 0,
-                                        };
-                                        break val;
+                                        }
                                     }
-                                    _ => { /* ignore */ }
+                                    _ => 0,
                                 }
-                            };
+                            } else { 0 };
                             let _ = disable_raw_mode();
                             self.stack.push(Value::Int(code_i));
                         }
@@ -759,6 +757,55 @@ impl VM {
                             if let Some(mut p) = self.post_params_cache.clone() { vals.append(&mut p); }
                             let arr = VM::make_string_array(vals);
                             self.stack.push(arr);
+                        }
+                        14 => { // UCASE$(s)
+                            if argc != 1 { return Err(BasilError("UCASE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("UCASE$ arg must be string".into())) };
+                            self.stack.push(Value::Str(s.to_uppercase()));
+                        }
+                        15 => { // LCASE$(s)
+                            if argc != 1 { return Err(BasilError("LCASE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("LCASE$ arg must be string".into())) };
+                            self.stack.push(Value::Str(s.to_lowercase()));
+                        }
+                        16 => { // TRIM$(s)
+                            if argc != 1 { return Err(BasilError("TRIM$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("TRIM$ arg must be string".into())) };
+                            self.stack.push(Value::Str(s.trim().to_string()));
+                        }
+                        17 => { // CHR$(n)
+                            if argc != 1 { return Err(BasilError("CHR$ expects 1 argument".into())); }
+                            let n = match &args[0] {
+                                Value::Int(i) => *i,
+                                Value::Num(f) => f.trunc() as i64,
+                                _ => return Err(BasilError("CHR$ arg must be numeric".into())),
+                            };
+                            let out = if n < 0 || n > 0x10FFFF { String::new() } else { std::char::from_u32(n as u32).map(|c| c.to_string()).unwrap_or_default() };
+                            self.stack.push(Value::Str(out));
+                        }
+                        18 => { // ASC%(s)
+                            if argc != 1 { return Err(BasilError("ASC% expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s, _ => return Err(BasilError("ASC% arg must be string".into())) };
+                            let code: i64 = s.chars().next().map(|c| c as u32 as i64).unwrap_or(0);
+                            self.stack.push(Value::Int(code));
+                        }
+                        19 => { // INPUTC$()
+                            if argc != 0 { return Err(BasilError("INPUTC$ expects 0 arguments".into())); }
+                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            let s = loop {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => {
+                                        let out = match code {
+                                            KeyCode::Char(c) if c.is_ascii() => c.to_string(),
+                                            _ => String::new(),
+                                        };
+                                        break out;
+                                    }
+                                    _ => { /* ignore other events */ }
+                                }
+                            };
+                            let _ = disable_raw_mode();
+                            self.stack.push(Value::Str(s));
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
