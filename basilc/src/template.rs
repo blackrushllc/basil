@@ -91,10 +91,14 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
     // Scan TEXT/ECHO/CODE
     let mut text_start = i; // start of current TEXT segment
     while i < bytes.len() {
-        // find next '<?'
-        let pos = find_bytes(&bytes[i..], b'<')
-            .and_then(|p| if i+p+1 < bytes.len() && bytes[i+p+1] == b'?' { Some(i+p) } else { None });
-        let Some(ltq) = pos else { break; };
+        // find next '<?' by scanning forward
+        let mut scan = i;
+        let mut ltq_opt: Option<usize> = None;
+        while scan + 1 < bytes.len() {
+            if bytes[scan] == b'<' && bytes[scan+1] == b'?' { ltq_opt = Some(scan); break; }
+            scan += 1;
+        }
+        let Some(ltq) = ltq_opt else { break; };
         // Emit text up to ltq
         if ltq > text_start {
             let text = &src[text_start..ltq];
@@ -131,7 +135,8 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
             let (end, _) = find_closing(src, cs)?;
             let code = &src[cs..end];
             out.push_str(code);
-            if !code.ends_with(';') && !code.trim_end().is_empty() { out.push_str(";\n"); }
+            let code_trim = code.trim_end();
+            if !code_trim.ends_with(';') && !code_trim.is_empty() { out.push_str(";\n"); }
             else { out.push('\n'); }
             i = end + 2; text_start = i;
             continue;
@@ -186,10 +191,6 @@ fn find_closing(src: &str, start: usize) -> Result<(usize, ()), TplError> {
     Err(TplError::Msg("Unterminated block: expected '?>'".into()))
 }
 
-fn find_bytes(hay: &[u8], needle0: u8) -> Option<usize> {
-    for (i, b) in hay.iter().enumerate() { if *b == needle0 { return Some(i); } }
-    None
-}
 
 #[cfg(test)]
 mod tests {
@@ -243,4 +244,24 @@ mod tests {
         let pre = precompile_template(tpl).unwrap();
         assert!(pre.basil_source.contains("PRINT \"hello ?> world\";"));
     }
+
+    #[test]
+    fn multiple_blocks_with_html_between() {
+        let tpl = "<?basil PRINT 1; ?>\n<!doctype html>\n<div>text</div>\n<?basil PRINT 2; ?>";
+        let pre = precompile_template(tpl).unwrap();
+        assert!(pre.basil_source.contains("PRINT 1;"));
+        assert!(pre.basil_source.contains("PRINT 2;"));
+    }
+
+    #[test]
+    fn cgi_example_second_block_executes_crlf_and_indent() {
+        let tpl = "#CGI_NO_HEADER\r\n<?basil\r\n  PRINT \"Status: 200 OK\\r\\n\";\r\n  PRINT \"Content-Type: text/html; charset=utf-8\\r\\n\\r\\n\";\r\n?>\r\n<!doctype html>\r\n<html lang=\"en\">\r\n<head>\r\n  <meta charset=\"utf-8\">\r\n  <title>Basil CGI Demo</title>\r\n</head>\r\n<body>\r\n  <h1>Hello, World</h1>\r\n  <p>This page is rendered by a Basil CGI template.</p>\r\n\r\n  <h2>Request parameters</h2>\r\n  <p>Any GET or POST parameters will be listed below.</p>\r\n  <ul>\r\n  <?basil\r\n    FOR EACH p$ IN REQUEST$()\r\n      PRINT \"<li>\" + HTML$(p$) + \"</li>\\n\";\r\n    NEXT\r\n  ?>\r\n  </ul>\r\n</body>\r\n</html>\r\n";
+        let pre = precompile_template(tpl).unwrap();
+        // Should not leave raw tags in output
+        assert!(!pre.basil_source.contains("<?basil"));
+        // Should include the FOR EACH code
+        assert!(pre.basil_source.contains("FOR EACH p$ IN REQUEST$()"));
+        assert!(pre.basil_source.contains("NEXT"));
+    }
+
 }

@@ -789,6 +789,9 @@ impl C {
                         "TYPE$" => Some(9u8),
                         "HTML$" => Some(10u8),
                         "HTML" => Some(10u8),
+                        "GET$" => Some(11u8),
+                        "POST$" => Some(12u8),
+                        "REQUEST$" => Some(13u8),
                         _ => None,
                     };
                     if let Some(id) = bid {

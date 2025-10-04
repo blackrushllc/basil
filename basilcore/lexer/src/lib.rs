@@ -206,6 +206,7 @@ impl<'a> Lexer<'a> {
                     Some('"') => { s.push('"'); self.advance(); }
                     Some('n') => { s.push('\n'); self.advance(); }
                     Some('t') => { s.push('\t'); self.advance(); }
+                    Some('r') => { s.push('\r'); self.advance(); }
                     Some(c2)  => { s.push(c2);  self.advance(); }
                     None => break,
                 }
