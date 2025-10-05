@@ -47,9 +47,10 @@ use std::time::UNIX_EPOCH;
 
 use basil_parser::parse;
 use basil_compiler::compile;
-use basil_vm::VM;
+use basil_vm::{VM, MockInputProvider};
 use basil_lexer::Lexer; // add this near the other use lines
 use basil_bytecode::{serialize_program, deserialize_program};
+use std::collections::HashMap;
 
 mod template;
 use template::{precompile_template, parse_directives_and_bom, Directives};
@@ -94,7 +95,7 @@ fn print_help() {
     println!("  init (seed)        Create a new Basil project");
     println!("  run  (sprout)      Parse → compile → run a .basil file");
     println!("  build (harvest)    Build project (stub)");
-    println!("  test (cultivate)   Run tests (stub)");
+    println!("  test (cultivate)   Run program in test mode with auto-mocked input");
     println!("  fmt  (prune)       Format sources (stub)");
     println!("  add  (infuse)      Add dependency (stub)");
     println!("  clean (compost)    Remove build artifacts (stub)");
@@ -287,7 +288,10 @@ fn cli_main() {
         "run" => {
             cmd_run(args.get(0).cloned());
         }
-        "build" | "test" | "fmt" | "add" | "clean" | "dev" | "serve" | "doc" => {
+        "test" => {
+            cmd_test(args);
+        }
+        "build" | "fmt" | "add" | "clean" | "dev" | "serve" | "doc" => {
             println!("[stub] '{}' not implemented yet in the prototype", cmd);
         }
         "lex" => { cmd_lex(args.get(0).cloned()); }
@@ -486,5 +490,189 @@ fn main() {
         cgi_main();
     } else {
         cli_main();
+    }
+}
+
+
+// --- Test mode support ---
+fn extract_comments_map(src: &str) -> HashMap<u32, Vec<String>> {
+    let mut map: HashMap<u32, Vec<String>> = HashMap::new();
+    let lines: Vec<&str> = src.lines().collect();
+    let mut pending: Vec<String> = Vec::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        let mut in_str = false;
+        let chars: Vec<char> = line.chars().collect();
+        let mut idx = 0usize;
+        let mut found: Option<(usize, String)> = None;
+        while idx < chars.len() {
+            let c = chars[idx];
+            if c == '"' { in_str = !in_str; idx += 1; continue; }
+            if !in_str {
+                // C++-style comment
+                if c == '/' && idx + 1 < chars.len() && chars[idx+1] == '/' {
+                    let text: String = chars[idx+2..].iter().collect();
+                    found = Some((idx, text.trim_start().to_string()));
+                    break;
+                }
+                // BASIC single-quote comment
+                if c == '\'' {
+                    let text: String = chars[idx+1..].iter().collect();
+                    found = Some((idx, text.trim_start().to_string()));
+                    break;
+                }
+                // REM comment (only when starting a token)
+                if (c == 'R' || c == 'r') && idx + 2 < chars.len() {
+                    let c1 = chars[idx+1].to_ascii_uppercase();
+                    let c2 = chars[idx+2].to_ascii_uppercase();
+                    if c1 == 'E' && c2 == 'M' {
+                        if idx == 0 || chars[idx-1].is_whitespace() {
+                            let text: String = chars[idx+3..].iter().collect();
+                            found = Some((idx, text.trim_start().to_string()));
+                            break;
+                        }
+                    }
+                }
+            }
+            idx += 1;
+        }
+
+        let trimmed = line.trim_start();
+        let is_code_line = !trimmed.is_empty()
+            && !trimmed.starts_with('\'')
+            && !trimmed.starts_with('#')
+            && !trimmed.to_ascii_uppercase().starts_with("REM")
+            && !trimmed.starts_with("//");
+
+        if let Some((pos, text)) = found {
+            // If nothing but whitespace precedes the comment, treat as standalone and queue for next code line
+            if line[..pos].trim().is_empty() {
+                pending.push(text);
+            } else {
+                // Inline with code: flush any pending (earlier lines) to this line, then attach this comment
+                if !pending.is_empty() {
+                    let entry = map.entry((i as u32) + 1).or_default();
+                    entry.extend(pending.drain(..));
+                }
+                map.entry((i as u32) + 1).or_default().push(text);
+            }
+        }
+
+        if is_code_line && !pending.is_empty() {
+            let entry = map.entry((i as u32) + 1).or_default();
+            entry.extend(pending.drain(..));
+        }
+    }
+
+    map
+}
+
+fn cmd_test(mut args: Vec<String>) {
+    if args.is_empty() {
+        eprintln!("usage: basilc test <file.basil> [--seed <u64>] [--max-inputs <n>] [--trace]");
+        std::process::exit(2);
+    }
+    let path = args.remove(0);
+    if !path.ends_with(".basil") {
+        eprintln!("Refusing to test a non-.basil file: {}", path);
+        std::process::exit(2);
+    }
+
+    let mut seed_opt: Option<u64> = None;
+    let mut max_inputs: Option<usize> = None;
+    let mut trace = false;
+
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--seed" {
+            if i + 1 >= args.len() { eprintln!("--seed requires a value"); std::process::exit(2); }
+            seed_opt = args[i+1].parse::<u64>().ok();
+            i += 2; continue;
+        } else if a.starts_with("--seed=") {
+            let v = &a[7..]; seed_opt = v.parse::<u64>().ok(); i += 1; continue;
+        } else if a == "--max-inputs" {
+            if i + 1 >= args.len() { eprintln!("--max-inputs requires a value"); std::process::exit(2); }
+            max_inputs = args[i+1].parse::<usize>().ok(); i += 2; continue;
+        } else if a.starts_with("--max-inputs=") {
+            let v = &a[13..]; max_inputs = v.parse::<usize>().ok(); i += 1; continue;
+        } else if a == "--trace" { trace = true; i += 1; continue; }
+        else {
+            // Unknown or extra arg; ignore
+            i += 1; continue;
+        }
+    }
+
+    // Read source like cmd_run
+    let src = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => { eprintln!("File is not UTF-8 text: {}", path); std::process::exit(3); }
+        Err(e) => { eprintln!("Failed to read {}: {}", path, e); std::process::exit(1); }
+    };
+
+    let looks_like_template = src.contains("<?");
+    let pre = if looks_like_template {
+        match precompile_template(&src) { Ok(r)=>r, Err(e)=>{ eprintln!("template error: {}", e); std::process::exit(1); } }
+    } else {
+        template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() }
+    };
+
+    // Cache path and fingerprint like cmd_run
+    let meta = match fs::metadata(&path) { Ok(m)=>m, Err(e)=>{ eprintln!("stat {}: {}", path, e); std::process::exit(1);} };
+    let source_size = meta.len();
+    let source_mtime_ns: u64 = meta.modified().ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let templating_used = src.contains("<?");
+    let flags: u32 = (if pre.directives.short_tags_on { 1u32 } else { 0u32 })
+                   | (if templating_used { 2u32 } else { 0u32 });
+
+    let mut cache_path = PathBuf::from(&path);
+    cache_path.set_extension("basilx");
+
+    let mut program_opt: Option<basil_bytecode::Program> = None;
+    if let Ok(bytes) = fs::read(&cache_path) {
+        if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
+            let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
+            let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
+            let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
+            let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+            let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+            if fmt_ver == 3 && abi_ver == 2 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+                let prog_bytes = &bytes[32..];
+                if let Ok(p) = deserialize_program(prog_bytes) { program_opt = Some(p); }
+            }
+        }
+    }
+    let program = if let Some(p) = program_opt { p } else {
+        let ast = match parse(&pre.basil_source) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
+        match compile(&ast) { Ok(p)=>{
+            let body = serialize_program(&p);
+            let mut hdr = Vec::with_capacity(32 + body.len());
+            hdr.extend_from_slice(b"BSLX");
+            hdr.extend_from_slice(&3u32.to_le_bytes());
+            hdr.extend_from_slice(&1u32.to_le_bytes());
+            hdr.extend_from_slice(&flags.to_le_bytes());
+            hdr.extend_from_slice(&source_size.to_le_bytes());
+            hdr.extend_from_slice(&source_mtime_ns.to_le_bytes());
+            hdr.extend_from_slice(&body);
+            let tmp = cache_path.with_extension("basilx.tmp");
+            if let Ok(mut f) = File::create(&tmp) { let _ = f.write_all(&hdr); let _ = f.sync_all(); let _ = fs::rename(&tmp, &cache_path); }
+            p
+        }, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1)} }
+    };
+
+    let comments_map = extract_comments_map(&pre.basil_source);
+    let seed: u64 = seed_opt.unwrap_or_else(|| {
+        std::time::SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_nanos() as u64).unwrap_or(0)
+    });
+    let mock = MockInputProvider::new(seed);
+    let mut vm = VM::new_with_test(program, mock, trace, Some(path.clone()), Some(comments_map), max_inputs);
+    if let Err(e) = vm.run() {
+        let line = vm.current_line();
+        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
+        else { eprintln!("runtime error: {}", e); }
+        std::process::exit(1);
     }
 }
