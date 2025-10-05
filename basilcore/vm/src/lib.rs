@@ -46,10 +46,65 @@ use std::env;
 use std::time::Duration;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
 use crossterm::event::poll;
+use std::collections::HashMap;
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
 use basil_objects::{Registry, register_objects};
+
+// --- Input provider abstraction for test mode ---
+pub trait InputProvider {
+    fn read_line(&mut self) -> String;       // for INPUT/INPUT$
+    fn read_char(&mut self) -> Option<char>; // for INPUTC$/INKEY$/INKEY%
+}
+
+// Deterministic mock input provider with simple PRNG-based cycling sequence
+pub struct MockInputProvider {
+    seq: Vec<u8>, // values 0..=5 selecting among choices
+    idx: usize,
+}
+impl MockInputProvider {
+    pub fn new(seed: u64) -> Self {
+        let mut s = if seed == 0 { 0x9E3779B97F4A7C15u64 } else { seed };
+        let mut seq = Vec::with_capacity(1024);
+        for _ in 0..1024 {
+            // xorshift64*
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            let r = s.wrapping_mul(0x2545F4914F6CDD1Du64);
+            seq.push((r % 6) as u8);
+        }
+        Self { seq, idx: 0 }
+    }
+    fn next_index(&mut self) -> u8 {
+        let v = self.seq[self.idx];
+        self.idx = (self.idx + 1) % self.seq.len();
+        v
+    }
+}
+impl InputProvider for MockInputProvider {
+    fn read_line(&mut self) -> String {
+        match self.next_index() {
+            0 => "Y".to_string(),
+            1 => "N".to_string(),
+            2 => "0".to_string(),
+            3 => "1".to_string(),
+            4 => "9".to_string(),
+            _ => String::new(), // blank
+        }
+    }
+    fn read_char(&mut self) -> Option<char> {
+        match self.next_index() {
+            0 => Some('Y'),
+            1 => Some('N'),
+            2 => Some('0'),
+            3 => Some('1'),
+            4 => Some('9'),
+            _ => Some('\r'), // Enter
+        }
+    }
+}
 
 struct Frame {
     chunk: Rc<Chunk>,
@@ -70,6 +125,14 @@ pub struct VM {
     registry: Registry,
     enums: Vec<ArrEnum>,
     current_line: u32,
+    // Test mode fields
+    test_mode: bool,
+    trace: bool,
+    script_path: Option<String>,
+    comments_map: Option<HashMap<u32, Vec<String>>>,
+    mocked_inputs: usize,
+    max_mocked_inputs: Option<usize>,
+    mock: Option<MockInputProvider>,
     // Caches for CGI params
     get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
     post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
@@ -82,7 +145,34 @@ impl VM {
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
-        Self { frames: vec![frame], stack: Vec::new(), globals, registry, enums: Vec::new(), current_line: 0, get_params_cache: None, post_params_cache: None }
+        Self {
+            frames: vec![frame],
+            stack: Vec::new(),
+            globals,
+            registry,
+            enums: Vec::new(),
+            current_line: 0,
+            test_mode: false,
+            trace: false,
+            script_path: None,
+            comments_map: None,
+            mocked_inputs: 0,
+            max_mocked_inputs: None,
+            mock: None,
+            get_params_cache: None,
+            post_params_cache: None,
+        }
+    }
+
+    pub fn new_with_test(p: BCProgram, mock: MockInputProvider, trace: bool, script_path: Option<String>, comments_map: Option<HashMap<u32, Vec<String>>>, max_mocked_inputs: Option<usize>) -> Self {
+        let mut vm = VM::new(p);
+        vm.test_mode = true;
+        vm.trace = trace;
+        vm.script_path = script_path;
+        vm.comments_map = comments_map;
+        vm.max_mocked_inputs = max_mocked_inputs;
+        vm.mock = Some(mock);
+        vm
     }
 
     pub fn current_line(&self) -> u32 { self.current_line }
@@ -253,6 +343,13 @@ impl VM {
                 Op::SetLine => {
                     let line = self.read_u16()? as u32;
                     self.current_line = line;
+                    if self.test_mode {
+                        if let Some(map) = &self.comments_map {
+                            if let Some(list) = map.get(&line) {
+                                for text in list { println!("COMMENT: {}", text); }
+                            }
+                        }
+                    }
                 }
 
                 Op::Ret => {
@@ -665,62 +762,99 @@ impl VM {
                                 print!("{}", prompt);
                                 let _ = io::stdout().flush();
                             }
-                            let mut input = String::new();
-                            io::stdin().read_line(&mut input).map_err(|e| BasilError(format!("INPUT$ read error: {}", e)))?;
-                            // Trim trailing CR/LF (Windows, Unix)
-                            while input.ends_with('\n') || input.ends_with('\r') { input.pop(); }
-                            self.stack.push(Value::Str(input));
+                            if self.test_mode {
+                                // enforce max inputs
+                                self.mocked_inputs += 1;
+                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
+                                let val = if let Some(mock) = &mut self.mock { mock.read_line() } else { String::new() };
+                                let shown = if val.is_empty() { "<BLANK+ENTER>".to_string() } else { val.clone() };
+                                let mut msg = format!("Mock input to INPUT given as {}", shown);
+                                if self.trace {
+                                    if let Some(p) = &self.script_path { if self.current_line > 0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } }
+                                }
+                                println!("{}", msg);
+                                self.stack.push(Value::Str(val));
+                            } else {
+                                let mut input = String::new();
+                                io::stdin().read_line(&mut input).map_err(|e| BasilError(format!("INPUT$ read error: {}", e)))?;
+                                while input.ends_with('\n') || input.ends_with('\r') { input.pop(); }
+                                self.stack.push(Value::Str(input));
+                            }
                         }
                         7 => { // INKEY$() — non-blocking, returns "" if no key available
                             if argc != 0 { return Err(BasilError("INKEY$ expects 0 arguments".into())); }
-                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            let s = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
-                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                    Event::Key(KeyEvent { code, .. }) => match code {
-                                        KeyCode::Char(c) => c.to_string(),
-                                        KeyCode::Enter => "\r".to_string(),
-                                        KeyCode::Backspace => "\u{0008}".to_string(),
-                                        KeyCode::Tab => "\t".to_string(),
-                                        KeyCode::Esc => "\u{001B}".to_string(),
+                            if self.test_mode {
+                                self.mocked_inputs += 1;
+                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
+                                let ch = if let Some(mock) = &mut self.mock { mock.read_char() } else { None };
+                                let s = match ch { Some('\r') => "\r".to_string(), Some(c) => c.to_string(), None => String::new() };
+                                let shown = match ch { Some('\r') => "<ENTER>".to_string(), Some(c) => c.to_string(), None => String::new() };
+                                let mut msg = format!("Mock input to INKEY$ given as {}", shown);
+                                if self.trace { if let Some(p) = &self.script_path { if self.current_line>0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } } }
+                                println!("{}", msg);
+                                self.stack.push(Value::Str(s));
+                            } else {
+                                enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                                let s = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
+                                    match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                        Event::Key(KeyEvent { code, .. }) => match code {
+                                            KeyCode::Char(c) => c.to_string(),
+                                            KeyCode::Enter => "\r".to_string(),
+                                            KeyCode::Backspace => "\u{0008}".to_string(),
+                                            KeyCode::Tab => "\t".to_string(),
+                                            KeyCode::Esc => "\u{001B}".to_string(),
+                                            _ => String::new(),
+                                        },
                                         _ => String::new(),
-                                    },
-                                    _ => String::new(),
-                                }
-                            } else { String::new() };
-                            let _ = disable_raw_mode();
-                            self.stack.push(Value::Str(s));
+                                    }
+                                } else { String::new() };
+                                let _ = disable_raw_mode();
+                                self.stack.push(Value::Str(s));
+                            }
                         }
                         8 => { // INKEY%() — non-blocking, returns 0 if no key available
                             if argc != 0 { return Err(BasilError("INKEY% expects 0 arguments".into())); }
-                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            let code_i: i64 = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
-                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                    Event::Key(KeyEvent { code, .. }) => {
-                                        match code {
-                                            KeyCode::Char(c) => c as i64,
-                                            KeyCode::Enter => 13,
-                                            KeyCode::Backspace => 8,
-                                            KeyCode::Tab => 9,
-                                            KeyCode::Esc => 27,
-                                            KeyCode::Up => 1000,
-                                            KeyCode::Down => 1001,
-                                            KeyCode::Left => 1002,
-                                            KeyCode::Right => 1003,
-                                            KeyCode::Home => 1004,
-                                            KeyCode::End => 1005,
-                                            KeyCode::PageUp => 1006,
-                                            KeyCode::PageDown => 1007,
-                                            KeyCode::Insert => 1008,
-                                            KeyCode::Delete => 1009,
-                                            KeyCode::F(n) => 1100 + n as i64,
-                                            _ => 0,
+                            if self.test_mode {
+                                self.mocked_inputs += 1;
+                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
+                                let ch = if let Some(mock) = &mut self.mock { mock.read_char() } else { None };
+                                let code_i: i64 = match ch { Some('\r') => 13, Some(c) => c as i64, None => 0 };
+                                let shown = match ch { Some('\r') => "<ENTER>".to_string(), Some(c) => c.to_string(), None => String::new() };
+                                let mut msg = format!("Mock input to INKEY% given as {}", shown);
+                                if self.trace { if let Some(p) = &self.script_path { if self.current_line>0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } } }
+                                println!("{}", msg);
+                                self.stack.push(Value::Int(code_i));
+                            } else {
+                                enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                                let code_i: i64 = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
+                                    match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                        Event::Key(KeyEvent { code, .. }) => {
+                                            match code {
+                                                KeyCode::Char(c) => c as i64,
+                                                KeyCode::Enter => 13,
+                                                KeyCode::Backspace => 8,
+                                                KeyCode::Tab => 9,
+                                                KeyCode::Esc => 27,
+                                                KeyCode::Up => 1000,
+                                                KeyCode::Down => 1001,
+                                                KeyCode::Left => 1002,
+                                                KeyCode::Right => 1003,
+                                                KeyCode::Home => 1004,
+                                                KeyCode::End => 1005,
+                                                KeyCode::PageUp => 1006,
+                                                KeyCode::PageDown => 1007,
+                                                KeyCode::Insert => 1008,
+                                                KeyCode::Delete => 1009,
+                                                KeyCode::F(n) => 1100 + n as i64,
+                                                _ => 0,
+                                            }
                                         }
+                                        _ => 0,
                                     }
-                                    _ => 0,
-                                }
-                            } else { 0 };
-                            let _ = disable_raw_mode();
-                            self.stack.push(Value::Int(code_i));
+                                } else { 0 };
+                                let _ = disable_raw_mode();
+                                self.stack.push(Value::Int(code_i));
+                            }
                         }
                         9 => { // TYPE$(value)
                             if argc != 1 { return Err(BasilError("TYPE$ expects 1 argument".into())); }
@@ -804,33 +938,46 @@ impl VM {
                                 print!("{}", prompt);
                                 let _ = io::stdout().flush();
                             }
-                            // Enable raw mode and ensure we only capture a single key (no echo from console)
-                            enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                            // Drain any pending events (typeahead) to avoid consuming earlier keys
-                            loop {
-                                match poll(Duration::from_millis(0)) {
-                                    Ok(true) => { let _ = read(); }
-                                    Ok(false) => break,
-                                    Err(e) => { let _ = disable_raw_mode(); return Err(BasilError(format!("poll: {}", e))); }
-                                }
-                            }
-                            // Wait for the next key event (any kind). Capture only ASCII chars; others => "".
-                            let s = loop {
-                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                    Event::Key(KeyEvent { code, .. }) => {
-                                        let out = match code {
-                                            KeyCode::Char(c) if c.is_ascii() => c.to_string(),
-                                            _ => String::new(),
-                                        };
-                                        break out;
+                            if self.test_mode {
+                                self.mocked_inputs += 1;
+                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
+                                let ch = if let Some(mock) = &mut self.mock { mock.read_char() } else { None };
+                                let s = match ch { Some('\r') => String::new(), Some(c) => c.to_string(), None => String::new() };
+                                if let Some(c) = ch { if c != '\r' { print!("{}", c); let _ = io::stdout().flush(); } }
+                                let shown = match ch { Some('\r') => "<ENTER>".to_string(), Some(c) => c.to_string(), None => String::new() };
+                                let mut msg = format!("Mock input to INPUTC$ given as {}", shown);
+                                if self.trace { if let Some(p) = &self.script_path { if self.current_line>0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } } }
+                                println!("{}", msg);
+                                self.stack.push(Value::Str(s));
+                            } else {
+                                // Enable raw mode and ensure we only capture a single key (no echo from console)
+                                enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                                // Drain any pending events (typeahead) to avoid consuming earlier keys
+                                loop {
+                                    match poll(Duration::from_millis(0)) {
+                                        Ok(true) => { let _ = read(); }
+                                        Ok(false) => break,
+                                        Err(e) => { let _ = disable_raw_mode(); return Err(BasilError(format!("poll: {}", e))); }
                                     }
-                                    _ => { /* ignore non-key events */ }
                                 }
-                            };
-                            // Echo the captured ASCII character exactly once
-                            if !s.is_empty() { print!("{}", s); let _ = io::stdout().flush(); }
-                            let _ = disable_raw_mode();
-                            self.stack.push(Value::Str(s));
+                                // Wait for the next key event (any kind). Capture only ASCII chars; others => "".
+                                let s = loop {
+                                    match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                        Event::Key(KeyEvent { code, .. }) => {
+                                            let out = match code {
+                                                KeyCode::Char(c) if c.is_ascii() => c.to_string(),
+                                                _ => String::new(),
+                                            };
+                                            break out;
+                                        }
+                                        _ => { /* ignore non-key events */ }
+                                    }
+                                };
+                                // Echo the captured ASCII character exactly once
+                                if !s.is_empty() { print!("{}", s); let _ = io::stdout().flush(); }
+                                let _ = disable_raw_mode();
+                                self.stack.push(Value::Str(s));
+                            }
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
@@ -938,5 +1085,32 @@ fn is_truthy(v: &Value) -> bool {
         Value::Func(_) => true,
         Value::Array(_) => true,
         Value::Object(_) => true,
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_provider_deterministic() {
+        let mut a = MockInputProvider::new(123456);
+        let mut b = MockInputProvider::new(123456);
+        for _ in 0..50 {
+            assert_eq!(a.read_line(), b.read_line());
+            assert_eq!(a.read_char(), b.read_char());
+        }
+    }
+
+    #[test]
+    fn mock_provider_values_in_set() {
+        let mut m = MockInputProvider::new(1);
+        for _ in 0..50 {
+            let s = m.read_line();
+            assert!(s == "" || s == "Y" || s == "N" || s == "0" || s == "1" || s == "9");
+            let c = m.read_char().unwrap();
+            assert!(c == '\r' || c == 'Y' || c == 'N' || c == '0' || c == '1' || c == '9');
+        }
     }
 }

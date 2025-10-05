@@ -31,11 +31,48 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 # 🌱 WHAT'S NEW 🌱
 
+### 🌿 STATUS UPDATE _"test" mode_ !!!
+
++ "test" CLI command to run non-interactively, mock input, and output comments
+
+Example usage:
+
+```
+
+ cargo run -q -p basilc --features obj-bmx -- test examples/input.basil
+
+```
+
+Output:
+
+```
+
+> cargo run -q -p basilc --features obj-bmx -- test examples/input.basil
+
+COMMENT: Demo of INPUT$ and IF statements.
+COMMENT: LET A$ = INPUT$("\nEnter your name:");
+
+Hello, Bob!
+Do you want to do something else? (Y/N): YMock input to INPUTC$ given as Y
+COMMENT: Block IF:
+
+Winken
+BLinken
+Nod
+
+COMMENT: Immediate IF:
+You said yes
+Goodbye!
+
+```
+
 ### 🌿 STATUS UPDATE _Bytecode is compiled and stored in a .basilx file_ !!!
 + Bytecode automatically recompiles whenever the source file is changed
 + Bytecode is stored in a .basilx file
 + Bytecode runs faster than the original source code
 + Bytecode is portable between platforms (Windows, Linux, MacOS) using the Basil VM
++ You can distribute the .basilx file without needing to share the original source code
+
 
 
 ### 🌿 STATUS UPDATE _CGI scripts run like Php scripts with \<?basil .. ?>_ !!!
