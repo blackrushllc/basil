@@ -49,8 +49,11 @@ use crossterm::event::poll;
 use std::collections::HashMap;
 
 use basil_common::{Result, BasilError};
-use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj};
+use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj, ObjectDescriptor, PropDesc, MethodDesc};
 use basil_objects::{Registry, register_objects};
+use basil_parser::parse as parse_basil;
+use basil_compiler::compile as compile_basil;
+use basil_bytecode::{deserialize_program};
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
@@ -138,6 +141,99 @@ pub struct VM {
     post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
 }
 
+// --- Lightweight Class Instance object ---
+struct ClassInstance {
+    globals_names: Vec<String>,
+    values: Vec<Value>,
+    name_to_index: HashMap<String, usize>,
+}
+
+impl ClassInstance {
+    fn new(globals_names: Vec<String>, values: Vec<Value>) -> Self {
+        let mut name_to_index = HashMap::new();
+        for (i, n) in globals_names.iter().enumerate() {
+            name_to_index.insert(n.to_ascii_uppercase(), i);
+        }
+        Self { globals_names, values, name_to_index }
+    }
+
+    fn get_index(&self, name: &str) -> Option<usize> {
+        self.name_to_index.get(&name.to_ascii_uppercase()).copied()
+    }
+}
+
+impl basil_bytecode::BasicObject for ClassInstance {
+    fn type_name(&self) -> &str { "CLASS" }
+
+    fn get_prop(&self, name: &str) -> Result<Value> {
+        if let Some(i) = self.get_index(name) {
+            let v = self.values[i].clone();
+            match v {
+                Value::Func(_) => Err(BasilError("Unknown property or function in class.".into())),
+                other => Ok(other),
+            }
+        } else {
+            Err(BasilError("Unknown property or function in class.".into()))
+        }
+    }
+
+    fn set_prop(&mut self, name: &str, v: Value) -> Result<()> {
+        if let Some(i) = self.get_index(name) {
+            if matches!(self.values[i], Value::Func(_)) {
+                return Err(BasilError("Unknown property or function in class.".into()));
+            }
+            self.values[i] = v;
+            Ok(())
+        } else {
+            Err(BasilError("Unknown property or function in class.".into()))
+        }
+    }
+
+    fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
+        let i = self.get_index(method).ok_or_else(|| BasilError("Unknown property or function in class.".into()))?;
+        let f = match &self.values[i] { Value::Func(f) => f.clone(), _ => return Err(BasilError("Unknown property or function in class.".into())) };
+        // Run function in inner VM with this instance's globals
+        // Build a tiny program with empty top chunk (HALT) and same globals names
+        let mut top = Chunk::default();
+        top.push_op(Op::Halt);
+        let prog = BCProgram { chunk: top, globals: self.globals_names.clone() };
+        let mut vm = VM::new(prog);
+        // Seed globals with our instance values
+        vm.globals = self.values.clone();
+        // Prepare stack: place arguments starting at base 0
+        for a in args { vm.stack.push(a.clone()); }
+        // Push frame directly
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0 };
+        vm.frames.push(frame);
+        vm.run()?;
+        // Collect return value
+        let ret = vm.stack.pop().unwrap_or(Value::Null);
+        // Update our globals from inner VM (so mutations persist)
+        self.values = vm.globals;
+        Ok(ret)
+    }
+
+    fn descriptor(&self) -> ObjectDescriptor {
+        let mut props: Vec<PropDesc> = Vec::new();
+        let mut methods: Vec<MethodDesc> = Vec::new();
+        for (i, n) in self.globals_names.iter().enumerate() {
+            match &self.values[i] {
+                Value::Func(f) => {
+                    methods.push(MethodDesc { name: n.clone(), arity: f.arity, arg_names: Vec::new(), return_type: "ANY".to_string() });
+                }
+                Value::Array(_) => props.push(PropDesc { name: n.clone(), type_name: "ARRAY".to_string(), readable: true, writable: true }),
+                Value::Num(_) => props.push(PropDesc { name: n.clone(), type_name: "FLOAT".to_string(), readable: true, writable: true }),
+                Value::Int(_) => props.push(PropDesc { name: n.clone(), type_name: "INTEGER".to_string(), readable: true, writable: true }),
+                Value::Str(_) => props.push(PropDesc { name: n.clone(), type_name: "STRING".to_string(), readable: true, writable: true }),
+                Value::Bool(_) => props.push(PropDesc { name: n.clone(), type_name: "BOOL".to_string(), readable: true, writable: true }),
+                Value::Object(_) => props.push(PropDesc { name: n.clone(), type_name: "OBJECT".to_string(), readable: true, writable: true }),
+                Value::Null => props.push(PropDesc { name: n.clone(), type_name: "NULL".to_string(), readable: true, writable: true }),
+            }
+        }
+        ObjectDescriptor { type_name: "CLASS".to_string(), version: "1.0".to_string(), summary: "Basil file-based class instance".to_string(), properties: props, methods, examples: Vec::new() }
+    }
+}
+
 impl VM {
     pub fn new(p: BCProgram) -> Self {
         let globals = vec![Value::Null; p.globals.len()];
@@ -176,6 +272,9 @@ impl VM {
     }
 
     pub fn current_line(&self) -> u32 { self.current_line }
+
+    // Provide script path so CLASS() can resolve relative file names
+    pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
 
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
 
@@ -631,6 +730,67 @@ impl VM {
                     }
                 }
 
+                Op::NewClass => {
+                    // Pop filename and instantiate class instance
+                    let fname_v = self.pop()?;
+                    let fname = match fname_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("CLASS(filename) expects a string, got {}", self.type_of(&other)))) };
+                    let (prog, resolved_path) = self.load_class_program(&fname)?;
+                    // Run top-level of class program in an inner VM to initialize globals
+                    let mut inner = VM::new(prog.clone());
+                    inner.set_script_path(resolved_path.clone());
+                    inner.run()?;
+                    let class_vals = inner.globals.clone();
+                    let inst = ClassInstance::new(prog.globals.clone(), class_vals);
+                    let rc: basil_bytecode::ObjectRef = Rc::new(std::cell::RefCell::new(inst));
+                    self.stack.push(Value::Object(rc));
+                }
+                Op::GetMember => {
+                    let prop_cidx = self.read_u8()? as usize;
+                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETMEMBER expects property name string const".into())) };
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let v = rc.borrow().get_prop(&prop)?;
+                            self.stack.push(v);
+                        }
+                        _ => return Err(BasilError("GETMEMBER on non-object".into())),
+                    }
+                }
+                Op::SetMember => {
+                    let prop_cidx = self.read_u8()? as usize;
+                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETMEMBER expects property name string const".into())) };
+                    let val = self.pop()?;
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            rc.borrow_mut().set_prop(&prop, val)?;
+                        }
+                        _ => return Err(BasilError("SETMEMBER on non-object".into())),
+                    }
+                }
+                Op::CallMember => {
+                    let meth_cidx = self.read_u8()? as usize;
+                    let argc = self.read_u8()? as usize;
+                    let mname_v = self.cur().chunk.consts[meth_cidx].clone();
+                    let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMEMBER expects method name string const".into())) };
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc { args.push(self.pop()?); }
+                    args.reverse();
+                    let target = self.pop()?;
+                    match target {
+                        Value::Object(rc) => {
+                            let v = rc.borrow_mut().call(&method, &args)?;
+                            self.stack.push(v);
+                        }
+                        _ => return Err(BasilError("CALLMEMBER on non-object".into())),
+                    }
+                }
+                Op::DestroyInstance => {
+                    // Hint to GC; currently a no-op
+                }
+
                 Op::Builtin => {
                     let bid = self.read_u8()? as u8;
                     let argc = self.read_u8()? as usize;
@@ -1010,6 +1170,7 @@ impl VM {
             70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
             80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
+            100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
@@ -1072,6 +1233,64 @@ impl VM {
             }
             Value::Object(rc) => rc.borrow().type_name().to_string(),
         }
+    }
+
+    fn resolve_class_candidates(&self, fname: &str) -> Vec<std::path::PathBuf> {
+        use std::path::{Path, PathBuf};
+        let mut out: Vec<PathBuf> = Vec::new();
+        let p = Path::new(fname);
+        let is_abs = p.is_absolute();
+        let has_dir = p.components().count() > 1;
+        let mut bases: Vec<PathBuf> = Vec::new();
+        if is_abs || has_dir {
+            bases.push(PathBuf::from(fname));
+        } else {
+            if let Some(sp) = &self.script_path {
+                let dir = Path::new(sp).parent().unwrap_or(Path::new("."));
+                bases.push(dir.join(fname));
+            }
+            bases.push(PathBuf::from(fname));
+        }
+        for b in bases {
+            if b.extension().is_none() {
+                out.push(b.with_extension("basil"));
+                out.push(b.with_extension("basilx"));
+            } else {
+                let ext = b.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+                if ext == "basilx" {
+                    out.push(b.clone());
+                } else if ext == "basil" {
+                    out.push(b.clone());
+                    out.push(b.with_extension("basilx"));
+                } else {
+                    out.push(b.clone());
+                }
+            }
+        }
+        // dedupe while preserving order
+        let mut seen = std::collections::HashSet::new();
+        out.into_iter().filter(|pb| seen.insert(pb.clone())).collect()
+    }
+
+    fn load_class_program(&self, fname: &str) -> Result<(BCProgram, String)> {
+        use std::fs;
+        for cand in self.resolve_class_candidates(fname) {
+            let exists = fs::metadata(&cand).is_ok();
+            if !exists { continue; }
+            let ext = cand.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+            if ext == "basilx" {
+                let bytes = fs::read(&cand).map_err(|e| BasilError(format!("Failed to read {}: {}", cand.display(), e)))?;
+                let prog = deserialize_program(&bytes).map_err(|_| BasilError("Bad .basilx file".into()))?;
+                return Ok((prog, cand.to_string_lossy().to_string()));
+            } else {
+                // Treat others as .basil source
+                let src = fs::read_to_string(&cand).map_err(|e| BasilError(format!("Failed to read {}: {}", cand.display(), e)))?;
+                let ast = parse_basil(&src)?;
+                let prog = compile_basil(&ast)?;
+                return Ok((prog, cand.to_string_lossy().to_string()));
+            }
+        }
+        Err(BasilError("Class file not found.".into()))
     }
 }
 

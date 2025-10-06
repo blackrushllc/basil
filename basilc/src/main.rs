@@ -248,6 +248,8 @@ fn cmd_run(path: Option<String>) {
 
     // Run VM
     let mut vm = VM::new(program);
+    // Provide script path so CLASS() can resolve relative class files
+    vm.set_script_path(path.clone());
     if let Err(e) = vm.run() {
         let line = vm.current_line();
         if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
