@@ -210,6 +210,13 @@ pub enum Op {
     CallMethod  = 83,   // +u8 (const index of method name), +u8 (argc). Stack: [..., obj, args...] -> push ret
     DescribeObj = 84,   // no extra. Stack: [..., obj or array] -> push string
 
+    // classes
+    NewClass        = 100, // pop filename (string) → push instance (object)
+    GetMember       = 101, // alias of GetProp
+    SetMember       = 102, // alias of SetProp
+    CallMember      = 103, // alias of CallMethod
+    DestroyInstance = 104, // hint GC/no-op for now
+
     // enumeration
     EnumNew      = 90,  // expects iterable (array or object) on stack; pushes enumerator handle (object) or error
     EnumMoveNext = 91,  // moves enumerator; pushes Bool

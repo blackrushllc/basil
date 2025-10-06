@@ -858,6 +858,11 @@ impl C {
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
                 chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
             }
+            Expr::NewClass { filename } => {
+                // Evaluate filename and instantiate class at runtime
+                self.emit_expr_in(chunk, filename, env)?;
+                chunk.push_op(Op::NewClass);
+            }
         }
         Ok(())
     }
