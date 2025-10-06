@@ -31,6 +31,76 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 # 🌱 WHAT'S NEW 🌱
 
+### 🌿 STATUS UPDATE _CLASSES_ !!!
+
++ Classes are now supported
++ See examples/classes.basil to see how to instantiate and use classes
++ See examples/my_class.basil to see how to define a class
++ Classes can have public variables and public functions
++ Classes can be instantiated and interacted with from BASIL scripts
++ Classes are defined in separate files, and can be instantiated from BASIL scripts with the DIM statement.
++ Class files are compiled into bytecode and stored in a .basilx file.
++ Class files can be distributed without needing to share the source code.
++ See CLASSES.md and CLASSES_JUNIE.md for more info
+
+Example usage:
+
+````basil
+REM Demo: Using CLASS to instantiate and interact with a class instance
+
+DIM user@ AS CLASS("my_class.basil");
+
+REM Access and modify a public variable
+PRINTLN "Initial description:", user@.Description$;
+LET user@.Description$ = "These are my favorite users.";
+PRINTLN "Updated description:", user@.Description$;
+
+REM Call public functions
+user@.AddUser("Erik");
+user@.AddUser("Junie");
+user@.AddUser("ChatGPT");
+
+PRINTLN "User count:", user@.CountMyUsers%();
+
+````
+
+````basil
+REM Example Basil Class: my_class.basil
+REM Demonstrates public variables and public functions
+
+DIM UserNames$(100);
+LET Description$ = "Default description";
+
+FUNC AddUser(name$)
+BEGIN
+  REM Adds the given name to the first empty slot
+  FOR i% = 0 TO 99
+    IF UserNames$(i%) == "" THEN
+      BEGIN
+        LET UserNames$(i%) = name$;
+        RETURN
+      END
+  NEXT
+END
+
+FUNC CountMyUsers%()
+BEGIN
+  REM Returns the number of non-empty user names
+  LET count% = 0
+  FOR i% = 0 TO 99
+    IF UserNames$(i%) != "" THEN
+      BEGIN
+        LET count% = count% + 1;
+      END
+  NEXT
+  RETURN count%;
+END
+
+````
+
+
+
+
 ### 🌿 STATUS UPDATE _"test" mode_ !!!
 
 + "test" CLI command to run non-interactively, mock input, and output comments

@@ -56,6 +56,8 @@ pub enum Expr {
     MemberCall { target: Box<Expr>, method: String, args: Vec<Expr> },
     // NEW TYPE(args) expression
     NewObject { type_name: String, args: Vec<Expr> },
+    // CLASS("filename") expression
+    NewClass { filename: Box<Expr> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

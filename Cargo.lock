@@ -65,7 +65,9 @@ version = "0.0.1"
 dependencies = [
  "basil-bytecode",
  "basil-common",
+ "basil-compiler",
  "basil-objects",
+ "basil-parser",
  "crossterm",
 ]
 
