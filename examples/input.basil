@@ -1,6 +1,6 @@
 // Demo of INPUT$ and IF statements.
-//LET A$ = INPUT$("\nEnter your name:");
-LET A$ = "Bob";
+LET A$ = INPUT$("\nEnter your name:");
+
 PRINT "\nHello, "+A$+"!";
 
 LET ans$ = UCASE$(INPUTC$("\nDo you want to do something else? (Y/N): "));

@@ -63,6 +63,7 @@ pub enum TokenKind {
     As,
     Describe,
     New,
+    Class,
     Eof,
 }
 
@@ -305,6 +306,7 @@ impl<'a> Lexer<'a> {
             "AS"     => TokenKind::As,
             "DESCRIBE" => TokenKind::Describe,
             "NEW"    => TokenKind::New,
+            "CLASS"  => TokenKind::Class,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))

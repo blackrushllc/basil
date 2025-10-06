@@ -75,6 +75,25 @@ impl Parser {
         if self.match_k(TokenKind::Func) { return self.parse_func(); }
 
         if self.match_k(TokenKind::Let) {
+            // Support two forms:
+            // 1) LET name[(indices...)] = expr
+            // 2) LET obj.Member = expr
+            // If we see Ident '.' after LET, parse as member property set.
+            if self.check(TokenKind::Ident) {
+                let save_i = self.i;
+                let obj_name = self.expect_ident()?;
+                if self.match_k(TokenKind::Dot) {
+                    let prop = self.expect_ident()?;
+                    self.expect(TokenKind::Assign)?;
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::SetProp { target: Expr::Var(obj_name), prop, value });
+                } else {
+                    // revert and handle standard LET name[...] = expr
+                    self.i = save_i;
+                }
+            }
+
             let name = self.expect_ident()?;
             // Optional indices for array element assignment: name '(' exprlist ')'
             let indices = if self.match_k(TokenKind::LParen) {
@@ -331,6 +350,14 @@ impl Parser {
                     }
                 }
             } else if self.match_k(TokenKind::As) {
+                // Support: DIM name@ AS CLASS(filename)
+                if self.match_k(TokenKind::Class) {
+                    self.expect(TokenKind::LParen)?;
+                    let fname = self.parse_expr_bp(0)?;
+                    self.expect(TokenKind::RParen)?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::Let { name, indices: None, init: Expr::NewClass { filename: Box::new(fname) } });
+                }
                 let tname = self.expect_ident()?;
                 let mut args = Vec::new();
                 if self.match_k(TokenKind::LParen) {
@@ -468,6 +495,14 @@ impl Parser {
                 self.expect(TokenKind::RParen)?;
                 Ok(Expr::NewObject { type_name, args })
             }
+            Some(TokenKind::Class) => {
+                // CLASS(filename)
+                let _ = self.next().unwrap();
+                self.expect(TokenKind::LParen)?;
+                let fname = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::NewClass { filename: Box::new(fname) })
+            }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
         }
@@ -484,16 +519,23 @@ impl Parser {
             }
         }
         self.expect(TokenKind::RParen)?;
-        // allow optional semicolons/newlines before BEGIN
+        // allow optional semicolons/newlines before body
         while self.match_k(TokenKind::Semicolon) {}
-        // function body is a block: BEGIN ... END
-        if !self.match_k(TokenKind::Begin) {
-            return Err(BasilError(format!("parse error at line {}: expected BEGIN after function header", self.peek_line())));
-        }
+        // Function body: either BEGIN ... END, or an implicit block terminated by END [FUNC]
+        let has_begin = self.match_k(TokenKind::Begin);
         let mut body = Vec::new();
         loop {
             while self.match_k(TokenKind::Semicolon) {}
-            if self.match_k(TokenKind::End) { break; }
+            if has_begin {
+                if self.match_k(TokenKind::End) { break; }
+            } else {
+                if self.check(TokenKind::End) {
+                    let _ = self.next(); // consume END
+                    // optional FUNC after END
+                    if self.check(TokenKind::Func) { let _ = self.next(); }
+                    break;
+                }
+            }
             if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated function body", self.peek_line()))); }
             let line = self.peek_line();
             let stmt = self.parse_stmt()?;
