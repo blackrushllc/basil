@@ -83,9 +83,9 @@ impl C {
                 // remember function name for call vs array indexing disambiguation
                 self.fn_names.insert(name.to_ascii_uppercase());
                 let f = self.compile_function(name.clone(), params.clone(), body);
-                self.chunk.push_op(Op::ConstU8);
+                self.chunk.push_op(Op::Const);
                 let idx = self.chunk.add_const(f);
-                self.chunk.push_u8(idx);
+                self.chunk.push_u16(idx);
 
                 let g = self.gslot(name);
                 self.chunk.push_op(Op::StoreGlobal);
@@ -120,8 +120,8 @@ impl C {
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
                 chunk.push_u8(et);
-                // primitive arrays: emit placeholder type-name const index 255
-                chunk.push_u8(255u8);
+                // primitive arrays: emit placeholder type-name const index as u16 (0xFFFF)
+                chunk.push_u16(65535u16);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.chunk = chunk;
@@ -131,8 +131,8 @@ impl C {
                 for d in dims { self.emit_expr_in(&mut chunk, d, None)?; }
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 chunk.push_u8(3u8); // object array
-                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 255u8 };
-                chunk.push_u8(tci);
+                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 65535u16 };
+                chunk.push_u16(tci);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.chunk = chunk;
@@ -157,7 +157,7 @@ impl C {
                 // get type name constant index
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
                 // emit NEW_OBJ (note: VM expects type const index operand then argc)
-                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.chunk = chunk;
@@ -168,7 +168,7 @@ impl C {
                 self.emit_expr_in(&mut chunk, value, None)?;
                 // property name const index
                 let pci = chunk.add_const(Value::Str(prop.clone()));
-                chunk.push_op(Op::SetProp); chunk.push_u8(pci);
+                chunk.push_op(Op::SetProp); chunk.push_u16(pci);
                 self.chunk = chunk;
             }
             Stmt::ExprStmt(e) => {
@@ -271,11 +271,11 @@ impl C {
                     Some(e) => { self.emit_expr_in(&mut chunk, e, None)?; }
                     None => {
                         let idx = chunk.add_const(Value::Num(1.0));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                        chunk.push_op(Op::Const); chunk.push_u16(idx);
                     }
                 }
                 let idx0 = chunk.add_const(Value::Num(0.0));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(idx0);
+                chunk.push_op(Op::Const); chunk.push_u16(idx0);
                 chunk.push_op(Op::Ge);
                 chunk.push_op(Op::JumpIfFalse);
                 let j_to_neg = chunk.emit_u16_placeholder();
@@ -308,14 +308,13 @@ impl C {
 
                 // body
                 self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
-
                 // increment: var = var + step
                 chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                 match step {
                     Some(e) => { self.emit_expr_in(&mut chunk, e, None)?; }
                     None => {
                         let idx1 = chunk.add_const(Value::Num(1.0));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx1);
+                        chunk.push_op(Op::Const); chunk.push_u16(idx1);
                     }
                 }
                 chunk.push_op(Op::Add);
@@ -354,9 +353,9 @@ impl C {
         }
 
         // implicit return null
-        fchunk.push_op(Op::ConstU8);
+        fchunk.push_op(Op::Const);
         let cid = fchunk.add_const(Value::Null);
-        fchunk.push_u8(cid);
+        fchunk.push_u16(cid);
         fchunk.push_op(Op::Ret);
 
         Value::Func(Rc::new(Function {
@@ -396,8 +395,8 @@ impl C {
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
                 chunk.push_u8(et);
-                // primitive arrays: emit placeholder type-name const index 255
-                chunk.push_u8(255u8);
+                // primitive arrays: emit placeholder type-name const index as u16 (0xFFFF)
+                chunk.push_u16(65535u16);
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
@@ -405,8 +404,8 @@ impl C {
                 for d in dims { self.emit_expr_in(chunk, d, Some(env))?; }
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 chunk.push_u8(3u8);
-                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 255u8 };
-                chunk.push_u8(tci);
+                let tci: u16 = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 65535u16 };
+                chunk.push_u16(tci);
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
@@ -422,7 +421,7 @@ impl C {
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
-                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
@@ -430,7 +429,7 @@ impl C {
                 self.emit_expr_in(chunk, target, Some(env))?;
                 self.emit_expr_in(chunk, value, Some(env))?;
                 let pci = chunk.add_const(Value::Str(prop.clone()));
-                chunk.push_op(Op::SetProp); chunk.push_u8(pci);
+                chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, Some(env))?;
@@ -444,9 +443,9 @@ impl C {
                 if let Some(e) = eopt {
                     self.emit_expr_in(chunk, e, Some(env))?;
                 } else {
-                    chunk.push_op(Op::ConstU8);
+                    chunk.push_op(Op::Const);
                     let cid = chunk.add_const(Value::Null);
-                    chunk.push_u8(cid);
+                    chunk.push_u16(cid);
                 }
                 chunk.push_op(Op::Ret);
             }
@@ -534,11 +533,11 @@ impl C {
                     Some(e) => { self.emit_expr_in(chunk, e, Some(env))?; }
                     None => {
                         let idx = chunk.add_const(Value::Num(1.0));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                        chunk.push_op(Op::Const); chunk.push_u16(idx);
                     }
                 }
                 let idx0 = chunk.add_const(Value::Num(0.0));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(idx0);
+                chunk.push_op(Op::Const); chunk.push_u16(idx0);
                 chunk.push_op(Op::Ge);
                 chunk.push_op(Op::JumpIfFalse);
                 let j_to_neg = chunk.emit_u16_placeholder();
@@ -593,7 +592,7 @@ impl C {
                     Some(e) => { self.emit_expr_in(chunk, e, Some(env))?; }
                     None => {
                         let idx1 = chunk.add_const(Value::Num(1.0));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(idx1);
+                        chunk.push_op(Op::Const); chunk.push_u16(idx1);
                     }
                 }
                 chunk.push_op(Op::Add);
@@ -655,26 +654,26 @@ impl C {
         match e {
             Expr::Number(n) => {
                 let idx = chunk.add_const(Value::Num(*n));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                chunk.push_op(Op::Const); chunk.push_u16(idx);
             }
             Expr::Str(s) => {
                 let idx = chunk.add_const(Value::Str(s.clone()));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                chunk.push_op(Op::Const); chunk.push_u16(idx);
             }
             Expr::Bool(b) => {
                 let idx = chunk.add_const(Value::Bool(*b));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(idx);
+                chunk.push_op(Op::Const); chunk.push_u16(idx);
             }
             Expr::Var(name) => {
                 // Minimal constants for object features
                 let uname = name.to_ascii_uppercase();
                 if uname == "PRO" {
                     let ci = chunk.add_const(Value::Int(1));
-                    chunk.push_op(Op::ConstU8); chunk.push_u8(ci);
+                    chunk.push_op(Op::Const); chunk.push_u16(ci);
                     return Ok(());
                 } else if uname == "NOT_PRO" {
                     let ci = chunk.add_const(Value::Int(0));
-                    chunk.push_op(Op::ConstU8); chunk.push_u8(ci);
+                    chunk.push_op(Op::Const); chunk.push_u16(ci);
                     return Ok(());
                 }
                 if let Some(env) = env {
@@ -694,14 +693,14 @@ impl C {
                 let jf = chunk.emit_u16_placeholder();
                 // truthy path: push false
                 let cf = chunk.add_const(Value::Bool(false));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(cf);
+                chunk.push_op(Op::Const); chunk.push_u16(cf);
                 chunk.push_op(Op::Jump);
                 let jend = chunk.emit_u16_placeholder();
                 // falsey path label
                 let after_jf = chunk.here();
                 let off_jf = (after_jf - (jf + 2)) as u16; chunk.patch_u16_at(jf, off_jf);
                 let ct = chunk.add_const(Value::Bool(true));
-                chunk.push_op(Op::ConstU8); chunk.push_u8(ct);
+                chunk.push_op(Op::Const); chunk.push_u16(ct);
                 // end label
                 let end_here = chunk.here();
                 let off_end = (end_here - (jend + 2)) as u16; chunk.patch_u16_at(jend, off_end);
@@ -718,7 +717,7 @@ impl C {
                         let jf_rhs = chunk.emit_u16_placeholder();
                         // both truthy
                         let ct = chunk.add_const(Value::Bool(true));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(ct);
+                        chunk.push_op(Op::Const); chunk.push_u16(ct);
                         chunk.push_op(Op::Jump);
                         let jend = chunk.emit_u16_placeholder();
                         // false label
@@ -726,7 +725,7 @@ impl C {
                         let off_lhs = (l_false - (jf_lhs + 2)) as u16; chunk.patch_u16_at(jf_lhs, off_lhs);
                         let off_rhs = (l_false - (jf_rhs + 2)) as u16; chunk.patch_u16_at(jf_rhs, off_rhs);
                         let cf = chunk.add_const(Value::Bool(false));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(cf);
+                        chunk.push_op(Op::Const); chunk.push_u16(cf);
                         // end label
                         let l_end = chunk.here();
                         let off_end = (l_end - (jend + 2)) as u16; chunk.patch_u16_at(jend, off_end);
@@ -738,7 +737,7 @@ impl C {
                         let j_eval_rhs = chunk.emit_u16_placeholder();
                         // lhs truthy => true
                         let ct = chunk.add_const(Value::Bool(true));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(ct);
+                        chunk.push_op(Op::Const); chunk.push_u16(ct);
                         chunk.push_op(Op::Jump);
                         let jend = chunk.emit_u16_placeholder();
                         // evaluate rhs label
@@ -749,14 +748,14 @@ impl C {
                         let jf_false = chunk.emit_u16_placeholder();
                         // rhs truthy => true
                         let ct2 = chunk.add_const(Value::Bool(true));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(ct2);
+                        chunk.push_op(Op::Const); chunk.push_u16(ct2);
                         chunk.push_op(Op::Jump);
                         let jend2 = chunk.emit_u16_placeholder();
                         // false label
                         let l_false = chunk.here();
                         let off_false = (l_false - (jf_false + 2)) as u16; chunk.patch_u16_at(jf_false, off_false);
                         let cf = chunk.add_const(Value::Bool(false));
-                        chunk.push_op(Op::ConstU8); chunk.push_u8(cf);
+                        chunk.push_op(Op::Const); chunk.push_u16(cf);
                         // end label
                         let l_end = chunk.here();
                         let off_end1 = (l_end - (jend + 2)) as u16; chunk.patch_u16_at(jend, off_end1);
@@ -845,18 +844,18 @@ impl C {
             Expr::MemberGet { target, name } => {
                 self.emit_expr_in(chunk, target, env)?;
                 let ci = chunk.add_const(Value::Str(name.clone()));
-                chunk.push_op(Op::GetProp); chunk.push_u8(ci);
+                chunk.push_op(Op::GetProp); chunk.push_u16(ci);
             }
             Expr::MemberCall { target, method, args } => {
                 self.emit_expr_in(chunk, target, env)?;
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 let ci = chunk.add_const(Value::Str(method.clone()));
-                chunk.push_op(Op::CallMethod); chunk.push_u8(ci); chunk.push_u8(args.len() as u8);
+                chunk.push_op(Op::CallMethod); chunk.push_u16(ci); chunk.push_u8(args.len() as u8);
             }
             Expr::NewObject { type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
-                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
             }
             Expr::NewClass { filename } => {
                 // Evaluate filename and instantiate class at runtime
@@ -933,8 +932,8 @@ impl C {
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 let et = if name.ends_with('%') { 1u8 } else if name.ends_with('$') { 2u8 } else { 0u8 };
                 chunk.push_u8(et);
-                // primitive arrays: emit placeholder type-name const index 255
-                chunk.push_u8(255u8);
+                // primitive arrays: emit placeholder type-name const index as u16 (0xFFFF)
+                chunk.push_u16(65535u16);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }
@@ -942,8 +941,8 @@ impl C {
                 for d in dims { self.emit_expr_in(chunk, d, None)?; }
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 chunk.push_u8(3u8);
-                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 255u8 };
-                chunk.push_u8(tci);
+                let tci: u16 = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 65535u16 };
+                chunk.push_u16(tci);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }
@@ -959,7 +958,7 @@ impl C {
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, None)?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
-                chunk.push_op(Op::NewObj); chunk.push_u8(tci); chunk.push_u8(args.len() as u8);
+                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }
@@ -967,7 +966,7 @@ impl C {
                 self.emit_expr_in(chunk, target, None)?;
                 self.emit_expr_in(chunk, value, None)?;
                 let pci = chunk.add_const(Value::Str(prop.clone()));
-                chunk.push_op(Op::SetProp); chunk.push_u8(pci);
+                chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, None)?;
@@ -1015,9 +1014,9 @@ impl C {
             }
             Stmt::Func { name, params, body } => {
                 let f = self.compile_function(name.clone(), params.clone(), body);
-                chunk.push_op(Op::ConstU8);
+                chunk.push_op(Op::Const);
                 let idx = chunk.add_const(f);
-                chunk.push_u8(idx);
+                chunk.push_u16(idx);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }
@@ -1060,10 +1059,10 @@ impl C {
         // step >= 0 ?
         match step {
             Some(e) => { self.emit_expr_in(chunk, e, None)?; }
-            None => { let idx = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::ConstU8); chunk.push_u8(idx); }
+            None => { let idx = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::Const); chunk.push_u16(idx); }
         }
         let idx0 = chunk.add_const(Value::Num(0.0));
-        chunk.push_op(Op::ConstU8); chunk.push_u8(idx0);
+        chunk.push_op(Op::Const); chunk.push_u16(idx0);
         chunk.push_op(Op::Ge);
         chunk.push_op(Op::JumpIfFalse);
         let j_to_neg = chunk.emit_u16_placeholder();
@@ -1097,7 +1096,7 @@ impl C {
 
         // increment
         chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
-        match step { Some(e) => { self.emit_expr_in(chunk, e, None)?; }, None => { let idx1 = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::ConstU8); chunk.push_u8(idx1); } }
+        match step { Some(e) => { self.emit_expr_in(chunk, e, None)?; }, None => { let idx1 = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::Const); chunk.push_u16(idx1); } }
         chunk.push_op(Op::Add);
         chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
 

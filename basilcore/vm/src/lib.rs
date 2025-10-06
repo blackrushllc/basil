@@ -345,8 +345,8 @@ impl VM {
         loop {
             let op = self.read_op()?;
             match op {
-                Op::ConstU8 => {
-                    let i = self.read_u8()? as usize;
+                Op::Const => {
+                    let i = self.read_u16()? as usize;
                     let v = self.cur().chunk.consts[i].clone();
                     self.stack.push(v);
                 }
@@ -473,16 +473,16 @@ impl VM {
                 Op::ArrMake => {
                     let rank = self.read_u8()? as usize;
                     let et_code = self.read_u8()? as u8;
-                    let type_cidx = self.read_u8()? as usize; // may be 255 if not applicable
+                    let type_cidx = self.read_u16()?; // may be 0xFFFF if not applicable
                     let elem = match et_code {
                         0 => ElemType::Num,
                         1 => ElemType::Int,
                         2 => ElemType::Str,
                         3 => {
-                            if type_cidx == 255 {
+                            if type_cidx == 0xFFFF {
                                 ElemType::Obj(None)
                             } else {
-                                let tn_v = self.cur().chunk.consts[type_cidx].clone();
+                                let tn_v = self.cur().chunk.consts[type_cidx as usize].clone();
                                 let tn = match tn_v { Value::Str(s) => s, _ => return Err(BasilError("ArrMake type expects string const".into())) };
                                 ElemType::Obj(Some(tn))
                             }
@@ -640,7 +640,7 @@ impl VM {
 
                 // --- Objects ---
                 Op::NewObj => {
-                    let type_cidx = self.read_u8()? as usize;
+                    let type_cidx = self.read_u16()? as usize;
                     let argc = self.read_u8()? as usize;
                     let tname_v = self.cur().chunk.consts[type_cidx].clone();
                     let type_name = match tname_v { Value::Str(s) => s, _ => return Err(BasilError("NEW_OBJ expects type name string const".into())) };
@@ -651,7 +651,7 @@ impl VM {
                     self.stack.push(Value::Object(obj));
                 }
                 Op::GetProp => {
-                    let prop_cidx = self.read_u8()? as usize;
+                    let prop_cidx = self.read_u16()? as usize;
                     let pname_v = self.cur().chunk.consts[prop_cidx].clone();
                     let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETPROP expects property name string const".into())) };
                     let target = self.pop()?;
@@ -664,7 +664,7 @@ impl VM {
                     }
                 }
                 Op::SetProp => {
-                    let prop_cidx = self.read_u8()? as usize;
+                    let prop_cidx = self.read_u16()? as usize;
                     let pname_v = self.cur().chunk.consts[prop_cidx].clone();
                     let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETPROP expects property name string const".into())) };
                     let val = self.pop()?;
@@ -677,7 +677,7 @@ impl VM {
                     }
                 }
                 Op::CallMethod => {
-                    let meth_cidx = self.read_u8()? as usize;
+                    let meth_cidx = self.read_u16()? as usize;
                     let argc = self.read_u8()? as usize;
                     let mname_v = self.cur().chunk.consts[meth_cidx].clone();
                     let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMETHOD expects method name string const".into())) };
@@ -745,7 +745,7 @@ impl VM {
                     self.stack.push(Value::Object(rc));
                 }
                 Op::GetMember => {
-                    let prop_cidx = self.read_u8()? as usize;
+                    let prop_cidx = self.read_u16()? as usize;
                     let pname_v = self.cur().chunk.consts[prop_cidx].clone();
                     let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETMEMBER expects property name string const".into())) };
                     let target = self.pop()?;
@@ -758,7 +758,7 @@ impl VM {
                     }
                 }
                 Op::SetMember => {
-                    let prop_cidx = self.read_u8()? as usize;
+                    let prop_cidx = self.read_u16()? as usize;
                     let pname_v = self.cur().chunk.consts[prop_cidx].clone();
                     let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETMEMBER expects property name string const".into())) };
                     let val = self.pop()?;
@@ -771,7 +771,7 @@ impl VM {
                     }
                 }
                 Op::CallMember => {
-                    let meth_cidx = self.read_u8()? as usize;
+                    let meth_cidx = self.read_u16()? as usize;
                     let argc = self.read_u8()? as usize;
                     let mname_v = self.cur().chunk.consts[meth_cidx].clone();
                     let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMEMBER expects method name string const".into())) };
@@ -1160,7 +1160,7 @@ impl VM {
         let byte = *f.chunk.code.get(f.ip).ok_or_else(|| BasilError("ip out of range".into()))?;
         f.ip += 1;
         let op = match byte {
-            1=>Op::ConstU8, 2=>Op::LoadGlobal, 3=>Op::StoreGlobal,
+            1=>Op::Const, 2=>Op::LoadGlobal, 3=>Op::StoreGlobal,
             11=>Op::LoadLocal, 12=>Op::StoreLocal,
             20=>Op::Add, 21=>Op::Sub, 22=>Op::Mul, 23=>Op::Div, 24=>Op::Neg,
             30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
