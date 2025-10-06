@@ -1,3 +1,5 @@
+# Building Basil for WebAssembly (WASM)
+
 ### Overview
 You can target WebAssembly in two different ways, depending on where you want to run Basil:
 

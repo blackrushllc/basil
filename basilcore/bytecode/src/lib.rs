@@ -168,7 +168,7 @@ impl fmt::Debug for Value {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
     // constants / globals
-    ConstU8    = 1,
+    Const    = 1,
     LoadGlobal = 2,
     StoreGlobal= 3,
 
@@ -235,7 +235,7 @@ pub struct Chunk {
 impl Chunk {
     pub fn push_op(&mut self, op: Op) { self.code.push(op as u8); }
     pub fn push_u8(&mut self, b: u8)  { self.code.push(b); }
-    pub fn add_const(&mut self, v: Value) -> u8 { self.consts.push(v); (self.consts.len() - 1) as u8 }
+    pub fn add_const(&mut self, v: Value) -> u16 { self.consts.push(v); (self.consts.len() - 1) as u16 }
 
     // u16 (little-endian) helpers for jumps
     pub fn push_u16(&mut self, n: u16) {
