@@ -382,9 +382,21 @@ impl C {
                     None => {
                         self.emit_expr_in(chunk, init, Some(env))?;
                         if name.ends_with('%') { chunk.push_op(Op::ToInt); }
-                        let slot = env.bind_next_if_absent(name.clone());
-                        chunk.push_op(Op::StoreLocal);
-                        chunk.push_u8(slot);
+                        // If a local with this name already exists, store into it.
+                        if let Some(slot) = env.lookup(name) {
+                            chunk.push_op(Op::StoreLocal);
+                            chunk.push_u8(slot);
+                        } else if self.gmap.contains_key(name) && !self.fn_names.contains(&name.to_ascii_uppercase()) {
+                            // Otherwise, if a global of this name exists (e.g., class field), assign to the global.
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::StoreGlobal);
+                            chunk.push_u8(g);
+                        } else {
+                            // Fallback: create/bind a new local.
+                            let slot = env.bind_next_if_absent(name.clone());
+                            chunk.push_op(Op::StoreLocal);
+                            chunk.push_u8(slot);
+                        }
                     }
                     Some(idxs) => {
                         // array element assignment: load array ref (local or global), push indices, value, ArrSet
