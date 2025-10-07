@@ -74,6 +74,25 @@ impl Parser {
         // FUNC name(params) block
         if self.match_k(TokenKind::Func) { return self.parse_func(); }
 
+        // LABEL name
+        if self.match_k(TokenKind::Label) {
+            let name = self.expect_ident()?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Label(name));
+        }
+        // GOTO name
+        if self.match_k(TokenKind::Goto) {
+            let name = self.expect_ident()?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Goto(name));
+        }
+        // GOSUB name
+        if self.match_k(TokenKind::Gosub) {
+            let name = self.expect_ident()?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Gosub(name));
+        }
+
         if self.match_k(TokenKind::Let) {
             // Support two forms:
             // 1) LET name[(indices...)] = expr
