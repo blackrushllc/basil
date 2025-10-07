@@ -1,0 +1,7 @@
+REM DIR$ demo: list Basil examples in this folder
+
+LET files$@ = DIR$("examples/*.basil");
+PRINTLN "Found ", LEN(files$@), " .basil files:";
+FOR i% = 0 TO UBOUND(files$@)
+  PRINTLN " - ", files$@(i%);
+NEXT
