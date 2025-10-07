@@ -163,6 +163,7 @@ impl<'a> Lexer<'a> {
             '<' => {
                 self.advance();
                 if self.match_char('=') { Ok(self.make(TokenKind::LtEq)) }
+                else if self.match_char('>') { Ok(self.make(TokenKind::BangEq)) }
                 else { Ok(self.make(TokenKind::Lt)) }
             }
             '>' => {

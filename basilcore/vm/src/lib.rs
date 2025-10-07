@@ -152,6 +152,8 @@ pub struct VM {
     // File I/O
     file_table: HashMap<i64, FileHandleEntry>,
     next_fh: i64,
+    // Control whether to auto-close handles on function return (used for class methods)
+    close_handles_on_ret: bool,
 }
 
 // --- Lightweight Class Instance object ---
@@ -159,6 +161,9 @@ struct ClassInstance {
     globals_names: Vec<String>,
     values: Vec<Value>,
     name_to_index: HashMap<String, usize>,
+    // Persist open file handles across method calls for this instance
+    file_table: HashMap<i64, FileHandleEntry>,
+    next_fh: i64,
 }
 
 impl ClassInstance {
@@ -167,7 +172,7 @@ impl ClassInstance {
         for (i, n) in globals_names.iter().enumerate() {
             name_to_index.insert(n.to_ascii_uppercase(), i);
         }
-        Self { globals_names, values, name_to_index }
+        Self { globals_names, values, name_to_index, file_table: HashMap::new(), next_fh: 1 }
     }
 
     fn get_index(&self, name: &str) -> Option<usize> {
@@ -211,6 +216,10 @@ impl basil_bytecode::BasicObject for ClassInstance {
         top.push_op(Op::Halt);
         let prog = BCProgram { chunk: top, globals: self.globals_names.clone() };
         let mut vm = VM::new(prog);
+        // Move persistent file handles into inner VM and disable auto-close-on-ret for methods
+        vm.file_table = std::mem::take(&mut self.file_table);
+        vm.next_fh = self.next_fh;
+        vm.close_handles_on_ret = false;
         // Seed globals with our instance values
         vm.globals = self.values.clone();
         // Prepare stack: place arguments starting at base 0
@@ -219,6 +228,9 @@ impl basil_bytecode::BasicObject for ClassInstance {
         let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0 };
         vm.frames.push(frame);
         vm.run()?;
+        // Capture back persistent file handles into this instance
+        self.next_fh = vm.next_fh;
+        self.file_table = std::mem::take(&mut vm.file_table);
         // Collect return value
         let ret = vm.stack.pop().unwrap_or(Value::Null);
         // Update our globals from inner VM (so mutations persist)
@@ -272,6 +284,7 @@ impl VM {
             post_params_cache: None,
             file_table: HashMap::new(),
             next_fh: 1,
+            close_handles_on_ret: true,
         }
     }
 
@@ -357,7 +370,12 @@ impl VM {
     }
 
     fn fh_get_mut(&mut self, h: i64) -> Result<&mut FileHandleEntry> {
-        self.file_table.get_mut(&h).ok_or_else(|| BasilError("InvalidHandle".into()))
+        if !self.file_table.contains_key(&h) {
+            let mut keys: Vec<i64> = self.file_table.keys().copied().collect();
+            keys.sort();
+            return Err(BasilError(format!("InvalidHandle (wanted {}, have {:?})", h, keys)));
+        }
+        Ok(self.file_table.get_mut(&h).unwrap())
     }
 
     fn fh_close(&mut self, h: i64) -> Result<()> {
@@ -470,8 +488,8 @@ impl VM {
                     self.stack.push(Value::Num(-n));
                 }
 
-                Op::Eq => self.bin_cmp(|a,b| a==b)?,
-                Op::Ne => self.bin_cmp(|a,b| a!=b)?,
+                Op::Eq => self.bin_eq()?,
+                Op::Ne => self.bin_ne()?,
                 Op::Lt => self.bin_num_cmp(|a,b| a<b)?,
                 Op::Le => self.bin_num_cmp(|a,b| a<=b)?,
                 Op::Gt => self.bin_num_cmp(|a,b| a>b)?,
@@ -526,8 +544,10 @@ impl VM {
                     let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
                     self.stack.truncate(frame.base);
                     self.stack.push(retv);
-                    // auto-close any file handles opened in this frame
-                    self.fh_close_owner_depth(depth);
+                    // auto-close any file handles opened in this frame (unless suppressed for class methods)
+                    if self.close_handles_on_ret {
+                        self.fh_close_owner_depth(depth);
+                    }
                     if self.frames.is_empty() { break; }
                 }
 
@@ -1408,14 +1428,36 @@ impl VM {
         let b = self.as_num(b)?; let a = self.as_num(a)?;
         self.stack.push(Value::Num(f(a,b))); Ok(())
     }
-    fn bin_cmp<F: Fn(&Value,&Value)->bool>(&mut self, f: F) -> Result<()> {
-        let b = self.pop()?; let a = self.pop()?;
-        self.stack.push(Value::Bool(f(&a,&b))); Ok(())
-    }
     fn bin_num_cmp<F: Fn(f64,f64)->bool>(&mut self, f: F) -> Result<()> {
         let b = self.pop()?; let a = self.pop()?;
         let b = self.as_num(b)?; let a = self.as_num(a)?;
         self.stack.push(Value::Bool(f(a,b))); Ok(())
+    }
+
+    fn bin_eq(&mut self) -> Result<()> {
+        let b = self.pop()?; let a = self.pop()?;
+        // Numeric-aware equality for Int/Num/Bool; fall back to structural equality otherwise
+        let res = match (&a, &b) {
+            (Value::Num(_)|Value::Int(_)|Value::Bool(_), Value::Num(_)|Value::Int(_)|Value::Bool(_)) => {
+                let an = self.as_num(a)?; let bn = self.as_num(b)?; an == bn
+            }
+            _ => a == b,
+        };
+        self.stack.push(Value::Bool(res));
+        Ok(())
+    }
+
+    fn bin_ne(&mut self) -> Result<()> {
+        let b = self.pop()?; let a = self.pop()?;
+        // Numeric-aware inequality for Int/Num/Bool; fall back to structural inequality otherwise
+        let res = match (&a, &b) {
+            (Value::Num(_)|Value::Int(_)|Value::Bool(_), Value::Num(_)|Value::Int(_)|Value::Bool(_)) => {
+                let an = self.as_num(a)?; let bn = self.as_num(b)?; an != bn
+            }
+            _ => a != b,
+        };
+        self.stack.push(Value::Bool(res));
+        Ok(())
     }
 
     fn type_of(&self, v: &Value) -> String {
