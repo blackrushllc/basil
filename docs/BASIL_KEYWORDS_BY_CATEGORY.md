@@ -435,3 +435,108 @@ PRINTLN "Modules hinted.";
 ```
 
 ## System Commands
+
+
+## File I/O and Filesystem
+
+### APPENDFILE
+Appends string data to a file, creating it if needed.
+```basil
+APPENDFILE "out.txt", "Gamma\n";
+```
+
+### COPY
+Copies a file from src$ to dst$; raises on error.
+```basil
+COPY "a.txt", "b.txt";
+```
+
+### DELETE
+Deletes a file; raises on error.
+```basil
+DELETE "temp.bin";
+```
+
+### DIR$
+Returns an array of file names (no paths) matching a glob pattern.
+```basil
+LET names$@ = DIR$("*.basil");
+```
+
+### FEOF
+Returns TRUE if at end-of-file for the handle.
+```basil
+IF FEOF(fh%) THEN PRINTLN "eof";
+```
+
+### FFLUSH
+Flushes buffered data to disk for the handle.
+```basil
+FFLUSH fh%;
+```
+
+### FOPEN
+Opens a file with mode (e.g., "r", "w", "a", "rb", "w+"), returns integer handle.
+```basil
+LET fh% = FOPEN("notes.txt", "w");
+```
+
+### FREAD$
+Reads up to N bytes/characters from the file.
+```basil
+LET s$ = FREAD$(fh%, 16);
+```
+
+### FREADLINE$
+Reads a single line (without trailing newline).
+```basil
+LET line$ = FREADLINE$(fh%);
+```
+
+### FSEEK
+Moves file pointer: FSEEK fh%, offset&, whence% (0=SET,1=CURRENT,2=END).
+```basil
+FSEEK fh%, 0, 0;
+```
+
+### FTELL&
+Returns current byte offset as a LONG.
+```basil
+LET pos& = FTELL&(fh%);
+```
+
+### FWRITE
+Writes a string to the file without newline.
+```basil
+FWRITE fh%, "Hello";
+```
+
+### FWRITELN
+Writes a string followed by newline to the file.
+```basil
+FWRITELN fh%, "Hello";
+```
+
+### MOVE
+Moves/renames a file to a new path (can cross directories).
+```basil
+MOVE "from.txt", "to_dir/to.txt";
+```
+
+### READFILE$
+Reads an entire file into a string.
+```basil
+PRINT READFILE$("out.txt");
+```
+
+### RENAME
+Renames a file within its directory.
+```basil
+RENAME "data.csv", "data_old.csv";
+```
+
+### WRITEFILE
+Overwrites/creates a file with the given string data.
+```basil
+WRITEFILE "out.txt", "Alpha\n";
+```

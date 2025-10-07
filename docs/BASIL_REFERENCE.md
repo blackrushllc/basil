@@ -481,3 +481,124 @@ WHILE I < 3 BEGIN
   LET I = I + 1;
 END
 ```
+# NEW SECTION: File I/O
+
+
+## APPENDFILE
+*Type:* Statement  
+Appends string data to an existing file or creates a new one.
+```basil
+APPENDFILE "out.txt", "Gamma\n";
+```
+
+## COPY
+*Type:* Statement  
+Copies a file from src$ to dst$; raises a runtime error on failure.
+```basil
+COPY "a.txt", "b.txt";
+```
+
+## DELETE
+*Type:* Statement  
+Deletes a file; raises a runtime error on failure.
+```basil
+DELETE "temp.bin";
+```
+
+## DIR$
+*Type:* Function (returns String Array)  
+Returns file names (no paths) that match a glob pattern in a directory.
+```basil
+LET names$@ = DIR$("examples/*.basil");
+```
+
+## FEOF
+*Type:* Function (returns Bool)  
+Returns TRUE if the file handle is at end-of-file.
+```basil
+IF FEOF(fh%) THEN PRINTLN "done";
+```
+
+## FFLUSH
+*Type:* Function (returns Bool)  
+Flushes buffered data to disk for the given file handle.
+```basil
+FFLUSH fh%;
+```
+
+## FOPEN
+*Type:* Function (returns Integer handle)  
+Opens a file and returns a handle (>=1) or raises on error. Modes: r, w, a, rb, wb, ab, r+, w+, a+, rb+, wb+, ab+.
+```basil
+LET fh% = FOPEN("notes.txt", "w");
+```
+
+## FREAD$
+*Type:* Function (returns String)  
+Reads up to N bytes/characters from a file.
+```basil
+LET s$ = FREAD$(fh%, 16);
+```
+
+## FREADLINE$
+*Type:* Function (returns String)  
+Reads a single line (without trailing newline) from a file.
+```basil
+LET line$ = FREADLINE$(fh%);
+```
+
+## FSEEK
+*Type:* Function (returns Bool)  
+Moves the file position: FSEEK fh%, offset&, whence% (0=SET,1=CURRENT,2=END).
+```basil
+FSEEK fh%, 0, 0;  ' rewind
+```
+
+## FTELL&
+*Type:* Function (returns Long)  
+Returns the current byte offset for the file handle.
+```basil
+LET pos& = FTELL&(fh%);
+```
+
+## FWRITE
+*Type:* Function (returns Bool)  
+Writes a string to a file without a newline.
+```basil
+FWRITE fh%, "Hello";
+```
+
+## FWRITELN
+*Type:* Function (returns Bool)  
+Writes a string followed by a newline to a file.
+```basil
+FWRITELN fh%, "Hello";
+```
+
+## MOVE
+*Type:* Statement  
+Moves/renames a file to a new path (possibly across directories).
+```basil
+MOVE "from.txt", "subdir/to.txt";
+```
+
+## READFILE$
+*Type:* Function (returns String)  
+Reads the entire file into a string.
+```basil
+PRINT READFILE$("out.txt");
+```
+
+## RENAME
+*Type:* Statement  
+Renames a file within its directory.
+```basil
+RENAME "data.csv", "data_old.csv";
+```
+
+## WRITEFILE
+*Type:* Statement  
+Overwrites a file with the given string data (creates if missing).
+```basil
+WRITEFILE "out.txt", "Alpha\n";
+```
