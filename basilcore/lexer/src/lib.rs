@@ -399,4 +399,4 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_ident_start(c: char) -> bool { c.is_ascii_alphabetic() || c == '_' }
-fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' }
+fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' || c == '&' }
