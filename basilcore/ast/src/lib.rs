@@ -83,7 +83,12 @@ pub enum Stmt {
     Describe { target: Expr },
     Print { expr: Expr },
     ExprStmt(Expr),
+    // Function return (inside FUNC)
     Return(Option<Expr>),
+    // Labels and unstructured flow
+    Label(String),
+    Goto(String),
+    Gosub(String),
     If { cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
     While { cond: Expr, body: Box<Stmt> },
     Break,

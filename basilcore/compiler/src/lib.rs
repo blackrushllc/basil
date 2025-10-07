@@ -48,6 +48,12 @@ use basil_bytecode::{Chunk, Program as BCProgram, Value, Op, Function};
 
 pub fn compile(ast: &Program) -> Result<BCProgram> {
     let mut c = C::new();
+    // Pre-scan to collect all function names so calls can be resolved before definitions
+    for s in ast {
+        if let Stmt::Func { name, .. } = s {
+            c.fn_names.insert(name.to_ascii_uppercase());
+        }
+    }
     for s in ast {
         c.emit_stmt_toplevel(s)?;
     }
@@ -150,6 +156,10 @@ impl C {
                 chunk.push_op(Op::Print);
                 self.chunk = chunk;
             }
+            // Unstructured flow placeholders (no-op for now)
+            Stmt::Label(_name) => { /* no-op at toplevel */ }
+            Stmt::Goto(_name) => { /* GOTO unsupported at MVP; ignoring to proceed */ }
+            Stmt::Gosub(_name) => { /* GOSUB unsupported at MVP; ignoring to proceed */ }
             Stmt::DimObject { name, type_name, args } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 // push args
@@ -418,6 +428,10 @@ impl C {
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
             }
+            // Unstructured flow placeholders (no-op inside function for now)
+            Stmt::Label(_name) => { /* no-op */ }
+            Stmt::Goto(_name) => { /* ignore */ }
+            Stmt::Gosub(_name) => { /* ignore */ }
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
@@ -955,6 +969,10 @@ impl C {
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
             }
+            // Unstructured flow placeholders (no-op inside toplevel chunk)
+            Stmt::Label(_name) => { /* no-op */ }
+            Stmt::Goto(_name) => { /* ignore */ }
+            Stmt::Gosub(_name) => { /* ignore */ }
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, None)?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));

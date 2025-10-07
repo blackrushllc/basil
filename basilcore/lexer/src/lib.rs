@@ -64,6 +64,8 @@ pub enum TokenKind {
     Describe,
     New,
     Class,
+    // Unstructured control flow
+    Label, Goto, Gosub,
     Eof,
 }
 
@@ -307,6 +309,9 @@ impl<'a> Lexer<'a> {
             "DESCRIBE" => TokenKind::Describe,
             "NEW"    => TokenKind::New,
             "CLASS"  => TokenKind::Class,
+            "LABEL"  => TokenKind::Label,
+            "GOTO"   => TokenKind::Goto,
+            "GOSUB"  => TokenKind::Gosub,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))
