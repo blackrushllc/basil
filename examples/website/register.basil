@@ -5,7 +5,7 @@
   SUB send_header_ok_html()
     PRINT "Status: 200 OK\r\n";
     PRINT "Content-Type: text/html; charset=utf-8\r\n";
-    PRINT "Cache-Control: no-store\r\n";
+    PRINT "Cache-Control: no-store\r\n\r\n";
   END SUB
   SUB set_cookie(name$, value$)
     PRINT "Set-Cookie: " + name$ + "=" + value$ + "; Path=/; HttpOnly\r\n";
