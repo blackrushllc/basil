@@ -64,6 +64,8 @@ pub enum TokenKind {
     Describe,
     New,
     Class,
+    // Env and process control
+    Setenv, Exportenv, Shell, Exit,
     // Unstructured control flow
     Label, Goto, Gosub,
     Eof,
@@ -163,6 +165,7 @@ impl<'a> Lexer<'a> {
             '<' => {
                 self.advance();
                 if self.match_char('=') { Ok(self.make(TokenKind::LtEq)) }
+                else if self.match_char('>') { Ok(self.make(TokenKind::BangEq)) }
                 else { Ok(self.make(TokenKind::Lt)) }
             }
             '>' => {
@@ -309,6 +312,10 @@ impl<'a> Lexer<'a> {
             "DESCRIBE" => TokenKind::Describe,
             "NEW"    => TokenKind::New,
             "CLASS"  => TokenKind::Class,
+            "SETENV" => TokenKind::Setenv,
+            "EXPORTENV" => TokenKind::Exportenv,
+            "SHELL"  => TokenKind::Shell,
+            "EXIT"   => TokenKind::Exit,
             "LABEL"  => TokenKind::Label,
             "GOTO"   => TokenKind::Goto,
             "GOSUB"  => TokenKind::Gosub,
@@ -399,4 +406,4 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_ident_start(c: char) -> bool { c.is_ascii_alphabetic() || c == '_' }
-fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' }
+fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' || c == '&' }

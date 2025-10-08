@@ -1,0 +1,23 @@
+REM Demonstrates ENV$, SETENV / EXPORTENV, SHELL, and EXIT
+
+PRINTLN "=== Environment demo ===";
+
+PRINTLN "USERNAME before:", ENV$("USERNAME");
+PRINTLN "DEMO_EXPORT before:", ENV$("DEMO_EXPORT");
+PRINTLN "PATH snippet:", LEFT$(ENV$("PATH"), 60), "...";
+
+REM Set a process-local environment variable
+SETENV DEMO_VAR = "42";
+PRINTLN "After SETENV, DEMO_VAR=", ENV$("DEMO_VAR");
+
+REM Try to export (persist for future processes, best effort on Windows via SETX)
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
+PRINTLN "After EXPORTENV, DEMO_EXPORT (current process) = ", ENV$("DEMO_EXPORT");
+
+REM Run a shell command; on Windows this uses cmd /C
+SHELL "cmd /C echo SHELL ran OK > examples\\env_shell_output.txt";
+SHELL "cmd /C dir *.md";
+PRINTLN "Created examples\\env_shell_output.txt via SHELL.";
+
+REM Exit explicitly with code 0
+EXIT 0;

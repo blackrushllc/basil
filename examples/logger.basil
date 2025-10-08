@@ -1,0 +1,18 @@
+REM CLASS Logger — demonstrates a public class file handle field
+
+LET fh% = 0;  ' public field that persists with the instance
+
+FUNC Init(path$)
+  IF fh% <> 0 THEN FCLOSE(fh%);
+  LET fh% = FOPEN(path$, "a");
+END
+
+FUNC Log(msg$)
+  IF fh% == 0 THEN RETURN;
+  FWRITELN(fh%, msg$);
+END
+
+FUNC Close()
+  IF fh% <> 0 THEN FCLOSE(fh%);
+  LET fh% = 0;
+END
