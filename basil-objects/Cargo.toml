@@ -17,7 +17,7 @@ obj-base64 = ["base64"]
 obj-zip = ["zip", "walkdir"]
 obj-curl = ["ureq"]
 obj-json = ["serde_json"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-bmx"]
 
 [dependencies]
 basil-common = { workspace = true }
