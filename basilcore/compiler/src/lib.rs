@@ -110,12 +110,20 @@ impl C {
                         chunk.push_u8(g);
                     }
                     Some(idxs) => {
-                        // array element assignment
-                        let g = self.gslot(name);
-                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
-                        for ix in idxs { self.emit_expr_in(&mut chunk, ix, None)?; }
-                        self.emit_expr_in(&mut chunk, init, None)?;
-                        chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
+                        // array element assignment or whole-array assignment if idxs is empty: name$() = expr
+                        if idxs.is_empty() {
+                            // Evaluate RHS and convert from StrArray2D to real 2D string array via builtin 138
+                            self.emit_expr_in(&mut chunk, init, None)?;
+                            chunk.push_op(Op::Builtin); chunk.push_u8(138u8); chunk.push_u8(1u8);
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                        } else {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            for ix in idxs { self.emit_expr_in(&mut chunk, ix, None)?; }
+                            self.emit_expr_in(&mut chunk, init, None)?;
+                            chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
+                        }
                     }
                 }
                 self.chunk = chunk;
@@ -431,16 +439,31 @@ impl C {
                         }
                     }
                     Some(idxs) => {
-                        // array element assignment: load array ref (local or global), push indices, value, ArrSet
-                        if let Some(slot) = env.lookup(name) {
-                            chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                        if idxs.is_empty() {
+                            // Whole-array assignment: name$() = expr
+                            self.emit_expr_in(chunk, init, Some(env))?;
+                            chunk.push_op(Op::Builtin); chunk.push_u8(138u8); chunk.push_u8(1u8);
+                            if let Some(slot) = env.lookup(name) {
+                                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                            } else if self.gmap.contains_key(name) && !self.fn_names.contains(&name.to_ascii_uppercase()) {
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                            } else {
+                                let slot = env.bind_next_if_absent(name.clone());
+                                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                            }
                         } else {
-                            let g = self.gslot(name);
-                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            // array element assignment: load array ref (local or global), push indices, value, ArrSet
+                            if let Some(slot) = env.lookup(name) {
+                                chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                            } else {
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            }
+                            for ix in idxs { self.emit_expr_in(chunk, ix, Some(env))?; }
+                            self.emit_expr_in(chunk, init, Some(env))?;
+                            chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
                         }
-                        for ix in idxs { self.emit_expr_in(chunk, ix, Some(env))?; }
-                        self.emit_expr_in(chunk, init, Some(env))?;
-                        chunk.push_op(Op::ArrSet); chunk.push_u8(idxs.len() as u8);
                     }
                 }
             }
@@ -919,6 +942,13 @@ impl C {
                         #[cfg(feature = "obj-json")] "JSON_STRINGIFY$" => Some(127u8),
                         #[cfg(feature = "obj-csv")] "CSV_PARSE$" => Some(128u8),
                         #[cfg(feature = "obj-csv")] "CSV_WRITE$" => Some(129u8),
+                        #[cfg(feature = "obj-sqlite")] "SQLITE_OPEN%" => Some(130u8),
+                        #[cfg(feature = "obj-sqlite")] "SQLITE_CLOSE" => Some(131u8),
+                        #[cfg(feature = "obj-sqlite")] "SQLITE_EXEC%" => Some(132u8),
+                        #[cfg(feature = "obj-sqlite")] "SQLITE_QUERY2D$" => Some(133u8),
+                        #[cfg(feature = "obj-sqlite")] "SQLITE_LAST_INSERT_ID%" => Some(134u8),
+                        "ARRAY_ROWS%" => Some(139u8),
+                        "ARRAY_COLS%" => Some(140u8),
                         _ => None,
                     };
                     if let Some(id) = bid {
