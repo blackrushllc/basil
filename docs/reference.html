@@ -115,6 +115,13 @@ Boolean conjunction with short-circuit evaluation.
 IF A > 0 AND B > 0 THEN PRINTLN "both positive";
 ```
 
+## APPENDFILE
+*Type:* Statement  
+Appends string data to an existing file or creates a new one.
+```basil
+APPENDFILE "out.txt", "Gamma\n";
+```
+
 ## AS
 *Type:* Statement  
 Specifies a type name for DIM of object variables or arrays.
@@ -165,6 +172,13 @@ PRINTLN CHR$(65);
 Constructs a class instance from a filename that defines a class.
 ```basil
 LET x@ = CLASS("my_widget.cls");
+```
+
+## COPY
+*Type:* Statement  
+Copies a file from src$ to dst$; raises a runtime error on failure.
+```basil
+COPY "a.txt", "b.txt";
 ```
 
 ## CONTINUE

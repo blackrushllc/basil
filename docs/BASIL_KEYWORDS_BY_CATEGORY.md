@@ -540,3 +540,38 @@ Overwrites/creates a file with the given string data.
 ```basil
 WRITEFILE "out.txt", "Alpha\n";
 ```
+
+
+## Environment
+
+### ENV$
+Returns the value of an environment variable named by its string argument, or an empty string if it does not exist.
+```basil
+PRINTLN "PATH=", ENV$("PATH");
+```
+
+### SETENV
+Sets an environment variable for the current Basil process. The right-hand side may be a quoted string, number, or any scalar variable.
+```basil
+SETENV DEMO_VAR = "42";
+PRINTLN ENV$("DEMO_VAR");
+```
+
+### EXPORTENV
+Like SETENV, but also attempts to export/persist the value outside the current process when supported by the platform (on Windows, via SETX). Always sets the process-local value.
+```basil
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
+PRINTLN ENV$("DEMO_EXPORT");
+```
+
+### SHELL
+Executes a command string in the parent command environment and waits for it to complete.
+```basil
+SHELL "cmd /C echo Hi > out.txt";
+```
+
+### EXIT
+Exits the interpreter with an optional numeric exit code (defaults to 0).
+```basil
+EXIT 0;
+```
