@@ -15,6 +15,47 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+### Quick Try:
+
+🌿 Running a basil program without rebuilding the VM:
+```terminal
+cargo run -q -p basilc -- run examples/hello.basil
+```
+
+🌿 Running a basil program with the BMX objects enabled:
+```terminal
+target/release/basilc run examples/hello.basil
+# or
+target/debug/basilc run examples/hello.basil
+```
+
+Building and deploying Basil to run CGI scripts on Linux:
+
+```
+cargo build --release -p basilc
+install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
+```
+
+🌿 Running a basil program with a full build (all libraries)
+
+```terminal
+cargo run -q -p basilc --features obj-all -- run examples/objects.basil
+```
+
+🌿 Running a basil program with a bunch of libraries
+
+```terminal
+cargo run -q -p basilc --features "obj-curl obj-zip obj-base64" -- run examples/zip_demo.basil
+```
+
+🌿 Running a basil program with a full build (all libraries)
+
+```terminal
+cargo run -q -p basilc --features obj-all -- run examples/objects.basil
+```
+
+
+
 Useful links:
 
 🌿 https://yobasic.com/basil//basil.html - The original 15 Minute Presentation Handout (nicer one below)

@@ -913,6 +913,8 @@ impl C {
                         #[cfg(feature = "obj-zip")] "ZIP_COMPRESS_FILE" => Some(121u8),
                         #[cfg(feature = "obj-zip")] "ZIP_COMPRESS_DIR" => Some(122u8),
                         #[cfg(feature = "obj-zip")] "ZIP_LIST$" => Some(123u8),
+                        #[cfg(feature = "obj-curl")] "HTTP_GET$" => Some(124u8),
+                        #[cfg(feature = "obj-curl")] "HTTP_POST$" => Some(125u8),
                         _ => None,
                     };
                     if let Some(id) = bid {

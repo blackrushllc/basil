@@ -60,6 +60,8 @@ use basil_bytecode::{deserialize_program};
 use base64::{engine::general_purpose, Engine as _};
 #[cfg(feature = "obj-zip")]
 use basil_objects::zip as zip_utils;
+#[cfg(feature = "obj-curl")]
+use basil_objects::curl as curl_utils;
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
@@ -1476,6 +1478,22 @@ impl VM {
                             let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
                             let listing = zip_utils::zip_list(&zip_path)?;
                             self.stack.push(Value::Str(listing));
+                        }
+                        #[cfg(feature = "obj-curl")]
+                        124 => { // HTTP_GET$(url$)
+                            if argc != 1 { return Err(BasilError("HTTP_GET$ expects 1 argument".into())); }
+                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let body = curl_utils::http_get(&url)?;
+                            self.stack.push(Value::Str(body));
+                        }
+                        #[cfg(feature = "obj-curl")]
+                        125 => { // HTTP_POST$(url$, body$[, content_type$])
+                            if !(argc == 2 || argc == 3) { return Err(BasilError("HTTP_POST$ expects 2 or 3 arguments".into())); }
+                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let body = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let ct_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
+                            let resp = curl_utils::http_post(&url, &body, ct_opt.as_deref())?;
+                            self.stack.push(Value::Str(resp));
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }

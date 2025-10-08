@@ -9,11 +9,14 @@ name = "basil_objects"
 path = "src/lib.rs"
 
 [features]
+default = []
 obj-bmx-rider = []
 obj-bmx-team = []
 obj-bmx = ["obj-bmx-rider", "obj-bmx-team"]
 obj-base64 = ["base64"]
 obj-zip = ["zip", "walkdir"]
+obj-curl = ["ureq"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl"]
 
 [dependencies]
 basil-common = { workspace = true }
@@ -21,3 +24,4 @@ basil-bytecode = { workspace = true }
 base64 = { version = "0.22", optional = true }
 zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
 walkdir = { version = "2", optional = true }
+ureq = { version = "2.9", optional = true, features = ["json", "tls"] }
