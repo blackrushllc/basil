@@ -66,6 +66,8 @@ use basil_objects::curl as curl_utils;
 use serde_json::{Value as JValue};
 #[cfg(feature = "obj-csv")]
 use csv::{ReaderBuilder, WriterBuilder};
+#[cfg(feature = "obj-sqlite")]
+use basil_objects::sqlite as sqlite_utils;
 
 #[cfg(feature = "obj-json")]
 fn value_to_jvalue(v: &Value) -> Result<JValue> {
@@ -99,6 +101,18 @@ fn value_to_jvalue(v: &Value) -> Result<JValue> {
                 }
             }
             Ok(JValue::Object(map))
+        }
+        Value::StrArray2D { rows, cols, data } => {
+            let mut out: Vec<JValue> = Vec::with_capacity(*rows);
+            for r in 0..*rows {
+                let mut row: Vec<JValue> = Vec::with_capacity(*cols);
+                for c in 0..*cols {
+                    let idx = r * *cols + c;
+                    row.push(JValue::String(data[idx].clone()));
+                }
+                out.push(JValue::Array(row));
+            }
+            Ok(JValue::Array(out))
         }
         Value::Func(_) => Err(BasilError("JSON_STRINGIFY$: cannot stringify a function".into())),
     }
@@ -300,6 +314,7 @@ impl basil_bytecode::BasicObject for ClassInstance {
                 Value::Bool(_) => props.push(PropDesc { name: n.clone(), type_name: "BOOL".to_string(), readable: true, writable: true }),
                 Value::Object(_) => props.push(PropDesc { name: n.clone(), type_name: "OBJECT".to_string(), readable: true, writable: true }),
                 Value::Null => props.push(PropDesc { name: n.clone(), type_name: "NULL".to_string(), readable: true, writable: true }),
+                Value::StrArray2D { .. } => props.push(PropDesc { name: n.clone(), type_name: "STRARRAY2D".to_string(), readable: true, writable: true }),
             }
         }
         ObjectDescriptor { type_name: "CLASS".to_string(), version: "1.0".to_string(), summary: "Basil file-based class instance".to_string(), properties: props, methods, examples: Vec::new() }
@@ -1642,6 +1657,79 @@ impl VM {
                             let out = String::from_utf8(bytes).map_err(|e| BasilError(format!("CSV_WRITE$: utf8 failed: {}", e)))?;
                             self.stack.push(Value::Str(out));
                         }
+                        #[cfg(feature = "obj-sqlite")]
+                        130 => { // SQLITE_OPEN%(path$)
+                            if argc != 1 { return Err(BasilError("SQLITE_OPEN% expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let h = sqlite_utils::sqlite_open(&path);
+                            self.stack.push(Value::Int(h));
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        131 => { // SQLITE_CLOSE(handle%)
+                            if argc != 1 { return Err(BasilError("SQLITE_CLOSE expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            sqlite_utils::sqlite_close(h);
+                            self.stack.push(Value::Null);
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        132 => { // SQLITE_EXEC%(handle%, sql$)
+                            if argc != 2 { return Err(BasilError("SQLITE_EXEC% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let sql = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let n = sqlite_utils::sqlite_exec(h, &sql);
+                            self.stack.push(Value::Int(n));
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        133 => { // SQLITE_QUERY2D$(handle%, sql$)
+                            if argc != 2 { return Err(BasilError("SQLITE_QUERY2D$ expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let sql = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let v = sqlite_utils::sqlite_query2d(h, &sql)?;
+                            self.stack.push(v);
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        134 => { // SQLITE_LAST_INSERT_ID%(handle%)
+                            if argc != 1 { return Err(BasilError("SQLITE_LAST_INSERT_ID% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let id = sqlite_utils::sqlite_last_insert_id(h);
+                            self.stack.push(Value::Int(id));
+                        }
+                        138 => { // INTERNAL: STR2D_TO_ARRAY$(rowsxcols)
+                            if argc != 1 { return Err(BasilError("internal builtin 138 expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::StrArray2D { rows, cols, data } => {
+                                    // build 2D string array with dims [rows, cols]
+                                    let dims = vec![*rows, *cols];
+                                    let mut arr_data: Vec<Value> = Vec::with_capacity(data.len());
+                                    for s in data.iter() { arr_data.push(Value::Str(s.clone())); }
+                                    let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: std::cell::RefCell::new(arr_data) });
+                                    self.stack.push(Value::Array(arr));
+                                }
+                                other => return Err(BasilError(format!("builtin 138 expects StrArray2D, got {}", self.type_of(other)))),
+                            }
+                        }
+                        139 => { // ARRAY_ROWS%(arr$())
+                            if argc != 1 { return Err(BasilError("ARRAY_ROWS% expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Array(rc) => {
+                                    let a = rc.as_ref();
+                                    if a.dims.len() != 2 { return Err(BasilError("ARRAY_ROWS%: expected 2-D array".into())); }
+                                    self.stack.push(Value::Int(a.dims[0] as i64));
+                                }
+                                _ => return Err(BasilError("ARRAY_ROWS%: expected array".into())),
+                            }
+                        }
+                        140 => { // ARRAY_COLS%(arr$())
+                            if argc != 1 { return Err(BasilError("ARRAY_COLS% expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Array(rc) => {
+                                    let a = rc.as_ref();
+                                    if a.dims.len() != 2 { return Err(BasilError("ARRAY_COLS%: expected 2-D array".into())); }
+                                    self.stack.push(Value::Int(a.dims[1] as i64));
+                                }
+                                _ => return Err(BasilError("ARRAY_COLS%: expected array".into())),
+                            }
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -1757,6 +1845,7 @@ impl VM {
                 format!("{}[]", base)
             }
             Value::Object(rc) => rc.borrow().type_name().to_string(),
+            Value::StrArray2D { .. } => "STRING[][]".to_string(),
         }
     }
 
@@ -1829,6 +1918,7 @@ fn is_truthy(v: &Value) -> bool {
         Value::Func(_) => true,
         Value::Array(_) => true,
         Value::Object(_) => true,
+        Value::StrArray2D { rows, cols, data } => (*rows > 0) && (*cols > 0) && (!data.is_empty()),
     }
 }
 

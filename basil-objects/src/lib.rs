@@ -81,6 +81,10 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::csv::register(_reg);
     }
+    #[cfg(feature = "obj-sqlite")]
+    {
+        crate::sqlite::register(_reg);
+    }
 }
 
 #[cfg(feature = "obj-base64")]
@@ -97,3 +101,5 @@ pub mod curl;
 pub mod json;
 #[cfg(feature = "obj-csv")]
 mod csv;
+#[cfg(feature = "obj-sqlite")]
+pub mod sqlite;
