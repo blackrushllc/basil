@@ -57,6 +57,10 @@ impl Registry {
 
 pub fn register_objects(_reg: &mut Registry) {
     // conditional registrations
+    #[cfg(feature = "obj-base64")]
+    {
+        crate::base64::register(_reg);
+    }
     #[cfg(feature = "obj-bmx-rider")]
     {
         crate::bmx_rider::register(_reg);
@@ -67,6 +71,8 @@ pub fn register_objects(_reg: &mut Registry) {
     }
 }
 
+#[cfg(feature = "obj-base64")]
+mod base64;
 #[cfg(feature = "obj-bmx-rider")]
 mod bmx_rider;
 #[cfg(feature = "obj-bmx-team")]

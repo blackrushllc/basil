@@ -12,7 +12,9 @@ path = "src/lib.rs"
 obj-bmx-rider = []
 obj-bmx-team = []
 obj-bmx = ["obj-bmx-rider", "obj-bmx-team"]
+obj-base64 = ["base64"]
 
 [dependencies]
 basil-common = { workspace = true }
 basil-bytecode = { workspace = true }
+base64 = { version = "0.22", optional = true }
