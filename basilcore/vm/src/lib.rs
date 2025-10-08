@@ -1365,6 +1365,63 @@ impl VM {
                             names.sort();
                             self.stack.push(VM::make_string_array(names));
                         }
+                        58 => { // ENV$(name$)
+                            if argc != 1 { return Err(BasilError("ENV$ expects 1 argument".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let val = env::var(&name).unwrap_or_default();
+                            self.stack.push(Value::Str(val));
+                        }
+                        59 => { // SETENV/EXPORTENV name$, value, exportFlag
+                            if argc != 3 { return Err(BasilError("SETENV expects 3 arguments (name$, value, exportFlag)".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let value_str = match &args[1] {
+                                Value::Str(s) => s.clone(),
+                                Value::Int(i) => i.to_string(),
+                                Value::Num(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                other => format!("{}", other),
+                            };
+                            let export = match &args[2] {
+                                Value::Bool(b) => *b,
+                                Value::Int(i) => *i != 0,
+                                Value::Num(n) => *n != 0.0,
+                                _ => false,
+                            };
+                            env::set_var(&name, &value_str);
+                            let mut ok = true;
+                            if export {
+                                #[cfg(windows)]
+                                {
+                                    use std::process::Command;
+                                    let status = Command::new("cmd").args(["/C", "setx", &name, &value_str]).status();
+                                    ok = status.map(|s| s.success()).unwrap_or(false);
+                                }
+                                #[cfg(not(windows))]
+                                {
+                                    // Cannot export to parent shell from child; consider process-local set sufficient
+                                    ok = true;
+                                }
+                            }
+                            self.stack.push(Value::Bool(ok));
+                        }
+                        60 => { // SHELL(cmd$) -> exit code
+                            if argc != 1 { return Err(BasilError("SHELL expects 1 argument".into())); }
+                            let cmd = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            #[cfg(windows)]
+                            let status = std::process::Command::new("cmd").args(["/C", &cmd]).status();
+                            #[cfg(not(windows))]
+                            let status = std::process::Command::new("sh").args(["-c", &cmd]).status();
+                            let code_i: i64 = match status {
+                                Ok(st) => st.code().unwrap_or(-1) as i64,
+                                Err(_) => -1,
+                            };
+                            self.stack.push(Value::Int(code_i));
+                        }
+                        61 => { // EXIT(code)
+                            if argc != 1 { return Err(BasilError("EXIT expects 1 argument".into())); }
+                            let code = self.to_i64(&args[0])? as i32;
+                            std::process::exit(code);
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }

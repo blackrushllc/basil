@@ -64,6 +64,8 @@ pub enum TokenKind {
     Describe,
     New,
     Class,
+    // Env and process control
+    Setenv, Exportenv, Shell, Exit,
     // Unstructured control flow
     Label, Goto, Gosub,
     Eof,
@@ -310,6 +312,10 @@ impl<'a> Lexer<'a> {
             "DESCRIBE" => TokenKind::Describe,
             "NEW"    => TokenKind::New,
             "CLASS"  => TokenKind::Class,
+            "SETENV" => TokenKind::Setenv,
+            "EXPORTENV" => TokenKind::Exportenv,
+            "SHELL"  => TokenKind::Shell,
+            "EXIT"   => TokenKind::Exit,
             "LABEL"  => TokenKind::Label,
             "GOTO"   => TokenKind::Goto,
             "GOSUB"  => TokenKind::Gosub,
