@@ -12,6 +12,7 @@ pub fn register(_reg: &mut crate::Registry) {
 }
 
 #[cfg(all(feature = "csv", feature = "serde_json"))]
+#[allow(dead_code)]
 pub fn parse_to_json_array(csv_text: &str) -> Result<String> {
     let mut rdr = ReaderBuilder::new()
         .has_headers(true)
@@ -39,6 +40,7 @@ pub fn parse_to_json_array(csv_text: &str) -> Result<String> {
 }
 
 #[cfg(all(feature = "csv", feature = "serde_json"))]
+#[allow(dead_code)]
 pub fn write_from_rows_json(rows_json: &str) -> Result<String> {
     let rows: JValue = serde_json::from_str(rows_json)
         .map_err(|e| BasilError(format!("CSV_WRITE$: invalid JSON: {}", e)))?;
