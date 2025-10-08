@@ -1,0 +1,81 @@
+#CGI_NO_HEADER
+<?basil
+  REM ----- helpers -----
+  LET SITE_TITLE$ = "Basil Website Skeleton"
+  SUB send_header_ok_html()
+    PRINT "Status: 200 OK\r\n";
+    PRINT "Content-Type: text/html; charset=utf-8\r\n";
+    PRINT "Cache-Control: no-store\r\n\r\n";
+  END SUB
+
+  SUB layout_start(title$)
+    PRINT "<!doctype html>\n";
+    PRINT "<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>" + HTML$(title$) + "</title>\n";
+    PRINT "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
+    PRINT "<link rel=\"stylesheet\" href=\"css/site.css\">\n";
+    PRINT "</head>\n<body>\n<header class=\"top\"><div class=\"wrap\"><h1>" + HTML$(SITE_TITLE$) + "</h1></div></header>\n";
+    PRINT "<main class=\"wrap\">\n";
+  END SUB
+
+  SUB layout_end()
+    PRINT "</main>\n<footer class=\"foot\"><div class=\"wrap\">\n";
+    PRINT "<small>Example Basil CGI skeleton • <a href=\"index.basil\">Home</a></small>\n";
+    PRINT "</div></footer>\n<script src=\"js/site.js\"></script>\n</body></html>\n";
+  END SUB
+
+  FUNCTION param$(name$)
+    DIM arr$(0)
+    LET arr$() = REQUEST$()
+    FOR EACH kv$ IN arr$()
+      LET eq% = FIND(kv$, "=")
+      IF eq% >= 0 THEN
+        LET k$ = LEFT$(kv$, eq%)
+        LET v$ = MID$(kv$, eq%+2)
+        IF k$ == name$ THEN RETURN v$
+      ENDIF
+    NEXT
+    RETURN ""
+  END FUNCTION
+
+  FUNCTION cookie$(name$)
+    LET raw$ = ENV$("HTTP_COOKIE")
+    IF LEN(raw$) == 0 THEN RETURN ""
+    LET s$ = raw$
+    REM split on ';'
+    LET i% = 1
+    WHILE i% <= LEN(s$)
+      LET semi% = FIND(s$, ";", i%-1)
+      IF semi% < 0 THEN LET semi% = LEN(s$)
+      LET part$ = TRIM$(MID$(s$, i%, semi% - i% + 1))
+      LET eq% = FIND(part$, "=")
+      IF eq% >= 0 THEN
+        LET ck$ = LEFT$(part$, eq%)
+        LET cv$ = MID$(part$, eq%+2)
+        IF ck$ == name$ THEN RETURN cv$
+      ENDIF
+      LET i% = semi% + 2
+    WEND
+    RETURN ""
+  END FUNCTION
+
+  SUB send_header_redirect(loc$)
+    PRINT "Status: 302 Found\r\n";
+    PRINT "Location: " + loc$ + "\r\n\r\n";
+  END SUB
+
+  REM ----- page -----
+  LET user$ = cookie$("user")
+  CALL send_header_ok_html()
+  CALL layout_start("Welcome")
+?>
+<?basil PRINT READFILE$("views/home.html"); ?>
+<?basil
+  IF LEN(user$) > 0 THEN
+    PRINT "<section class=\"notice\">You appear to be logged in as <strong>" + HTML$(user$) + "</strong>.\n";
+    PRINT " Visit your <a href=\"user_home.basil\">dashboard</a>.";
+    PRINT "</section>\n";
+  ELSE
+    PRINT "<p><a class=\"btn\" href=\"login.basil\">Log in</a> or <a class=\"btn secondary\" href=\"register.basil\">Create an account</a></p>\n";
+  ENDIF
+  CALL layout_end()
+?>

@@ -1,0 +1,54 @@
+#CGI_NO_HEADER
+<?basil
+  LET SITE_TITLE$ = "Basil Website Skeleton"
+  SUB send_header_ok_html()
+    PRINT "Status: 200 OK\r\n";
+    PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
+  END SUB
+  SUB layout_start(title$)
+    PRINT "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>" + HTML$(title$) + "</title>";
+    PRINT "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+    PRINT "<link rel=\"stylesheet\" href=\"css/site.css\"></head><body><header class=\"top\"><div class=\"wrap\"><h1>" + HTML$(SITE_TITLE$) + "</h1></div></header><main class=\"wrap\">\n";
+  END SUB
+  SUB layout_end()
+    PRINT "</main><footer class=\"foot\"><div class=\"wrap\"><small><a href=\"index.basil\">Home</a></small></div></footer><script src=\"js/site.js\"></script></body></html>\n";
+  END SUB
+  FUNCTION cookie$(name$)
+    LET raw$ = ENV$("HTTP_COOKIE")
+    IF LEN(raw$) == 0 THEN RETURN ""
+    LET s$ = raw$
+    LET i% = 1
+    WHILE i% <= LEN(s$)
+      LET semi% = FIND(s$, ";", i%-1)
+      IF semi% < 0 THEN LET semi% = LEN(s$)
+      LET part$ = TRIM$(MID$(s$, i%, semi% - i% + 1))
+      LET eq% = FIND(part$, "=")
+      IF eq% >= 0 THEN
+        LET ck$ = LEFT$(part$, eq%)
+        LET cv$ = MID$(part$, eq%+2)
+        IF ck$ == name$ THEN RETURN cv$
+      ENDIF
+      LET i% = semi% + 2
+    WEND
+    RETURN ""
+  END FUNCTION
+  SUB send_header_redirect(loc$)
+    PRINT "Status: 302 Found\r\n";
+    PRINT "Location: " + loc$ + "\r\n\r\n";
+  END SUB
+
+  LET user$ = cookie$("user")
+  IF LEN(user$) == 0 THEN
+    CALL send_header_redirect("login.basil")
+    EXIT 0
+  ENDIF
+
+  CALL send_header_ok_html()
+  CALL layout_start("Your dashboard")
+?>
+<?basil PRINT READFILE$("views/logged_in.html"); ?>
+<?basil
+  PRINT "<p class=\"greet\">Welcome, <strong>" + HTML$(user$) + "</strong>!</p>\n";
+  PRINT "<form method=\"post\" action=\"logout.basil\"><button class=\"btn\">Log out</button></form>\n";
+  CALL layout_end()
+?>
