@@ -58,6 +58,8 @@ use basil_compiler::compile as compile_basil;
 use basil_bytecode::{deserialize_program};
 #[cfg(feature = "obj-base64")]
 use base64::{engine::general_purpose, Engine as _};
+#[cfg(feature = "obj-zip")]
+use basil_objects::zip as zip_utils;
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
@@ -1442,6 +1444,38 @@ impl VM {
                                 },
                                 Err(_) => return Err(BasilError("BASE64_DECODE$: invalid Base64 string".into())),
                             }
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        120 => { // ZIP_EXTRACT_ALL(zip_path$, dest_dir$)
+                            if argc != 2 { return Err(BasilError("ZIP_EXTRACT_ALL expects 2 arguments".into())); }
+                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let dest_dir = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            zip_utils::zip_extract_all(&zip_path, &dest_dir)?;
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        121 => { // ZIP_COMPRESS_FILE(src_path$, zip_path$, entry_name$)
+                            if !(argc == 2 || argc == 3) { return Err(BasilError("ZIP_COMPRESS_FILE expects 2 or 3 arguments".into())); }
+                            let src_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let zip_path = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let entry_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
+                            zip_utils::zip_compress_file(&src_path, &zip_path, entry_opt.as_deref())?;
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        122 => { // ZIP_COMPRESS_DIR(src_dir$, zip_path$)
+                            if argc != 2 { return Err(BasilError("ZIP_COMPRESS_DIR expects 2 arguments".into())); }
+                            let src_dir = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let zip_path = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            zip_utils::zip_compress_dir(&src_dir, &zip_path)?;
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        123 => { // ZIP_LIST$(zip_path$)
+                            if argc != 1 { return Err(BasilError("ZIP_LIST$ expects 1 argument".into())); }
+                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let listing = zip_utils::zip_list(&zip_path)?;
+                            self.stack.push(Value::Str(listing));
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }

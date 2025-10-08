@@ -1,0 +1,21 @@
+// Demo of INPUT$ and IF statements.
+LET A$ = INPUT$("\nEnter your name:");
+
+PRINT "\nHello, "+A$+"!";
+
+LET ans$ = UCASE$(INPUTC$("\nDo you want to do something else? (Y/N): "));
+
+// Block IF:
+
+IF ans$ == "Y" THEN
+    BEGIN
+      PRINT "\nWinken";
+      PRINT "\nBLinken";
+      PRINT "\nNod";
+    ELSE
+        PRINT "\nOkay, I'll skip that.";
+    END
+
+// Immediate IF:
+IF ans$ == "Y" THEN PRINT "You said yes"; ELSE PRINT "You did not say Yes";
+PRINT "\nGoodbye!";

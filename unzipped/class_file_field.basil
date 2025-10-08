@@ -1,0 +1,16 @@
+REM Demonstrate a public class file handle field shared across methods
+
+REM Create a logger instance from the class file
+DIM lg@ AS CLASS("examples/logger.basil");
+
+lg@.Init("class_logger_demo.log");
+lg@.Log("Started");
+lg@.Log("Doing work...");
+lg@.Log("Finished");
+lg@.Close();
+
+REM Read back using whole-file helper and print
+LET all$ = READFILE$("class_logger_demo.log");
+PRINT all$;
+
+DELETE("class_logger_demo.log");

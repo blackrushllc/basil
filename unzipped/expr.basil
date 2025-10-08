@@ -1,0 +1,18 @@
+LET a = 2 + 3 * 4;
+PRINT a; // 14
+LET b = (2 + 3) * 4;
+PRINT b; // 20
+
+LET A$ = "Hello\nWorld\n";
+PRINT A$;
+
+LET A% = 10.1;
+PRINT "A% IS ",A%, "\n";
+
+LET B = 10.1;
+PRINT B;
+
+PRINT A% + 20;
+
+PRINT B + 20;
+

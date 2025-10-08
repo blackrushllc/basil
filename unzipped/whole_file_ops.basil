@@ -1,0 +1,12 @@
+REM One-shot whole-file operations: READFILE$, WRITEFILE, APPENDFILE
+
+LET p$ = "whole_file_example.txt";
+
+WRITEFILE(p$, "Alpha\nBeta\n");
+APPENDFILE(p$, "Gamma\nDelta\n");
+
+LET all$ = READFILE$(p$);
+PRINTLN "--- CONTENTS ---";
+PRINT all$;
+
+DELETE(p$);  ' cleanup
