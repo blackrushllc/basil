@@ -8,3 +8,9 @@ edition = "2021"
 basil-common = { workspace = true }
 basil-ast = { workspace = true }
 basil-bytecode= { workspace = true }
+
+[features]
+obj-bmx = []
+obj-bmx-rider = []
+obj-bmx-team = []
+obj-base64 = []

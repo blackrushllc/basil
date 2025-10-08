@@ -15,17 +15,60 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
 
+Useful links:
+
+🌿 https://yobasic.com/basil//basil.html - The original 15 Minute Presentation Handout (nicer one below)
+🌿 https://yobasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
+🌿 https://yobasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
+🌿 https://yobasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
+🌿
+🌿
+
+Interesting files to read in this repo:
+
++ docs/BASIL_KEYWORDS_BY_CATEGORY.md
++ docs/BASIL_REFERENCE.md
++ docs/FILE_ID.md
++ ASTERISK.md - Using Basil with Asterisk
++ BASIL.md - 15‑Minute Presentation Handout
++ BASIL_CGI.md - CGI Support for Basil (the original proposal) (this has been implemented)
++ BEGIN_END.md - All about using BEGIN..END and why and stuff
++ CLASSES.md - CLASS Support for Basil (the original proposal) (this has been implemented)
++ CLASSES_JUNIE.md - Prompt for Junie — Implement CLASS Feature in Basil (She does the hard work!)
++ CONTRIBUTING.md - How to Contribute
++ ELIZA.md - How the original 1966 ELIZA works (science yeah!)
++ FILE_IO.md - FILE IO Support for Basil (the original proposal) (this has been implemented)
++ FUNCTIONS.md - TADA!: Implement functions, calls, returns, control flow, and comparisons
++ GOALS.md - My Day 1 proposal goals for Basil
++ IDE.md - How to configure Geany or VS-Code for Basil (and others soon)
++ JETBRAINS.md - Work in progress on a Jetbrains IDE Plugin for Basil (And Yore) ([What is Yore?](https://github.com/blackrushllc/yore))
++ OBJECTS.md - Object Library Support for Basil (the original proposal) (this has been implemented)
++ PRESENTATION.md - 15‑Minute Stand‑Up Demo Notes (for Teachers) also here: [presentation.pdf](https://github.com/blackrushllc/basil/blob/main/presentation.pdf)
++ PUNS.md - ChatGPT said "Basil" is a "Pun Volcano" and this doc proves it
++ README.md - This file here
++ STUDENTS.md - How the Basil BASIC Interpreter Works (for students) also here: [basil_in_a_nutshell.pdf](https://github.com/blackrushllc/basil/blob/main/basil_in_a_nutshell.pdf)
++ TECHNICAL.md - Basil Technical Architecture and Execution Model (for rocket scientists)
++ TODO.md - A laughably old Todo list
++ VISION.md - Part of my original proposal for Basil
++ WASM.md - Building Basil for WebAssembly (WASM)
++ WASM2.md - Running BASIL in the browser with WASM
++ WEB_PAGES.md - Basil CGI / Web Templating Design (the original proposal) (this has been implemented)
+
+See the examples folder for lots of cool example Basil scripts. These were mostly produced to test each feature as it was added and then rest everything else so we know we didn't break anything
+
 ### Known limitations
 
 - Interactive console input (INPUT\$, INPUTC\$, INKEY\$, INKEY%): On Windows, these functions require a real console/TTY. When running basilc via an IDE’s Run/Debug console (e.g., RustRover Run menu), the IDE’s pseudo-terminal may not support raw-mode keyboard polling and can cause hangs or repeated key echo. Run interactive examples from a regular terminal or the Terminal window in your IDE (PowerShell, cmd.exe) for correct behavior. Non-interactive scripts and normal terminal usage are unaffected.
 - If you must run from an IDE, configure the run target to use an external console or disable input features in your script.
-- Alternative there will be a "test" option to run non-interactively, mock input, and output comments
--
-- 
+- Alternative there is a "test" option to run non-interactively, mock input, and output comments
+- There is no maximum number of lines of code in a script.
+- There is no maximum number of variables, functions, or arrays.
+- There are no limits to the size of strings, arrays, or objects.
+- ^ in theory
 
 # TODO next
 
-🌿 "test" CLI command to run non-interactively, mock input, and output comments
+🌿 Add packages like ~~Zip~~, ~~Base64~~, JSON, XML, HTTP, SQLite, MySQL, PostgreSQL, Redis, LDAP, SMTP, IMAP, FTP, SFTP, SSH, TLS/SSL, WebSockets, JWT, OAuth2, AWS SDK, Azure SDK, GCP SDK
 
 🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
 

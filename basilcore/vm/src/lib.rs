@@ -56,6 +56,8 @@ use basil_objects::{Registry, register_objects};
 use basil_parser::parse as parse_basil;
 use basil_compiler::compile as compile_basil;
 use basil_bytecode::{deserialize_program};
+#[cfg(feature = "obj-base64")]
+use base64::{engine::general_purpose, Engine as _};
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
@@ -1421,6 +1423,25 @@ impl VM {
                             if argc != 1 { return Err(BasilError("EXIT expects 1 argument".into())); }
                             let code = self.to_i64(&args[0])? as i32;
                             std::process::exit(code);
+                        }
+                        #[cfg(feature = "obj-base64")]
+                        90 => { // BASE64_ENCODE$(text$)
+                            if argc != 1 { return Err(BasilError("BASE64_ENCODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let encoded = general_purpose::STANDARD.encode(s.as_bytes());
+                            self.stack.push(Value::Str(encoded));
+                        }
+                        #[cfg(feature = "obj-base64")]
+                        91 => { // BASE64_DECODE$(text$)
+                            if argc != 1 { return Err(BasilError("BASE64_DECODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            match general_purpose::STANDARD.decode(s) {
+                                Ok(bytes) => match String::from_utf8(bytes) {
+                                    Ok(txt) => self.stack.push(Value::Str(txt)),
+                                    Err(_) => return Err(BasilError("BASE64_DECODE$: invalid UTF-8 in decoded data".into())),
+                                },
+                                Err(_) => return Err(BasilError("BASE64_DECODE$: invalid Base64 string".into())),
+                            }
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
