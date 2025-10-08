@@ -202,6 +202,20 @@ Returns a formatted description string of an object instance or array value.
 PRINTLN DESCRIBE$(r1@);
 ```
 
+## DELETE
+*Type:* Statement  
+Deletes a file; raises a runtime error on failure.
+```basil
+DELETE "temp.bin";
+```
+
+## DIR$
+*Type:* Function (returns String Array)  
+Returns file names (no paths) that match a glob pattern in a directory.
+```basil
+LET names$@ = DIR$("examples/*.basil");
+```
+
 ## DIM
 *Type:* Statement  
 Declares a numeric array, object array, or object variable (with AS and optional constructor args).
@@ -237,6 +251,27 @@ IF X > 0 THEN PRINTLN "pos"; ELSE PRINTLN "non-pos";
 Reserved synonym for closing a FOREACH loop; current syntax uses NEXT.
 ```basil
 REM Reserved: FOREACH x IN arr ... ENDFOR
+```
+
+## ENV$
+*Type:* Function (returns String)  
+Returns the value of an environment variable named by its string argument, or an empty string if it does not exist.
+```basil
+PRINTLN "PATH=", ENV$("PATH");
+```
+
+## EXIT
+*Type:* Statement  
+Exits the interpreter with an optional numeric exit code (defaults to 0).
+```basil
+EXIT 0;
+```
+
+## EXPORTENV
+*Type:* Statement  
+Sets an environment variable like SETENV and also attempts to export/persist it for future processes when supported (Windows via SETX). Always sets the process-local value.
+```basil
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
 ```
 
 ## FALSE
@@ -412,6 +447,13 @@ Returns a substring starting at 1-based index, with optional length.
 PRINTLN MID$("banana", 2, 3);
 ```
 
+## MOVE
+*Type:* Statement  
+Moves/renames a file to a new path (can cross directories).
+```basil
+MOVE "from.txt", "to_dir/to.txt";
+```
+
 ## NEW
 *Type:* Function (returns Object)  
 Constructs a new object instance of a registered type with constructor arguments.
@@ -468,6 +510,20 @@ Prints an expression followed by a newline.
 PRINTLN "Hello";
 ```
 
+## READFILE$
+*Type:* Function (returns String)  
+Reads an entire file into a string.
+```basil
+PRINT READFILE$("out.txt");
+```
+
+## RENAME
+*Type:* Statement  
+Renames a file within its directory.
+```basil
+RENAME "data.csv", "data_old.csv";
+```
+
 ## REQUEST$
 *Type:* Function (returns String Array)  
 Returns GET and POST parameters combined (as strings) in CGI mode.
@@ -487,6 +543,20 @@ RETURN 42;
 Returns the rightmost N characters of a string.
 ```basil
 PRINTLN RIGHT$("basil", 3);
+```
+
+## SETENV
+*Type:* Statement  
+Sets an environment variable for the current Basil process. Syntax: SETENV NAME = value; the value may be a quoted string, number, or any scalar variable.
+```basil
+SETENV DEMO_VAR = "42";
+```
+
+## SHELL
+*Type:* Statement  
+Executes a command in the parent command environment and waits for it to complete.
+```basil
+SHELL "cmd /C dir > temp.txt";
 ```
 
 ## STEP
@@ -1195,6 +1265,40 @@ RENAME "data.csv", "data_old.csv";
 Overwrites/creates a file with the given string data.
 ```basil
 WRITEFILE "out.txt", "Alpha\n";
+```
+
+## Environment
+
+### ENV$
+Returns the value of an environment variable named by its string argument, or an empty string if it does not exist.
+```basil
+PRINTLN "PATH=", ENV$("PATH");
+```
+
+### SETENV
+Sets an environment variable for the current Basil process. The right-hand side may be a quoted string, number, or any scalar variable.
+```basil
+SETENV DEMO_VAR = "42";
+PRINTLN ENV$("DEMO_VAR");
+```
+
+### EXPORTENV
+Like SETENV, but also attempts to export/persist the value outside the current process when supported by the platform (on Windows, via SETX). Always sets the process-local value.
+```basil
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
+PRINTLN ENV$("DEMO_EXPORT");
+```
+
+### SHELL
+Executes a command string in the parent command environment and waits for it to complete.
+```basil
+SHELL "cmd /C echo Hi > out.txt";
+```
+
+### EXIT
+Exits the interpreter with an optional numeric exit code (defaults to 0).
+```basil
+EXIT 0;
 ```
 </script>
 
