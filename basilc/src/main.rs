@@ -155,8 +155,8 @@ fn cmd_run(path: Option<String>) {
     };
 
     // Optional: refuse obvious non-source invocations (helps catch /usr/lib/cgi-bin/basil.cgi)
-    if !path.ends_with(".basil") {
-        eprintln!("Refusing to run a non-.basil file: {}", path);
+    if !(path.ends_with(".basil") || path.ends_with(".basi")) {
+        eprintln!("Refusing to run a non-.basil/.basi file: {}", path);
         std::process::exit(2);
     }
 
@@ -574,10 +574,18 @@ fn cmd_test(mut args: Vec<String>) {
         eprintln!("usage: basilc test <file.basil> [--seed <u64>] [--max-inputs <n>] [--trace]");
         std::process::exit(2);
     }
-    let path = args.remove(0);
-    if !path.ends_with(".basil") {
-        eprintln!("Refusing to test a non-.basil file: {}", path);
+    let mut path = args.remove(0);
+    if !(path.ends_with(".basil") || path.ends_with(".basi")) {
+        eprintln!("Refusing to test a non-.basil/.basi file: {}", path);
         std::process::exit(2);
+    }
+    // If a .basi file was provided but doesn't exist, try .basil fallback
+    if !std::path::Path::new(&path).exists() {
+        if path.to_ascii_lowercase().ends_with(".basi") {
+            let mut p = std::path::PathBuf::from(&path);
+            p.set_extension("basil");
+            if p.exists() { path = p.to_string_lossy().to_string(); }
+        }
     }
 
     let mut seed_opt: Option<u64> = None;
