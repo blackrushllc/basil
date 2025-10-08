@@ -61,6 +61,7 @@ dependencies = [
  "base64",
  "basil-bytecode",
  "basil-common",
+ "serde_json",
  "ureq",
  "walkdir",
  "zip",
@@ -86,6 +87,7 @@ dependencies = [
  "basil-objects",
  "basil-parser",
  "crossterm",
+ "serde_json",
  "walkdir",
  "zip",
 ]
