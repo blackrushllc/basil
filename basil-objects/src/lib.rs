@@ -89,3 +89,5 @@ mod bmx_team;
 pub mod zip;
 #[cfg(feature = "obj-curl")]
 pub mod curl;
+#[cfg(feature = "obj-json")]
+pub mod json;

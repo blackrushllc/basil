@@ -62,6 +62,8 @@ use base64::{engine::general_purpose, Engine as _};
 use basil_objects::zip as zip_utils;
 #[cfg(feature = "obj-curl")]
 use basil_objects::curl as curl_utils;
+#[cfg(feature = "obj-json")]
+use serde_json::{Value as JValue};
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
@@ -1494,6 +1496,30 @@ impl VM {
                             let ct_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
                             let resp = curl_utils::http_post(&url, &body, ct_opt.as_deref())?;
                             self.stack.push(Value::Str(resp));
+                        }
+                        #[cfg(feature = "obj-json")]
+                        126 => { // JSON_PARSE$(text$)
+                            if argc != 1 { return Err(BasilError("JSON_PARSE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let v: JValue = serde_json::from_str(&s)
+                                .map_err(|e| BasilError(format!("JSON_PARSE$: invalid JSON: {}", e)))?;
+                            let out = serde_json::to_string(&v)
+                                .map_err(|e| BasilError(format!("JSON_PARSE$: serialize failed: {}", e)))?;
+                            self.stack.push(Value::Str(out));
+                        }
+                        #[cfg(feature = "obj-json")]
+                        127 => { // JSON_STRINGIFY$(text$)
+                            if argc != 1 { return Err(BasilError("JSON_STRINGIFY$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            if let Ok(v) = serde_json::from_str::<JValue>(&s) {
+                                let out = serde_json::to_string(&v)
+                                    .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
+                                self.stack.push(Value::Str(out));
+                            } else {
+                                let out = serde_json::to_string(&s)
+                                    .map_err(|e| BasilError(format!("JSON_STRINGIFY$: wrap failed: {}", e)))?;
+                                self.stack.push(Value::Str(out));
+                            }
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
