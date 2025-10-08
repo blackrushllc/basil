@@ -156,6 +156,38 @@ impl C {
                 chunk.push_op(Op::Print);
                 self.chunk = chunk;
             }
+            // SETENV/EXPORTENV
+            Stmt::SetEnv { name, value, export } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                // push name, value, export flag
+                let nci = chunk.add_const(Value::Str(name.clone()));
+                chunk.push_op(Op::Const); chunk.push_u16(nci);
+                self.emit_expr_in(&mut chunk, value, None)?;
+                let eci = chunk.add_const(Value::Bool(*export));
+                chunk.push_op(Op::Const); chunk.push_u16(eci);
+                // call builtin 59 with 3 args
+                chunk.push_op(Op::Builtin); chunk.push_u8(59u8); chunk.push_u8(3u8);
+                // discard result
+                chunk.push_op(Op::Pop);
+                self.chunk = chunk;
+            }
+            // SHELL
+            Stmt::Shell { cmd } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, cmd, None)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(60u8); chunk.push_u8(1u8);
+                // discard exit code (statement form)
+                chunk.push_op(Op::Pop);
+                self.chunk = chunk;
+            }
+            // EXIT [code]
+            Stmt::Exit(code_opt) => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                if let Some(e) = code_opt { self.emit_expr_in(&mut chunk, e, None)?; }
+                else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
+                self.chunk = chunk;
+            }
             // Unstructured flow placeholders (no-op for now)
             Stmt::Label(_name) => { /* no-op at toplevel */ }
             Stmt::Goto(_name) => { /* GOTO unsupported at MVP; ignoring to proceed */ }
@@ -439,6 +471,29 @@ impl C {
                 self.emit_expr_in(chunk, target, Some(env))?;
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
+            }
+            // SETENV/EXPORTENV inside function
+            Stmt::SetEnv { name, value, export } => {
+                // push name, value, export flag
+                let nci = chunk.add_const(Value::Str(name.clone()));
+                chunk.push_op(Op::Const); chunk.push_u16(nci);
+                self.emit_expr_in(chunk, value, Some(env))?;
+                let eci = chunk.add_const(Value::Bool(*export));
+                chunk.push_op(Op::Const); chunk.push_u16(eci);
+                chunk.push_op(Op::Builtin); chunk.push_u8(59u8); chunk.push_u8(3u8);
+                chunk.push_op(Op::Pop);
+            }
+            // SHELL inside function
+            Stmt::Shell { cmd } => {
+                self.emit_expr_in(chunk, cmd, Some(env))?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(60u8); chunk.push_u8(1u8);
+                chunk.push_op(Op::Pop);
+            }
+            // EXIT inside function
+            Stmt::Exit(code_opt) => {
+                if let Some(e) = code_opt { self.emit_expr_in(chunk, e, Some(env))?; }
+                else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
             }
             // Unstructured flow placeholders (no-op inside function for now)
             Stmt::Label(_name) => { /* no-op */ }
@@ -851,6 +906,7 @@ impl C {
                         "RENAME" => Some(55u8),
                         "DELETE" => Some(56u8),
                         "DIR$" => Some(57u8),
+                        "ENV$" => Some(58u8),
                         _ => None,
                     };
                     if let Some(id) = bid {
@@ -998,6 +1054,28 @@ impl C {
                 self.emit_expr_in(chunk, target, None)?;
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
+            }
+            // SETENV/EXPORTENV
+            Stmt::SetEnv { name, value, export } => {
+                let nci = chunk.add_const(Value::Str(name.clone()));
+                chunk.push_op(Op::Const); chunk.push_u16(nci);
+                self.emit_expr_in(chunk, value, None)?;
+                let eci = chunk.add_const(Value::Bool(*export));
+                chunk.push_op(Op::Const); chunk.push_u16(eci);
+                chunk.push_op(Op::Builtin); chunk.push_u8(59u8); chunk.push_u8(3u8);
+                chunk.push_op(Op::Pop);
+            }
+            // SHELL
+            Stmt::Shell { cmd } => {
+                self.emit_expr_in(chunk, cmd, None)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(60u8); chunk.push_u8(1u8);
+                chunk.push_op(Op::Pop);
+            }
+            // EXIT
+            Stmt::Exit(code_opt) => {
+                if let Some(e) = code_opt { self.emit_expr_in(chunk, e, None)?; }
+                else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
             }
             // Unstructured flow placeholders (no-op inside toplevel chunk)
             Stmt::Label(_name) => { /* no-op */ }
