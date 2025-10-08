@@ -194,3 +194,154 @@ This unlocks good errors, editor hints, and self-documenting BASIC.
 * **Future-proof:** the same mechanism can host timers, sockets, HTTP, RNG, UI stubs, etc.
 
 
+# Adding Rust packages to Basil as --feature packages
+
+Perfect question — and you’re absolutely on the right track. 👏
+
+Rust has a rich ecosystem of **well-maintained crates** (libraries) that can act as the *system-level glue* for Basil extensions. You don’t want Junie (or you) reinventing ZIP, sockets, JSON, or PDF internals — instead, Basil can *link in* existing Rust crates as object modules (like your `BMX_RIDER` / `BMX_TEAM` objects).
+
+Here’s a categorized list of **popular, mature Rust crates** that map almost perfectly to things you’d want to expose to BASIC as callable objects for **CGI or shell scripting contexts** (web, file I/O, HTTP, compression, etc.).
+
+---
+
+## 🗂️ 1. File and Compression Utilities
+
+| Purpose                  | Popular Crates                                                                                                            | Notes                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **ZIP archives**         | [`zip`](https://crates.io/crates/zip)                                                                                     | Read/write .zip files (streams or files); stable and simple. |
+| **Tar, Gzip, Bzip2, Xz** | [`flate2`](https://crates.io/crates/flate2), [`tar`](https://crates.io/crates/tar), [`xz2`](https://crates.io/crates/xz2) | Combine with I/O streams easily.                             |
+| **Filesystem walking**   | [`walkdir`](https://crates.io/crates/walkdir)                                                                             | Iterate over directory trees; great for recursive scripts.   |
+| **Temp files / dirs**    | [`tempfile`](https://crates.io/crates/tempfile)                                                                           | Useful for Basil scripts generating temporary outputs.       |
+
+---
+
+## 🌐 2. HTTP / Networking (for a `CURL`-like object)
+
+| Purpose                 | Popular Crates                                                                           | Notes                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **HTTP client (sync)**  | [`ureq`](https://crates.io/crates/ureq)                                                  | Dead-simple, blocking, minimal dependencies.               |
+| **HTTP client (async)** | [`reqwest`](https://crates.io/crates/reqwest)                                            | Powerful; supports JSON, headers, TLS, cookies, multipart. |
+| **WebSockets**          | [`tungstenite`](https://crates.io/crates/tungstenite)                                    | Sync; works for chat-like or streaming endpoints.          |
+| **DNS / TCP sockets**   | [`std::net`] (built-in), [`trust-dns-client`](https://crates.io/crates/trust-dns-client) | You can wrap low-level networking easily.                  |
+
+For CGI-style scripts, `ureq` is ideal — it’s blocking (like BASIC expects), small, and very easy to call.
+
+---
+
+## 📄 3. Data Formats and Serialization
+
+| Purpose  | Popular Crates                                      | Notes                                                             |
+| -------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| **JSON** | [`serde_json`](https://crates.io/crates/serde_json) | Serialize/deserialize to JSON; pair with Basil objects or arrays. |
+| **YAML** | [`serde_yaml`](https://crates.io/crates/serde_yaml) | Useful for config files.                                          |
+| **TOML** | [`toml`](https://crates.io/crates/toml)             | Common config format.                                             |
+| **CSV**  | [`csv`](https://crates.io/crates/csv)               | Stream or read entire CSVs; perfect for report processing.        |
+| **INI**  | [`rust-ini`](https://crates.io/crates/rust-ini)     | Small helper for `.ini` configs.                                  |
+
+---
+
+## 🖨️ 4. PDF, Image, and Document Tools
+
+| Purpose          | Popular Crates                                    | Notes                                                     |
+| ---------------- | ------------------------------------------------- | --------------------------------------------------------- |
+| **PDF creation** | [`printpdf`](https://crates.io/crates/printpdf)   | Generate PDFs (text, shapes, images).                     |
+| **PDF parsing**  | [`lopdf`](https://crates.io/crates/lopdf)         | Modify existing PDFs; low-level but usable.               |
+| **Images**       | [`image`](https://crates.io/crates/image)         | Read, resize, manipulate PNG/JPEG/GIF; powerful and safe. |
+| **QR Codes**     | [`qrcodegen`](https://crates.io/crates/qrcodegen) | Generate QR codes for output pages or invoices.           |
+
+---
+
+## 💾 5. Databases and Filesystems
+
+| Purpose                | Popular Crates                                                                             | Notes                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| **SQLite**             | [`rusqlite`](https://crates.io/crates/rusqlite)                                            | Ideal for CGI or embedded DB work.                 |
+| **MySQL / Postgres**   | [`mysql`](https://crates.io/crates/mysql), [`postgres`](https://crates.io/crates/postgres) | Full client libraries; require connection strings. |
+| **JSON-backed stores** | [`sled`](https://crates.io/crates/sled)                                                    | Lightweight embedded key-value store.              |
+| **Filesystem ops**     | [`fs_extra`](https://crates.io/crates/fs_extra)                                            | Copy/move/delete with progress tracking.           |
+
+---
+
+## 🔐 6. Security, Hashing, and Encryption
+
+| Purpose              | Popular Crates                                                                                                 | Notes                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Hashing**          | [`sha2`](https://crates.io/crates/sha2), [`md5`](https://crates.io/crates/md5)                                 | Compute message digests easily.                      |
+| **Password hashing** | [`argon2`](https://crates.io/crates/argon2), [`bcrypt`](https://crates.io/crates/bcrypt)                       | Handy for user authentication scripts.               |
+| **Encryption**       | [`aes-gcm`](https://crates.io/crates/aes-gcm), [`chacha20poly1305`](https://crates.io/crates/chacha20poly1305) | For symmetric encryption; good for secure temp data. |
+| **Base64 / Hex**     | [`base64`](https://crates.io/crates/base64), [`hex`](https://crates.io/crates/hex)                             | Encode/decode helpers for CGI output.                |
+
+---
+
+## ⏱️ 7. System / Process Utilities
+
+| Purpose                   | Popular Crates                                | Notes                                                   |
+| ------------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| **Run commands**          | [`duct`](https://crates.io/crates/duct)       | Run shell commands safely; good for `SHELL` equivalent. |
+| **Env vars**              | [`dotenvy`](https://crates.io/crates/dotenvy) | Read `.env` files easily.                               |
+| **Timestamps / DateTime** | [`chrono`](https://crates.io/crates/chrono)   | For date/time functions in BASIC.                       |
+| **Parallelism**           | [`rayon`](https://crates.io/crates/rayon)     | If Basil ever needs concurrent loops.                   |
+
+---
+
+## 🧠 8. Web/CGI Specific Helpers
+
+| Purpose           | Popular Crates                                                                       | Notes                                      |
+| ----------------- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **CGI interface** | [`tinycgi`](https://crates.io/crates/tinycgi), [`cgi`](https://crates.io/crates/cgi) | Lightweight helpers for HTTP environments. |
+| **URL encoding**  | [`urlencoding`](https://crates.io/crates/urlencoding)                                | Encode/decode query strings.               |
+| **MIME guessing** | [`mime_guess`](https://crates.io/crates/mime_guess)                                  | Infer MIME types by file extension.        |
+
+---
+
+## 🧰 9. Utilities Useful for BASIC Runtime Extensions
+
+| Purpose                     | Crate                                                                                      | Notes                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| **Random numbers**          | [`rand`](https://crates.io/crates/rand)                                                    | Already common; useful for `RND()` and random input mocking. |
+| **Regular expressions**     | [`regex`](https://crates.io/crates/regex)                                                  | Add a BASIC `REGEX$()` function.                             |
+| **Colored terminal output** | [`colored`](https://crates.io/crates/colored)                                              | Enhance CLI mode readability.                                |
+| **Logging**                 | [`log`](https://crates.io/crates/log), [`env_logger`](https://crates.io/crates/env_logger) | Useful for debugging Basil itself.                           |
+
+---
+
+## 🧩 Example “Object Module” ideas for Basil
+
+| Basil Object | Backed by Crate         | Purpose                                              |
+| ------------ | ----------------------- | ---------------------------------------------------- |
+| `ZIP_FILE`   | `zip`                   | Compress/extract archives.                           |
+| `CURL`       | `ureq` or `reqwest`     | HTTP GET/POST with headers and JSON.                 |
+| `PDF`        | `printpdf`              | Generate simple reports as PDFs.                     |
+| `JSON`       | `serde_json`            | Parse/format JSON strings.                           |
+| `CSV`        | `csv`                   | Read/write spreadsheet data.                         |
+| `SQLITE`     | `rusqlite`              | Embedded local database.                             |
+| `HASH`       | `sha2`, `md5`, `bcrypt` | Provide BASIC `HASH$()` and `PASSWORD$()` functions. |
+| `FS`         | `fs_extra`, `walkdir`   | Recursive file management.                           |
+| `TIME`       | `chrono`                | Handle timestamps and date math.                     |
+
+---
+
+### 🧠 How Junie can integrate them cleanly
+
+Each Rust object crate would:
+
+* Depend on the appropriate external crate (e.g. `zip`, `ureq`, etc.).
+* Expose a `register(&mut Registry)` method like your `BMX_RIDER` module does.
+* Provide BASIC-callable methods (e.g. `.OpenZip(file$)`, `.ExtractAll(to$)`, `.HttpGet(url$)`).
+* Be conditionally compiled via Cargo feature flags (`obj-zip`, `obj-curl`, `obj-pdf`, etc.).
+
+Then your main `basil-object/src/lib.rs` just adds:
+
+```rust
+#[cfg(feature = "obj-zip")]  mod zip;
+#[cfg(feature = "obj-curl")] mod curl;
+#[cfg(feature = "obj-pdf")]  mod pdf;
+
+pub fn register_objects(reg: &mut Registry) {
+    #[cfg(feature = "obj-zip")]  zip::register(reg);
+    #[cfg(feature = "obj-curl")] curl::register(reg);
+    #[cfg(feature = "obj-pdf")]  pdf::register(reg);
+}
+```
+This keeps the core Basil runtime small and lets users pick exactly which capabilities they want by enabling features when building Basil.
+
