@@ -65,6 +65,43 @@ use basil_objects::curl as curl_utils;
 #[cfg(feature = "obj-json")]
 use serde_json::{Value as JValue};
 
+#[cfg(feature = "obj-json")]
+fn value_to_jvalue(v: &Value) -> Result<JValue> {
+    use serde_json::Map;
+    match v {
+        Value::Null => Ok(JValue::Null),
+        Value::Bool(b) => Ok(JValue::Bool(*b)),
+        Value::Int(i) => Ok(JValue::Number((*i).into())),
+        Value::Num(n) => serde_json::Number::from_f64(*n)
+            .map(JValue::Number)
+            .ok_or_else(|| BasilError("JSON_STRINGIFY$: NaN/Inf not representable".into())),
+        Value::Str(s) => Ok(JValue::String(s.clone())),
+        Value::Array(arr_rc) => {
+            let arr = arr_rc.as_ref();
+            let data = arr.data.borrow();
+            let mut out = Vec::with_capacity(data.len());
+            for elem in data.iter() {
+                out.push(value_to_jvalue(elem)?);
+            }
+            Ok(JValue::Array(out))
+        }
+        Value::Object(obj_rc) => {
+            let obj_ref = obj_rc.borrow();
+            let desc = obj_ref.descriptor();
+            let mut map = Map::new();
+            for prop in desc.properties.iter().filter(|p| p.readable) {
+                // get_prop returns Result<Value>
+                if let Ok(pv) = obj_ref.get_prop(&prop.name) {
+                    let jv = value_to_jvalue(&pv)?;
+                    map.insert(prop.name.clone(), jv);
+                }
+            }
+            Ok(JValue::Object(map))
+        }
+        Value::Func(_) => Err(BasilError("JSON_STRINGIFY$: cannot stringify a function".into())),
+    }
+}
+
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
     fn read_line(&mut self) -> String;       // for INPUT/INPUT$
@@ -1508,17 +1545,26 @@ impl VM {
                             self.stack.push(Value::Str(out));
                         }
                         #[cfg(feature = "obj-json")]
-                        127 => { // JSON_STRINGIFY$(text$)
+                        127 => { // JSON_STRINGIFY$(value)
                             if argc != 1 { return Err(BasilError("JSON_STRINGIFY$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            if let Ok(v) = serde_json::from_str::<JValue>(&s) {
-                                let out = serde_json::to_string(&v)
-                                    .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
-                                self.stack.push(Value::Str(out));
-                            } else {
-                                let out = serde_json::to_string(&s)
-                                    .map_err(|e| BasilError(format!("JSON_STRINGIFY$: wrap failed: {}", e)))?;
-                                self.stack.push(Value::Str(out));
+                            match &args[0] {
+                                Value::Str(s) => {
+                                    if let Ok(v) = serde_json::from_str::<JValue>(&s) {
+                                        let out = serde_json::to_string(&v)
+                                            .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
+                                        self.stack.push(Value::Str(out));
+                                    } else {
+                                        let out = serde_json::to_string(&s)
+                                            .map_err(|e| BasilError(format!("JSON_STRINGIFY$: wrap failed: {}", e)))?;
+                                        self.stack.push(Value::Str(out));
+                                    }
+                                }
+                                other => {
+                                    let v = value_to_jvalue(other)?;
+                                    let out = serde_json::to_string(&v)
+                                        .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
+                                    self.stack.push(Value::Str(out));
+                                }
                             }
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
