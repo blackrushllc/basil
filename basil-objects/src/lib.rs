@@ -57,6 +57,10 @@ impl Registry {
 
 pub fn register_objects(_reg: &mut Registry) {
     // conditional registrations
+    #[cfg(feature = "obj-curl")]
+    {
+        crate::curl::register(_reg);
+    }
     #[cfg(feature = "obj-base64")]
     {
         crate::base64::register(_reg);
@@ -83,3 +87,5 @@ mod bmx_rider;
 mod bmx_team;
 #[cfg(feature = "obj-zip")]
 pub mod zip;
+#[cfg(feature = "obj-curl")]
+pub mod curl;
