@@ -77,6 +77,10 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::zip::register(_reg);
     }
+    #[cfg(feature = "obj-csv")]
+    {
+        crate::csv::register(_reg);
+    }
 }
 
 #[cfg(feature = "obj-base64")]
@@ -91,3 +95,5 @@ pub mod zip;
 pub mod curl;
 #[cfg(feature = "obj-json")]
 pub mod json;
+#[cfg(feature = "obj-csv")]
+mod csv;
