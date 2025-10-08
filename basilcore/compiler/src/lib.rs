@@ -917,6 +917,8 @@ impl C {
                         #[cfg(feature = "obj-curl")] "HTTP_POST$" => Some(125u8),
                         #[cfg(feature = "obj-json")] "JSON_PARSE$" => Some(126u8),
                         #[cfg(feature = "obj-json")] "JSON_STRINGIFY$" => Some(127u8),
+                        #[cfg(feature = "obj-csv")] "CSV_PARSE$" => Some(128u8),
+                        #[cfg(feature = "obj-csv")] "CSV_WRITE$" => Some(129u8),
                         _ => None,
                     };
                     if let Some(id) = bid {

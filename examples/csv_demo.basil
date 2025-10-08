@@ -1,0 +1,8 @@
+PRINTLN "CSV demo"
+
+LET csv$ = "name,age\nErik,59\nJunie,?\n"
+LET rows$ = CSV_PARSE$(csv$)
+PRINTLN "As JSON: ", rows$
+
+LET out$ = CSV_WRITE$(rows$)
+PRINTLN "Roundtrip CSV:\n", out$

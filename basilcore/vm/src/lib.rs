@@ -62,8 +62,10 @@ use base64::{engine::general_purpose, Engine as _};
 use basil_objects::zip as zip_utils;
 #[cfg(feature = "obj-curl")]
 use basil_objects::curl as curl_utils;
-#[cfg(feature = "obj-json")]
+#[cfg(any(feature = "obj-json", feature = "obj-csv"))]
 use serde_json::{Value as JValue};
+#[cfg(feature = "obj-csv")]
+use csv::{ReaderBuilder, WriterBuilder};
 
 #[cfg(feature = "obj-json")]
 fn value_to_jvalue(v: &Value) -> Result<JValue> {
@@ -1566,6 +1568,79 @@ impl VM {
                                     self.stack.push(Value::Str(out));
                                 }
                             }
+                        }
+                        #[cfg(feature = "obj-csv")]
+                        128 => { // CSV_PARSE$(csv_text$)
+                            if argc != 1 { return Err(BasilError("CSV_PARSE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let mut rdr = ReaderBuilder::new()
+                                .has_headers(true)
+                                .from_reader(s.as_bytes());
+                            let headers = rdr.headers()
+                                .map_err(|e| BasilError(format!("CSV_PARSE$: read headers failed: {}", e)))?
+                                .clone();
+                            let mut rows: Vec<JValue> = Vec::new();
+                            for rec in rdr.records() {
+                                let rec = rec.map_err(|e| BasilError(format!("CSV_PARSE$: read record failed: {}", e)))?;
+                                let mut obj = serde_json::Map::new();
+                                for (i, field) in rec.iter().enumerate() {
+                                    let key = headers.get(i).unwrap_or("").to_string();
+                                    obj.insert(key, JValue::String(field.to_string()));
+                                }
+                                rows.push(JValue::Object(obj));
+                            }
+                            let out = serde_json::to_string(&rows)
+                                .map_err(|e| BasilError(format!("CSV_PARSE$: serialize failed: {}", e)))?;
+                            self.stack.push(Value::Str(out));
+                        }
+                        #[cfg(feature = "obj-csv")]
+                        129 => { // CSV_WRITE$(rows_json$)
+                            if argc != 1 { return Err(BasilError("CSV_WRITE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let rows: JValue = serde_json::from_str(&s)
+                                .map_err(|e| BasilError(format!("CSV_WRITE$: invalid JSON: {}", e)))?;
+                            let arr = rows.as_array().ok_or_else(|| BasilError("CSV_WRITE$: expected JSON array of objects".into()))?;
+                            let mut headers: Vec<String> = Vec::new();
+                            let mut seen = std::collections::HashSet::new();
+                            if let Some(first) = arr.first().and_then(|v| v.as_object()) {
+                                for k in first.keys() {
+                                    headers.push(k.clone());
+                                    seen.insert(k.clone());
+                                }
+                            }
+                            for v in arr.iter() {
+                                if let Some(obj) = v.as_object() {
+                                    for k in obj.keys() {
+                                        if !seen.contains(k) {
+                                            headers.push(k.clone());
+                                            seen.insert(k.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            let mut wtr = WriterBuilder::new().from_writer(vec![]);
+                            wtr.write_record(headers.iter())
+                                .map_err(|e| BasilError(format!("CSV_WRITE$: write headers failed: {}", e)))?;
+                            for v in arr.iter() {
+                                let obj = v.as_object().ok_or_else(|| BasilError("CSV_WRITE$: array items must be objects".into()))?;
+                                let mut row: Vec<String> = Vec::with_capacity(headers.len());
+                                for h in headers.iter() {
+                                    let cell = match obj.get(h) {
+                                        Some(JValue::String(s)) => s.clone(),
+                                        Some(JValue::Number(n)) => n.to_string(),
+                                        Some(JValue::Bool(b)) => if *b { "true".to_string() } else { "false".to_string() },
+                                        Some(JValue::Null) => String::new(),
+                                        Some(other) => serde_json::to_string(other).unwrap_or_default(),
+                                        None => String::new(),
+                                    };
+                                    row.push(cell);
+                                }
+                                wtr.write_record(&row)
+                                    .map_err(|e| BasilError(format!("CSV_WRITE$: write row failed: {}", e)))?;
+                            }
+                            let bytes = wtr.into_inner().map_err(|e| BasilError(format!("CSV_WRITE$: finalize failed: {}", e)))?;
+                            let out = String::from_utf8(bytes).map_err(|e| BasilError(format!("CSV_WRITE$: utf8 failed: {}", e)))?;
+                            self.stack.push(Value::Str(out));
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }

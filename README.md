@@ -62,14 +62,13 @@ Useful links:
 🌿 https://yobasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
 🌿 https://yobasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
 🌿 https://yobasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
-🌿
-🌿
 
 Interesting files to read in this repo:
 
 + docs/BASIL_KEYWORDS_BY_CATEGORY.md
 + docs/BASIL_REFERENCE.md
 + docs/FILE_ID.md
++ AI_FEATURE_REQUEST.md - Paste this whole thing into ChatGPT FIRST, so it knows what Basil Objects are, and then you can ask it generate a Junie Ultimate prompt for a new feature object !!!
 + ASTERISK.md - Using Basil with Asterisk
 + BASIL.md - 15‑Minute Presentation Handout
 + BASIL_CGI.md - CGI Support for Basil (the original proposal) (this has been implemented)
