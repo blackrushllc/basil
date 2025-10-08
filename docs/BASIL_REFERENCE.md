@@ -63,6 +63,13 @@ Boolean conjunction with short-circuit evaluation.
 IF A > 0 AND B > 0 THEN PRINTLN "both positive";
 ```
 
+## APPENDFILE
+*Type:* Statement  
+Appends string data to an existing file or creates a new one.
+```basil
+APPENDFILE "out.txt", "Gamma\n";
+```
+
 ## AS
 *Type:* Statement  
 Specifies a type name for DIM of object variables or arrays.
@@ -115,6 +122,13 @@ Constructs a class instance from a filename that defines a class.
 LET x@ = CLASS("my_widget.cls");
 ```
 
+## COPY
+*Type:* Statement  
+Copies a file from src$ to dst$; raises a runtime error on failure.
+```basil
+COPY "a.txt", "b.txt";
+```
+
 ## CONTINUE
 *Type:* Flow Control  
 Skips to the next iteration of the nearest enclosing loop.
@@ -134,6 +148,20 @@ DESCRIBE r1@;
 Returns a formatted description string of an object instance or array value.
 ```basil
 PRINTLN DESCRIBE$(r1@);
+```
+
+## DELETE
+*Type:* Statement  
+Deletes a file; raises a runtime error on failure.
+```basil
+DELETE "temp.bin";
+```
+
+## DIR$
+*Type:* Function (returns String Array)  
+Returns file names (no paths) that match a glob pattern in a directory.
+```basil
+LET names$@ = DIR$("examples/*.basil");
 ```
 
 ## DIM
@@ -173,11 +201,95 @@ Reserved synonym for closing a FOREACH loop; current syntax uses NEXT.
 REM Reserved: FOREACH x IN arr ... ENDFOR
 ```
 
+## ENV$
+*Type:* Function (returns String)  
+Returns the value of an environment variable named by its string argument, or an empty string if it does not exist.
+```basil
+PRINTLN "PATH=", ENV$("PATH");
+```
+
+## EXIT
+*Type:* Statement  
+Exits the interpreter with an optional numeric exit code (defaults to 0).
+```basil
+EXIT 0;
+```
+
+## EXPORTENV
+*Type:* Statement  
+Sets an environment variable like SETENV and also attempts to export/persist it for future processes when supported (Windows via SETX). Always sets the process-local value.
+```basil
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
+```
+
 ## FALSE
 *Type:* Data Type  
 Boolean literal representing false.
 ```basil
 IF FALSE THEN PRINTLN "won't print";
+```
+
+## FEOF
+*Type:* Function (returns Bool)  
+Returns TRUE if the file handle is at end-of-file.
+```basil
+IF FEOF(fh%) THEN PRINTLN "eof";
+```
+
+## FFLUSH
+*Type:* Function (returns Bool)  
+Flushes buffered data to disk for the given file handle.
+```basil
+FFLUSH fh%;
+```
+
+## FOPEN
+*Type:* Function (returns Integer handle)  
+Opens a file and returns a handle (>=1) or raises on error. Modes: r, w, a, rb, wb, ab, r+, w+, a+, rb+, wb+, ab+.
+```basil
+LET fh% = FOPEN("notes.txt", "w");
+```
+
+## FREAD$
+*Type:* Function (returns String)  
+Reads up to N bytes/characters from a file.
+```basil
+LET s$ = FREAD$(fh%, 16);
+```
+
+## FREADLINE$
+*Type:* Function (returns String)  
+Reads a single line (without trailing newline) from a file.
+```basil
+LET line$ = FREADLINE$(fh%);
+```
+
+## FSEEK
+*Type:* Function (returns Bool)  
+Moves the file position: FSEEK fh%, offset&, whence% (0=SET,1=CURRENT,2=END).
+```basil
+FSEEK fh%, 0, 0;  ' rewind
+```
+
+## FTELL&
+*Type:* Function (returns Long)  
+Returns the current byte offset for the file handle.
+```basil
+LET pos& = FTELL&(fh%);
+```
+
+## FWRITE
+*Type:* Function (returns Bool)  
+Writes a string to a file without a newline.
+```basil
+FWRITE fh%, "Hello";
+```
+
+## FWRITELN
+*Type:* Function (returns Bool)  
+Writes a string followed by a newline to a file.
+```basil
+FWRITELN fh%, "Hello";
 ```
 
 ## FOR
@@ -346,6 +458,13 @@ Returns a substring starting at 1-based index, with optional length.
 PRINTLN MID$("banana", 2, 3);
 ```
 
+## MOVE
+*Type:* Statement  
+Moves/renames a file to a new path (can cross directories).
+```basil
+MOVE "from.txt", "to_dir/to.txt";
+```
+
 ## NEW
 *Type:* Function (returns Object)  
 Constructs a new object instance of a registered type with constructor arguments.
@@ -402,6 +521,20 @@ Prints an expression followed by a newline.
 PRINTLN "Hello";
 ```
 
+## READFILE$
+*Type:* Function (returns String)  
+Reads an entire file into a string.
+```basil
+PRINT READFILE$("out.txt");
+```
+
+## RENAME
+*Type:* Statement  
+Renames a file within its directory.
+```basil
+RENAME "data.csv", "data_old.csv";
+```
+
 ## REQUEST$
 *Type:* Function (returns String Array)  
 Returns GET and POST parameters combined (as strings) in CGI mode.
@@ -421,6 +554,20 @@ RETURN 42;
 Returns the rightmost N characters of a string.
 ```basil
 PRINTLN RIGHT$("basil", 3);
+```
+
+## SETENV
+*Type:* Statement  
+Sets an environment variable for the current Basil process. Syntax: SETENV NAME = value; the value may be a quoted string, number, or any scalar variable.
+```basil
+SETENV DEMO_VAR = "42";
+```
+
+## SHELL
+*Type:* Statement  
+Executes a command in the parent command environment and waits for it to complete.
+```basil
+SHELL "cmd /C dir > temp.txt";
 ```
 
 ## STEP
@@ -480,4 +627,10 @@ WHILE I < 3 BEGIN
   PRINTLN I;
   LET I = I + 1;
 END
+```
+## WRITEFILE
+*Type:* Statement  
+Overwrites/creates a file with the given string data.
+```basil
+WRITEFILE "out.txt", "Alpha\n";
 ```

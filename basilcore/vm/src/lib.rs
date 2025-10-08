@@ -40,13 +40,15 @@ SOFTWARE.
 
 //! Frame-based VM with calls, locals, jumps, comparisons
 use std::rc::Rc;
-use std::io::{self, Write, Read};
+use std::io::{self, Write, Read, Seek, SeekFrom};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 use std::env;
 use std::time::Duration;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
 use crossterm::event::poll;
 use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::path::{Path, PathBuf};
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj, ObjectDescriptor, PropDesc, MethodDesc};
@@ -121,6 +123,14 @@ struct ArrEnum {
     total: usize,  // total elements
 }
 
+struct FileHandleEntry {
+    file: std::fs::File,
+    text: bool,
+    readable: bool,
+    writable: bool,
+    owner_depth: usize,
+}
+
 pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
@@ -139,6 +149,11 @@ pub struct VM {
     // Caches for CGI params
     get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
     post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
+    // File I/O
+    file_table: HashMap<i64, FileHandleEntry>,
+    next_fh: i64,
+    // Control whether to auto-close handles on function return (used for class methods)
+    close_handles_on_ret: bool,
 }
 
 // --- Lightweight Class Instance object ---
@@ -146,6 +161,9 @@ struct ClassInstance {
     globals_names: Vec<String>,
     values: Vec<Value>,
     name_to_index: HashMap<String, usize>,
+    // Persist open file handles across method calls for this instance
+    file_table: HashMap<i64, FileHandleEntry>,
+    next_fh: i64,
 }
 
 impl ClassInstance {
@@ -154,7 +172,7 @@ impl ClassInstance {
         for (i, n) in globals_names.iter().enumerate() {
             name_to_index.insert(n.to_ascii_uppercase(), i);
         }
-        Self { globals_names, values, name_to_index }
+        Self { globals_names, values, name_to_index, file_table: HashMap::new(), next_fh: 1 }
     }
 
     fn get_index(&self, name: &str) -> Option<usize> {
@@ -198,6 +216,10 @@ impl basil_bytecode::BasicObject for ClassInstance {
         top.push_op(Op::Halt);
         let prog = BCProgram { chunk: top, globals: self.globals_names.clone() };
         let mut vm = VM::new(prog);
+        // Move persistent file handles into inner VM and disable auto-close-on-ret for methods
+        vm.file_table = std::mem::take(&mut self.file_table);
+        vm.next_fh = self.next_fh;
+        vm.close_handles_on_ret = false;
         // Seed globals with our instance values
         vm.globals = self.values.clone();
         // Prepare stack: place arguments starting at base 0
@@ -206,10 +228,13 @@ impl basil_bytecode::BasicObject for ClassInstance {
         let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0 };
         vm.frames.push(frame);
         vm.run()?;
+        // Capture back persistent file handles into this instance
+        self.next_fh = vm.next_fh;
+        self.file_table = std::mem::take(&mut vm.file_table);
         // Collect return value
         let ret = vm.stack.pop().unwrap_or(Value::Null);
         // Update our globals from inner VM (so mutations persist)
-        self.values = vm.globals;
+        self.values = vm.globals.clone();
         Ok(ret)
     }
 
@@ -257,6 +282,9 @@ impl VM {
             mock: None,
             get_params_cache: None,
             post_params_cache: None,
+            file_table: HashMap::new(),
+            next_fh: 1,
+            close_handles_on_ret: true,
         }
     }
 
@@ -341,6 +369,65 @@ impl VM {
         Value::Array(arr)
     }
 
+    fn fh_get_mut(&mut self, h: i64) -> Result<&mut FileHandleEntry> {
+        if !self.file_table.contains_key(&h) {
+            let mut keys: Vec<i64> = self.file_table.keys().copied().collect();
+            keys.sort();
+            return Err(BasilError(format!("InvalidHandle (wanted {}, have {:?})", h, keys)));
+        }
+        Ok(self.file_table.get_mut(&h).unwrap())
+    }
+
+    fn fh_close(&mut self, h: i64) -> Result<()> {
+        if let Some(mut e) = self.file_table.remove(&h) {
+            e.file.flush().map_err(|er| BasilError(format!("FCLOSE flush error: {}", er)))?;
+        }
+        Ok(())
+    }
+
+    fn fh_close_owner_depth(&mut self, depth: usize) {
+        let keys: Vec<i64> = self.file_table.iter().filter_map(|(k,e)| if e.owner_depth == depth { Some(*k) } else { None }).collect();
+        for k in keys { let _ = self.fh_close(k); }
+    }
+
+    fn to_i64(&self, v: &Value) -> Result<i64> {
+        match v {
+            Value::Int(i) => Ok(*i),
+            Value::Num(n) => Ok(n.trunc() as i64),
+            other => Err(BasilError(format!("expected numeric value, got {}", self.type_of(other)))),
+        }
+    }
+
+    fn glob_match_simple(&self, pat: &str, name: &str) -> bool {
+        #[allow(clippy::collapsible_else_if)]
+        fn inner(p: &[u8], s: &[u8], case_insens: bool) -> bool {
+            if p.is_empty() { return s.is_empty(); }
+            match p[0] {
+                b'*' => {
+                    let mut i = 0usize;
+                    while i <= s.len() {
+                        if inner(&p[1..], &s[i..], case_insens) { return true; }
+                        i += 1;
+                    }
+                    false
+                }
+                b'?' => {
+                    if s.is_empty() { false } else { inner(&p[1..], &s[1..], case_insens) }
+                }
+                c => {
+                    if s.is_empty() { return false; }
+                    let mut pc = c;
+                    let mut sc = s[0];
+                    if case_insens { pc = (pc as char).to_ascii_lowercase() as u8; sc = (sc as char).to_ascii_lowercase() as u8; }
+                    if pc != sc { return false; }
+                    inner(&p[1..], &s[1..], case_insens)
+                }
+            }
+        }
+        let case_insens = cfg!(windows);
+        inner(pat.as_bytes(), name.as_bytes(), case_insens)
+    }
+
     pub fn run(&mut self) -> Result<()> {
         loop {
             let op = self.read_op()?;
@@ -401,8 +488,8 @@ impl VM {
                     self.stack.push(Value::Num(-n));
                 }
 
-                Op::Eq => self.bin_cmp(|a,b| a==b)?,
-                Op::Ne => self.bin_cmp(|a,b| a!=b)?,
+                Op::Eq => self.bin_eq()?,
+                Op::Ne => self.bin_ne()?,
                 Op::Lt => self.bin_num_cmp(|a,b| a<b)?,
                 Op::Le => self.bin_num_cmp(|a,b| a<=b)?,
                 Op::Gt => self.bin_num_cmp(|a,b| a>b)?,
@@ -453,9 +540,14 @@ impl VM {
 
                 Op::Ret => {
                     let retv = self.pop().unwrap_or(Value::Null);
+                    let depth = self.frames.len();
                     let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
                     self.stack.truncate(frame.base);
                     self.stack.push(retv);
+                    // auto-close any file handles opened in this frame (unless suppressed for class methods)
+                    if self.close_handles_on_ret {
+                        self.fh_close_owner_depth(depth);
+                    }
                     if self.frames.is_empty() { break; }
                 }
 
@@ -1139,6 +1231,197 @@ impl VM {
                                 self.stack.push(Value::Str(s));
                             }
                         }
+                        40 => { // FOPEN(path$, mode$) -> fh%
+                            if argc != 2 { return Err(BasilError("FOPEN expects 2 arguments".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let mode = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            if path.contains('\u{0000}') { return Err(BasilError("FOPEN: invalid NUL in path".into())); }
+                            let m = mode.to_ascii_lowercase();
+                            let text = !m.contains('b');
+                            let plus = m.contains('+');
+                            let mut opts = OpenOptions::new();
+                            let (mut readable, mut writable) = (false, false);
+                            if m.starts_with('r') { readable = true; opts.read(true); if plus { writable = true; opts.write(true); } }
+                            else if m.starts_with('w') { writable = true; opts.write(true).create(true).truncate(true); if plus { readable = true; opts.read(true); } }
+                            else if m.starts_with('a') { writable = true; opts.append(true).create(true); if plus { readable = true; opts.read(true); opts.write(true); } }
+                            else { return Err(BasilError(format!("FOPEN: invalid mode '{}'; expected r/w/a variants", mode))); }
+                            let file = opts.open(&path).map_err(|e| BasilError(format!("FOPEN {}: {}", path, e)))?;
+                            let fh = self.next_fh; self.next_fh += 1;
+                            let entry = FileHandleEntry { file, text, readable, writable, owner_depth: self.frames.len() };
+                            self.file_table.insert(fh, entry);
+                            self.stack.push(Value::Int(fh));
+                        }
+                        41 => { // FCLOSE fh%
+                            if argc != 1 { return Err(BasilError("FCLOSE expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?; let _ = self.fh_close(h); self.stack.push(Value::Bool(true));
+                        }
+                        42 => { // FFLUSH fh%
+                            if argc != 1 { return Err(BasilError("FFLUSH expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; e.file.flush().map_err(|er| BasilError(format!("FFLUSH error: {}", er)))?; self.stack.push(Value::Bool(true));
+                        }
+                        43 => { // FEOF(fh%) -> BOOL
+                            if argc != 1 { return Err(BasilError("FEOF expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; let cur = e.file.stream_position().map_err(|er| BasilError(format!("FEOF tell: {}", er)))?; let mut b=[0u8;1]; let n = e.file.read(&mut b).map_err(|er| BasilError(format!("FEOF read: {}", er)))?; if n>0 { let _ = e.file.seek(SeekFrom::Start(cur)); }
+                            self.stack.push(Value::Bool(n==0));
+                        }
+                        44 => { // FTELL&(fh%) -> LONG
+                            if argc != 1 { return Err(BasilError("FTELL& expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; let pos = e.file.stream_position().map_err(|er| BasilError(format!("FTELL: {}", er)))?; self.stack.push(Value::Int(pos as i64));
+                        }
+                        45 => { // FSEEK fh%, offset&, whence%
+                            if argc != 3 { return Err(BasilError("FSEEK expects 3 arguments".into())); }
+                            let h = self.to_i64(&args[0])?; let off = self.to_i64(&args[1])?; let wh = self.to_i64(&args[2])?; let e = self.fh_get_mut(h)?;
+                            let whence = match wh { 0 => SeekFrom::Start(off as u64), 1 => SeekFrom::Current(off), 2 => SeekFrom::End(off), _ => return Err(BasilError("FSEEK: whence must be 0,1,2".into())) };
+                            let _ = e.file.seek(whence).map_err(|er| BasilError(format!("FSEEK: {}", er)))?; self.stack.push(Value::Bool(true));
+                        }
+                        46 => { // FREAD$(fh%, n&) -> STRING
+                            if argc != 2 { return Err(BasilError("FREAD$ expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?; let n = self.to_i64(&args[1])?; if n <= 0 { self.stack.push(Value::Str(String::new())); }
+                            else { let e = self.fh_get_mut(h)?; if !e.readable { return Err(BasilError("FREAD$: handle not opened for reading".into())); } let mut buf = vec![0u8; n as usize]; let got = e.file.read(&mut buf).map_err(|er| BasilError(format!("FREAD$: {}", er)))?; buf.truncate(got); let s = if e.text { String::from_utf8_lossy(&buf).to_string() } else { String::from_utf8_lossy(&buf).to_string() }; self.stack.push(Value::Str(s)); }
+                        }
+                        47 => { // FREADLINE$(fh%) -> STRING
+                            if argc != 1 { return Err(BasilError("FREADLINE$ expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; if !e.readable { return Err(BasilError("FREADLINE$: handle not opened for reading".into())); }
+                            let mut out: Vec<u8> = Vec::new();
+                            let mut buf = [0u8;1];
+                            loop {
+                                let n = e.file.read(&mut buf).map_err(|er| BasilError(format!("FREADLINE$: {}", er)))?;
+                                if n == 0 { break; }
+                                if buf[0] == b'\n' { break; }
+                                out.push(buf[0]);
+                            }
+                            if out.ends_with(&[b'\r']) { out.pop(); }
+                            let s = if e.text { String::from_utf8_lossy(&out).to_string() } else { String::from_utf8_lossy(&out).to_string() };
+                            self.stack.push(Value::Str(s));
+                        }
+                        48 => { // FWRITE fh%, s$
+                            if argc != 2 { return Err(BasilError("FWRITE expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; if !e.writable { return Err(BasilError("FWRITE: handle not opened for writing".into())); }
+                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            e.file.write_all(s.as_bytes()).map_err(|er| BasilError(format!("FWRITE: {}", er)))?; self.stack.push(Value::Bool(true));
+                        }
+                        49 => { // FWRITELN fh%, s$
+                            if argc != 2 { return Err(BasilError("FWRITELN expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; if !e.writable { return Err(BasilError("FWRITELN: handle not opened for writing".into())); }
+                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            e.file.write_all(s.as_bytes()).map_err(|er| BasilError(format!("FWRITELN: {}", er)))?; e.file.write_all(b"\n").map_err(|er| BasilError(format!("FWRITELN: {}", er)))?; self.stack.push(Value::Bool(true));
+                        }
+                        50 => { // READFILE$(path$)
+                            if argc != 1 { return Err(BasilError("READFILE$ expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let data = fs::read(&path).map_err(|e| BasilError(format!("READFILE$ {}: {}", path, e)))?; let s = String::from_utf8_lossy(&data).to_string(); self.stack.push(Value::Str(s));
+                        }
+                        51 => { // WRITEFILE path$, data$
+                            if argc != 2 { return Err(BasilError("WRITEFILE expects 2 arguments".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let mut f = OpenOptions::new().write(true).create(true).truncate(true).open(&path).map_err(|e| BasilError(format!("WRITEFILE {}: {}", path, e)))?; f.write_all(s.as_bytes()).map_err(|e| BasilError(format!("WRITEFILE {}: {}", path, e)))?; f.flush().ok(); self.stack.push(Value::Null);
+                        }
+                        52 => { // APPENDFILE path$, data$
+                            if argc != 2 { return Err(BasilError("APPENDFILE expects 2 arguments".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let mut f = OpenOptions::new().write(true).create(true).append(true).open(&path).map_err(|e| BasilError(format!("APPENDFILE {}: {}", path, e)))?; f.write_all(s.as_bytes()).map_err(|e| BasilError(format!("APPENDFILE {}: {}", path, e)))?; f.flush().ok(); self.stack.push(Value::Null);
+                        }
+                        53 => { // COPY src$, dst$
+                            if argc != 2 { return Err(BasilError("COPY expects 2 arguments".into())); }
+                            let src = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let dst = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let _ = fs::copy(&src, &dst).map_err(|e| BasilError(format!("COPY {} -> {}: {}", src, dst, e)))?; self.stack.push(Value::Null);
+                        }
+                        54 => { // MOVE src$, dst$
+                            if argc != 2 { return Err(BasilError("MOVE expects 2 arguments".into())); }
+                            let src = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let dst = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            fs::rename(&src, &dst).map_err(|e| BasilError(format!("MOVE {} -> {}: {}", src, dst, e)))?; self.stack.push(Value::Null);
+                        }
+                        55 => { // RENAME path$, newname$
+                            if argc != 2 { return Err(BasilError("RENAME expects 2 arguments".into())); }
+                            let src = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let newname = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let p = Path::new(&src); let dir = p.parent().unwrap_or(Path::new(".")); let dst = dir.join(newname);
+                            fs::rename(&src, &dst).map_err(|e| BasilError(format!("RENAME {} -> {}: {}", src, dst.display(), e)))?; self.stack.push(Value::Null);
+                        }
+                        56 => { // DELETE path$
+                            if argc != 1 { return Err(BasilError("DELETE expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            fs::remove_file(&path).map_err(|e| BasilError(format!("DELETE {}: {}", path, e)))?; self.stack.push(Value::Null);
+                        }
+                        57 => { // DIR$(pattern$) -> STRING[]
+                            if argc != 1 { return Err(BasilError("DIR$ expects 1 argument".into())); }
+                            let patt = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let p = Path::new(&patt);
+                            let (dir, patstr): (PathBuf, String) = if p.components().count() > 1 {
+                                (p.parent().unwrap_or(Path::new(".")).to_path_buf(), p.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string())
+                            } else { (PathBuf::from("."), patt.clone()) };
+                            let mut names: Vec<String> = Vec::new();
+                            for ent in fs::read_dir(&dir).map_err(|e| BasilError(format!("DIR$: {}: {}", dir.display(), e)))? {
+                                let ent = ent.map_err(|e| BasilError(format!("DIR$: {}", e)))?;
+                                let md = ent.metadata().map_err(|e| BasilError(format!("DIR$: {}", e)))?;
+                                if !md.is_file() { continue; }
+                                let name = ent.file_name().to_string_lossy().to_string();
+                                if self.glob_match_simple(&patstr, &name) { names.push(name); }
+                            }
+                            names.sort();
+                            self.stack.push(VM::make_string_array(names));
+                        }
+                        58 => { // ENV$(name$)
+                            if argc != 1 { return Err(BasilError("ENV$ expects 1 argument".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let val = env::var(&name).unwrap_or_default();
+                            self.stack.push(Value::Str(val));
+                        }
+                        59 => { // SETENV/EXPORTENV name$, value, exportFlag
+                            if argc != 3 { return Err(BasilError("SETENV expects 3 arguments (name$, value, exportFlag)".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let value_str = match &args[1] {
+                                Value::Str(s) => s.clone(),
+                                Value::Int(i) => i.to_string(),
+                                Value::Num(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                other => format!("{}", other),
+                            };
+                            let export = match &args[2] {
+                                Value::Bool(b) => *b,
+                                Value::Int(i) => *i != 0,
+                                Value::Num(n) => *n != 0.0,
+                                _ => false,
+                            };
+                            env::set_var(&name, &value_str);
+                            let mut ok = true;
+                            if export {
+                                #[cfg(windows)]
+                                {
+                                    use std::process::Command;
+                                    let status = Command::new("cmd").args(["/C", "setx", &name, &value_str]).status();
+                                    ok = status.map(|s| s.success()).unwrap_or(false);
+                                }
+                                #[cfg(not(windows))]
+                                {
+                                    // Cannot export to parent shell from child; consider process-local set sufficient
+                                    ok = true;
+                                }
+                            }
+                            self.stack.push(Value::Bool(ok));
+                        }
+                        60 => { // SHELL(cmd$) -> exit code
+                            if argc != 1 { return Err(BasilError("SHELL expects 1 argument".into())); }
+                            let cmd = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            #[cfg(windows)]
+                            let status = std::process::Command::new("cmd").args(["/C", &cmd]).status();
+                            #[cfg(not(windows))]
+                            let status = std::process::Command::new("sh").args(["-c", &cmd]).status();
+                            let code_i: i64 = match status {
+                                Ok(st) => st.code().unwrap_or(-1) as i64,
+                                Err(_) => -1,
+                            };
+                            self.stack.push(Value::Int(code_i));
+                        }
+                        61 => { // EXIT(code)
+                            if argc != 1 { return Err(BasilError("EXIT expects 1 argument".into())); }
+                            let code = self.to_i64(&args[0])? as i32;
+                            std::process::exit(code);
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -1202,14 +1485,36 @@ impl VM {
         let b = self.as_num(b)?; let a = self.as_num(a)?;
         self.stack.push(Value::Num(f(a,b))); Ok(())
     }
-    fn bin_cmp<F: Fn(&Value,&Value)->bool>(&mut self, f: F) -> Result<()> {
-        let b = self.pop()?; let a = self.pop()?;
-        self.stack.push(Value::Bool(f(&a,&b))); Ok(())
-    }
     fn bin_num_cmp<F: Fn(f64,f64)->bool>(&mut self, f: F) -> Result<()> {
         let b = self.pop()?; let a = self.pop()?;
         let b = self.as_num(b)?; let a = self.as_num(a)?;
         self.stack.push(Value::Bool(f(a,b))); Ok(())
+    }
+
+    fn bin_eq(&mut self) -> Result<()> {
+        let b = self.pop()?; let a = self.pop()?;
+        // Numeric-aware equality for Int/Num/Bool; fall back to structural equality otherwise
+        let res = match (&a, &b) {
+            (Value::Num(_)|Value::Int(_)|Value::Bool(_), Value::Num(_)|Value::Int(_)|Value::Bool(_)) => {
+                let an = self.as_num(a)?; let bn = self.as_num(b)?; an == bn
+            }
+            _ => a == b,
+        };
+        self.stack.push(Value::Bool(res));
+        Ok(())
+    }
+
+    fn bin_ne(&mut self) -> Result<()> {
+        let b = self.pop()?; let a = self.pop()?;
+        // Numeric-aware inequality for Int/Num/Bool; fall back to structural inequality otherwise
+        let res = match (&a, &b) {
+            (Value::Num(_)|Value::Int(_)|Value::Bool(_), Value::Num(_)|Value::Int(_)|Value::Bool(_)) => {
+                let an = self.as_num(a)?; let bn = self.as_num(b)?; an != bn
+            }
+            _ => a != b,
+        };
+        self.stack.push(Value::Bool(res));
+        Ok(())
     }
 
     fn type_of(&self, v: &Value) -> String {
@@ -1307,6 +1612,13 @@ fn is_truthy(v: &Value) -> bool {
     }
 }
 
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        let keys: Vec<i64> = self.file_table.keys().copied().collect();
+        for k in keys { let _ = self.fh_close(k); }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -82,6 +82,12 @@ pub enum Stmt {
     // DESCRIBE obj or array
     Describe { target: Expr },
     Print { expr: Expr },
+    // SETENV/EXPORTENV statements
+    SetEnv { name: String, value: Expr, export: bool },
+    // SHELL statement
+    Shell { cmd: Expr },
+    // EXIT statement (optional numeric code)
+    Exit(Option<Expr>),
     ExprStmt(Expr),
     // Function return (inside FUNC)
     Return(Option<Expr>),

@@ -93,6 +93,35 @@ impl Parser {
             return Ok(Stmt::Gosub(name));
         }
 
+        // SETENV name = expr
+        if self.match_k(TokenKind::Setenv) {
+            let name = self.expect_ident()?;
+            self.expect(TokenKind::Assign)?;
+            let value = self.parse_expr_bp(0)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::SetEnv { name, value, export: false });
+        }
+        // EXPORTENV name = expr
+        if self.match_k(TokenKind::Exportenv) {
+            let name = self.expect_ident()?;
+            self.expect(TokenKind::Assign)?;
+            let value = self.parse_expr_bp(0)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::SetEnv { name, value, export: true });
+        }
+        // SHELL expr
+        if self.match_k(TokenKind::Shell) {
+            let cmd = self.parse_expr_bp(0)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Shell { cmd });
+        }
+        // EXIT [expr]
+        if self.match_k(TokenKind::Exit) {
+            let expr = if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) { None } else { Some(self.parse_expr_bp(0)?) };
+            self.terminate_stmt()?;
+            return Ok(Stmt::Exit(expr));
+        }
+
         if self.match_k(TokenKind::Let) {
             // Support two forms:
             // 1) LET name[(indices...)] = expr
