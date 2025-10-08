@@ -550,17 +550,239 @@ If the wrong IDE launches, ensure the `dependencies { intellijPlatform { create(
 * Basic completion for keywords and functions
 * Quick Docs wired to a richer JSON (generated from your Basil reference)
 
+---
 
-Awesome — I dropped a ready-to-use starter pack into the canvas with:
+## Add-on: Basil TextMate grammar (instant syntax colors)
 
-* Two minimal plugin skeletons (Yore for PhpStorm, Basil for RustRover)
-* Gradle (2.x) configs targeting **PS** and **RR** product types
-* `plugin.xml` stubs, Kotlin classes, and file templates
-* Quick next steps and run instructions
+### Files to add (Basil plugin)
 
-If you want, I can also generate:
+```
+basil-rustrover-plugin/
+  src/main/resources/textmate/basil.tmbundle/Syntaxes/basil.tmLanguage.json
+  src/main/kotlin/com/blackrush/basil/TextMateBundleLoader.kt
+```
 
-* a tiny **TextMate** grammar for `.basil` so you get instant syntax colors, and
-* a first **Fred** template-language injection pass for Yore.
+### 1) Declare TextMate dependency & load on startup
 
-Shall I add those now?
+**`build.gradle.kts`**** (Basil) – add the bundled TextMate plugin:**
+
+```kotlin
+dependencies {
+    intellijPlatform {
+        create("RR", providers.gradleProperty("intellijPlatformVersion").get())
+        bundledPlugins("com.intellij.textmate")
+    }
+}
+```
+
+**`src/main/resources/META-INF/plugin.xml`**** (Basil) – register StartupActivity:**
+
+```xml
+<extensions defaultExtensionNs="com.intellij">
+  <startupActivity implementation="com.blackrush.basil.TextMateBundleLoader" />
+</extensions>
+```
+
+**`src/main/kotlin/com/blackrush/basil/TextMateBundleLoader.kt`**
+
+```kotlin
+package com.blackrush.basil
+
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.startup.StartupActivity
+import com.intellij.openapi.vfs.VfsUtil
+import org.jetbrains.plugins.textmate.TextMateService
+
+class TextMateBundleLoader : StartupActivity.DumbAware {
+    private val log = Logger.getInstance(TextMateBundleLoader::class.java)
+
+    override fun runActivity(project: Project) {
+        val url = this::class.java.classLoader.getResource("textmate/basil.tmbundle/Syntaxes/basil.tmLanguage.json")
+            ?: return
+        val file = VfsUtil.findFileByURL(url) ?: return
+        val bundleRoot = file.parent.parent // go up from Syntaxes/
+        ApplicationManager.getApplication().executeOnPooledThread {
+            TextMateService.getInstance().loadBundle(bundleRoot)
+            TextMateService.getInstance().reloadEnabledBundles()
+            log.info("Loaded Basil TextMate bundle: ${'$'}bundleRoot")
+        }
+    }
+}
+```
+
+### 2) Minimal **TextMate grammar** for Basil
+
+**`src/main/resources/textmate/basil.tmbundle/Syntaxes/basil.tmLanguage.json`**
+
+```json
+{
+  "name": "Basil",
+  "scopeName": "source.basil",
+  "fileTypes": ["basil"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#directives" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#functions" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.rem.basil", "match": "^(?i:REM).*$" },
+        { "name": "comment.line.apostrophe.basil", "begin": "'", "end": "$" }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        { "name": "meta.directive.basil", "match": "#(?i:[A-Z_][A-Z0-9_]*)" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "name": "string.quoted.double.basil", "begin": "\"", "end": "\"", "patterns": [
+          { "name": "constant.character.escape.basil", "match": "\\." }
+        ]}
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.basil", "match": "(?i)\b\d+(?:\.\d+)?\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.basil", "match": "(?i)\b(FOR|TO|STEP|NEXT|IF|THEN|ELSE|BEGIN|END|RETURN|FUNC|DIM|LET|PRINT|INPUT|WHILE|WEND|DO|LOOP)\b" }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        { "name": "support.function.basil", "match": "(?i)\b([A-Z_][A-Z0-9_]*)\s*(?=\()" }
+      ]
+    }
+  }
+}
+```
+
+> This gives you immediate token coloring for comments, directives (e.g., `#USE`), strings, numbers, common keywords, and function identifiers. You can expand the regex lists anytime.
+
+---
+
+## Add-on: Yore – first **Fred** template-language injection pass
+
+Goal: treat `@name(...)` blocks inside HTML/PHP-like views as code islands so devs get assistance. First pass uses a **MultiHostInjector** to:
+
+* inject **PHP** into argument lists so variables and nested calls (e.g., `@fixphone(@arg1())`) get inspections/completion,
+* optionally inject **SQL** strings for `@fetch("...")`.
+
+### Files to add (Yore plugin)
+
+```
+yore-phpstorm-plugin/
+  src/main/kotlin/com/blackrush/yore/fred/FredDirectiveInjector.kt
+  src/main/kotlin/com/blackrush/yore/fred/FredUtil.kt
+```
+
+### 1) Register the injector
+
+**`src/main/resources/META-INF/plugin.xml`**** (Yore) – add:**
+
+```xml
+<extensions defaultExtensionNs="com.intellij">
+  <languageInjector implementation="com.blackrush.yore.fred.FredDirectiveInjector"/>
+</extensions>
+```
+
+### 2) Implementation (regex-based, HTML/PHP safe)
+
+**`src/main/kotlin/com/blackrush/yore/fred/FredDirectiveInjector.kt`**
+
+```kotlin
+package com.blackrush.yore.fred
+
+import com.intellij.lang.injection.MultiHostInjector
+import com.intellij.lang.injection.MultiHostRegistrar
+import com.intellij.openapi.util.TextRange
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiLanguageInjectionHost
+import com.intellij.psi.impl.source.xml.XmlTextImpl
+import com.jetbrains.php.lang.PhpLanguage
+import org.jetbrains.annotations.NotNull
+import java.util.regex.Pattern
+
+/**
+ * Finds Fred directives like @name(arg1, arg2) inside HTML/text and injects PHP into the parentheses
+ * so variables and nested calls get proper highlighting/completion.
+ */
+class FredDirectiveInjector : MultiHostInjector {
+    private val CALL = Pattern.compile("@([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*?)\)", Pattern.DOTALL)
+
+    override fun elementsToInjectIn(): MutableList<Class<out PsiElement>> = mutableListOf(
+        XmlTextImpl::class.java // HTML text nodes; works for .php containing HTML too
+    )
+
+    override fun getLanguagesToInject(@NotNull registrar: MultiHostRegistrar, @NotNull ctx: PsiElement) {
+        val text = ctx.text ?: return
+        val m = CALL.matcher(text)
+        while (m.find()) {
+            val argsStart = m.start(2)
+            val argsEnd = m.end(2)
+            val range = TextRange(argsStart, argsEnd)
+            if (ctx is PsiLanguageInjectionHost && ctx.isValidHost) {
+                registrar.startInjecting(PhpLanguage.INSTANCE)
+                    .addPlace(null, null, ctx, range)
+                    .doneInjecting()
+            }
+        }
+    }
+}
+```
+
+**Notes**
+
+* This first pass aims for useful now vs. perfect parsing. It won’t yet understand nested `@...()` pairs that cross text-node boundaries, but it works for common inline cases.
+* Because we inject **PHP** into the argument list, constructs like `@fixphone(@arg1())` benefit from PHP’s parser/inspections.
+
+### 3) Optional: targeted SQL injection for `@fetch("…")`
+
+**`src/main/kotlin/com/blackrush/yore/fred/FredUtil.kt`** (helper for future expansion)
+
+```kotlin
+package com.blackrush.yore.fred
+
+object FredUtil {
+    val FETCH_NAMES = setOf("fetch", "query", "sql")
+}
+```
+
+Extend `FredDirectiveInjector` to detect when the callee name is in `FETCH_NAMES` and then inject the **SQL** language into the first string literal within the args range by narrowing the injected `TextRange`.
+
+### 4) Styling Fred directive heads (gutter/highlight)
+
+* Add an **Annotator** later to color the `@name` head and a gutter icon.
+* Next step after MVP: a **ReferenceContributor** that resolves `@name` to a PHP function provider within Yore modules so “Go to Declaration” works.
+
+---
+
+### How to test quickly
+
+**Basil highlighting**
+
+1. Run `./gradlew :runIde` in the Basil plugin.
+2. Open a `.basil` file; confirm keywords/strings/comments are colored.
+
+**Fred injection**
+
+1. Run `./gradlew :runIde` in the Yore plugin.
+2. Open a view containing:
+
+   ```html
+   <p>@author()</p>
+   <p>@fixphone(@arg1())</p>
+   <p>@fetch("SELECT * FROM fhhc_employees WHERE ID=@arg(1)")</p>
+   ```
+3. Place the caret inside each parentheses block — you should see PHP highlighting/completion for variables and nested calls.
+
