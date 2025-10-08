@@ -13,8 +13,11 @@ obj-bmx-rider = []
 obj-bmx-team = []
 obj-bmx = ["obj-bmx-rider", "obj-bmx-team"]
 obj-base64 = ["base64"]
+obj-zip = ["zip", "walkdir"]
 
 [dependencies]
 basil-common = { workspace = true }
 basil-bytecode = { workspace = true }
 base64 = { version = "0.22", optional = true }
+zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
+walkdir = { version = "2", optional = true }

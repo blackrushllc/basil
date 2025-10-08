@@ -69,6 +69,10 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::bmx_team::register(_reg);
     }
+    #[cfg(feature = "obj-zip")]
+    {
+        crate::zip::register(_reg);
+    }
 }
 
 #[cfg(feature = "obj-base64")]
@@ -77,3 +81,5 @@ mod base64;
 mod bmx_rider;
 #[cfg(feature = "obj-bmx-team")]
 mod bmx_team;
+#[cfg(feature = "obj-zip")]
+pub mod zip;

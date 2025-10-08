@@ -909,6 +909,10 @@ impl C {
                         "ENV$" => Some(58u8),
                         #[cfg(feature = "obj-base64")] "BASE64_ENCODE$" => Some(90u8),
                         #[cfg(feature = "obj-base64")] "BASE64_DECODE$" => Some(91u8),
+                        #[cfg(feature = "obj-zip")] "ZIP_EXTRACT_ALL" => Some(120u8),
+                        #[cfg(feature = "obj-zip")] "ZIP_COMPRESS_FILE" => Some(121u8),
+                        #[cfg(feature = "obj-zip")] "ZIP_COMPRESS_DIR" => Some(122u8),
+                        #[cfg(feature = "obj-zip")] "ZIP_LIST$" => Some(123u8),
                         _ => None,
                     };
                     if let Some(id) = bid {

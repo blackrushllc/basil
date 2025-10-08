@@ -1,0 +1,30 @@
+REM Example Basil Class: my_class.basil
+REM Demonstrates public variables and public functions
+
+DIM UserNames$(100);
+LET Description$ = "Default description";
+
+FUNC AddUser(name$)
+BEGIN
+  REM Adds the given name to the first empty slot
+  FOR i% = 0 TO 99
+    IF UserNames$(i%) == "" THEN
+      BEGIN
+        LET UserNames$(i%) = name$;
+        RETURN
+      END
+  NEXT
+END
+
+FUNC CountMyUsers%()
+BEGIN
+  REM Returns the number of non-empty user names
+  LET count% = 0
+  FOR i% = 0 TO 99
+    IF UserNames$(i%) != "" THEN
+      BEGIN
+        LET count% = count% + 1;
+      END
+  NEXT
+  RETURN count%;
+END
