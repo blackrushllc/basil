@@ -1,0 +1,91 @@
+#CGI_NO_HEADER
+<?basil
+  REM helpers (same pattern as login)
+  LET SITE_TITLE$ = "Basil Website Skeleton"
+  SUB send_header_ok_html()
+    PRINT "Status: 200 OK\r\n";
+    PRINT "Content-Type: text/html; charset=utf-8\r\n";
+    PRINT "Cache-Control: no-store\r\n";
+  END SUB
+  SUB set_cookie(name$, value$)
+    PRINT "Set-Cookie: " + name$ + "=" + value$ + "; Path=/; HttpOnly\r\n";
+  END SUB
+  SUB send_header_redirect(loc$)
+    PRINT "Status: 302 Found\r\n";
+    PRINT "Location: " + loc$ + "\r\n\r\n";
+  END SUB
+  SUB layout_start(title$)
+    PRINT "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>" + HTML$(title$) + "</title>";
+    PRINT "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+    PRINT "<link rel=\"stylesheet\" href=\"css/site.css\"></head><body><header class=\"top\"><div class=\"wrap\"><h1>" + HTML$(SITE_TITLE$) + "</h1></div></header><main class=\"wrap\">\n";
+  END SUB
+  SUB layout_end()
+    PRINT "</main><footer class=\"foot\"><div class=\"wrap\"><small><a href=\"index.basil\">Home</a></small></div></footer><script src=\"js/site.js\"></script></body></html>\n";
+  END SUB
+  FUNCTION param$(name$)
+    DIM arr$(0)
+    LET arr$() = REQUEST$()
+    FOR EACH kv$ IN arr$()
+      LET eq% = FIND(kv$, "=")
+      IF eq% >= 0 THEN
+        LET k$ = LEFT$(kv$, eq%)
+        LET v$ = MID$(kv$, eq%+2)
+        IF k$ == name$ THEN RETURN v$
+      ENDIF
+    NEXT
+    RETURN ""
+  END FUNCTION
+
+  FUNCTION db_open%()
+    LET db% = SQLITE_OPEN%("website.db")
+    IF db% == 0 THEN RETURN 0
+    LET _ = SQLITE_EXEC%(db%, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)")
+    RETURN db%
+  END FUNCTION
+  FUNCTION create_user%(db%, username$, password$)
+    LET _ = SQLITE_EXEC%(db%, "INSERT INTO users(username, password) VALUES ('" + username$ + "','" + password$ + "')")
+    RETURN SQLITE_LAST_INSERT_ID%(db%)
+  END FUNCTION
+  FUNCTION user_exists%(db%, username$)
+    DIM rows$(0,0)
+    LET rows$() = SQLITE_QUERY2D$(db%, "SELECT id FROM users WHERE username = '" + username$ + "' LIMIT 1")
+    RETURN ARRAY_ROWS%(rows$) > 0
+  END FUNCTION
+
+  LET method$ = ENV$("REQUEST_METHOD")
+  IF method$ == "POST" THEN
+    LET u$ = param$("username")
+    LET p$ = param$("password")
+    LET p2$ = param$("password2")
+
+    LET db% = db_open%()
+    IF db% == 0 THEN
+      PRINT "Status: 500 Internal Server Error\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nDB open failed";
+      EXIT 0
+    ENDIF
+
+    IF LEN(u$) == 0 OR LEN(p$) == 0 THEN
+      LET err$ = "Please fill in all fields"
+    ELSEIF p$ <> p2$ THEN
+      LET err$ = "Passwords do not match"
+    ELSEIF user_exists%(db%, u$) THEN
+      LET err$ = "That username is already taken"
+    ELSE
+      LET _id% = create_user%(db%, u$, p$)
+      PRINT "Status: 302 Found\r\n";
+      CALL set_cookie("user", u$)
+      PRINT "Location: user_home.basil\r\n\r\n";
+      SQLITE_CLOSE(db%)
+      EXIT 0
+    ENDIF
+    SQLITE_CLOSE(db%)
+  ENDIF
+
+  CALL send_header_ok_html()
+  CALL layout_start("Register")
+?>
+<?basil PRINT READFILE$("views/register.html"); ?>
+<?basil
+  IF LEN(err$) > 0 THEN PRINT "<p class=\"error\">" + HTML$(err$) + "</p>\n";
+  CALL layout_end()
+?>
