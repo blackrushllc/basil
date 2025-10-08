@@ -82,6 +82,7 @@ Interesting files to read in this repo:
 + GOALS.md - My Day 1 proposal goals for Basil
 + IDE.md - How to configure Geany or VS-Code for Basil (and others soon)
 + JETBRAINS.md - Work in progress on a Jetbrains IDE Plugin for Basil (And Yore) ([What is Yore?](https://github.com/blackrushllc/yore))
++ LIBRARY_OBJECTS.md - A reference for the add-on function libraries
 + OBJECTS.md - Object Library Support for Basil (the original proposal) (this has been implemented)
 + PRESENTATION.md - 15‑Minute Stand‑Up Demo Notes (for Teachers) also here: [presentation.pdf](https://github.com/blackrushllc/basil/blob/main/presentation.pdf)
 + PUNS.md - ChatGPT said "Basil" is a "Pun Volcano" and this doc proves it
