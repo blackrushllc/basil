@@ -56,6 +56,67 @@ use basil_objects::{Registry, register_objects};
 use basil_parser::parse as parse_basil;
 use basil_compiler::compile as compile_basil;
 use basil_bytecode::{deserialize_program};
+#[cfg(feature = "obj-base64")]
+use base64::{engine::general_purpose, Engine as _};
+#[cfg(feature = "obj-zip")]
+use basil_objects::zip as zip_utils;
+#[cfg(feature = "obj-curl")]
+use basil_objects::curl as curl_utils;
+#[cfg(any(feature = "obj-json", feature = "obj-csv"))]
+use serde_json::{Value as JValue};
+#[cfg(feature = "obj-csv")]
+use csv::{ReaderBuilder, WriterBuilder};
+#[cfg(feature = "obj-sqlite")]
+use basil_objects::sqlite as sqlite_utils;
+
+#[cfg(feature = "obj-json")]
+fn value_to_jvalue(v: &Value) -> Result<JValue> {
+    use serde_json::Map;
+    match v {
+        Value::Null => Ok(JValue::Null),
+        Value::Bool(b) => Ok(JValue::Bool(*b)),
+        Value::Int(i) => Ok(JValue::Number((*i).into())),
+        Value::Num(n) => serde_json::Number::from_f64(*n)
+            .map(JValue::Number)
+            .ok_or_else(|| BasilError("JSON_STRINGIFY$: NaN/Inf not representable".into())),
+        Value::Str(s) => Ok(JValue::String(s.clone())),
+        Value::Array(arr_rc) => {
+            let arr = arr_rc.as_ref();
+            let data = arr.data.borrow();
+            let mut out = Vec::with_capacity(data.len());
+            for elem in data.iter() {
+                out.push(value_to_jvalue(elem)?);
+            }
+            Ok(JValue::Array(out))
+        }
+        Value::Object(obj_rc) => {
+            let obj_ref = obj_rc.borrow();
+            let desc = obj_ref.descriptor();
+            let mut map = Map::new();
+            for prop in desc.properties.iter().filter(|p| p.readable) {
+                // get_prop returns Result<Value>
+                if let Ok(pv) = obj_ref.get_prop(&prop.name) {
+                    let jv = value_to_jvalue(&pv)?;
+                    map.insert(prop.name.clone(), jv);
+                }
+            }
+            Ok(JValue::Object(map))
+        }
+        Value::StrArray2D { rows, cols, data } => {
+            let mut out: Vec<JValue> = Vec::with_capacity(*rows);
+            for r in 0..*rows {
+                let mut row: Vec<JValue> = Vec::with_capacity(*cols);
+                for c in 0..*cols {
+                    let idx = r * *cols + c;
+                    row.push(JValue::String(data[idx].clone()));
+                }
+                out.push(JValue::Array(row));
+            }
+            Ok(JValue::Array(out))
+        }
+        Value::Func(_) => Err(BasilError("JSON_STRINGIFY$: cannot stringify a function".into())),
+    }
+}
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
@@ -253,6 +314,7 @@ impl basil_bytecode::BasicObject for ClassInstance {
                 Value::Bool(_) => props.push(PropDesc { name: n.clone(), type_name: "BOOL".to_string(), readable: true, writable: true }),
                 Value::Object(_) => props.push(PropDesc { name: n.clone(), type_name: "OBJECT".to_string(), readable: true, writable: true }),
                 Value::Null => props.push(PropDesc { name: n.clone(), type_name: "NULL".to_string(), readable: true, writable: true }),
+                Value::StrArray2D { .. } => props.push(PropDesc { name: n.clone(), type_name: "STRARRAY2D".to_string(), readable: true, writable: true }),
             }
         }
         ObjectDescriptor { type_name: "CLASS".to_string(), version: "1.0".to_string(), summary: "Basil file-based class instance".to_string(), properties: props, methods, examples: Vec::new() }
@@ -1422,6 +1484,252 @@ impl VM {
                             let code = self.to_i64(&args[0])? as i32;
                             std::process::exit(code);
                         }
+                        #[cfg(feature = "obj-base64")]
+                        90 => { // BASE64_ENCODE$(text$)
+                            if argc != 1 { return Err(BasilError("BASE64_ENCODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let encoded = general_purpose::STANDARD.encode(s.as_bytes());
+                            self.stack.push(Value::Str(encoded));
+                        }
+                        #[cfg(feature = "obj-base64")]
+                        91 => { // BASE64_DECODE$(text$)
+                            if argc != 1 { return Err(BasilError("BASE64_DECODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            match general_purpose::STANDARD.decode(s) {
+                                Ok(bytes) => match String::from_utf8(bytes) {
+                                    Ok(txt) => self.stack.push(Value::Str(txt)),
+                                    Err(_) => return Err(BasilError("BASE64_DECODE$: invalid UTF-8 in decoded data".into())),
+                                },
+                                Err(_) => return Err(BasilError("BASE64_DECODE$: invalid Base64 string".into())),
+                            }
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        120 => { // ZIP_EXTRACT_ALL(zip_path$, dest_dir$)
+                            if argc != 2 { return Err(BasilError("ZIP_EXTRACT_ALL expects 2 arguments".into())); }
+                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let dest_dir = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            zip_utils::zip_extract_all(&zip_path, &dest_dir)?;
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        121 => { // ZIP_COMPRESS_FILE(src_path$, zip_path$, entry_name$)
+                            if !(argc == 2 || argc == 3) { return Err(BasilError("ZIP_COMPRESS_FILE expects 2 or 3 arguments".into())); }
+                            let src_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let zip_path = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let entry_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
+                            zip_utils::zip_compress_file(&src_path, &zip_path, entry_opt.as_deref())?;
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        122 => { // ZIP_COMPRESS_DIR(src_dir$, zip_path$)
+                            if argc != 2 { return Err(BasilError("ZIP_COMPRESS_DIR expects 2 arguments".into())); }
+                            let src_dir = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let zip_path = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            zip_utils::zip_compress_dir(&src_dir, &zip_path)?;
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-zip")]
+                        123 => { // ZIP_LIST$(zip_path$)
+                            if argc != 1 { return Err(BasilError("ZIP_LIST$ expects 1 argument".into())); }
+                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let listing = zip_utils::zip_list(&zip_path)?;
+                            self.stack.push(Value::Str(listing));
+                        }
+                        #[cfg(feature = "obj-curl")]
+                        124 => { // HTTP_GET$(url$)
+                            if argc != 1 { return Err(BasilError("HTTP_GET$ expects 1 argument".into())); }
+                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let body = curl_utils::http_get(&url)?;
+                            self.stack.push(Value::Str(body));
+                        }
+                        #[cfg(feature = "obj-curl")]
+                        125 => { // HTTP_POST$(url$, body$[, content_type$])
+                            if !(argc == 2 || argc == 3) { return Err(BasilError("HTTP_POST$ expects 2 or 3 arguments".into())); }
+                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let body = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let ct_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
+                            let resp = curl_utils::http_post(&url, &body, ct_opt.as_deref())?;
+                            self.stack.push(Value::Str(resp));
+                        }
+                        #[cfg(feature = "obj-json")]
+                        126 => { // JSON_PARSE$(text$)
+                            if argc != 1 { return Err(BasilError("JSON_PARSE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let v: JValue = serde_json::from_str(&s)
+                                .map_err(|e| BasilError(format!("JSON_PARSE$: invalid JSON: {}", e)))?;
+                            let out = serde_json::to_string(&v)
+                                .map_err(|e| BasilError(format!("JSON_PARSE$: serialize failed: {}", e)))?;
+                            self.stack.push(Value::Str(out));
+                        }
+                        #[cfg(feature = "obj-json")]
+                        127 => { // JSON_STRINGIFY$(value)
+                            if argc != 1 { return Err(BasilError("JSON_STRINGIFY$ expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Str(s) => {
+                                    if let Ok(v) = serde_json::from_str::<JValue>(&s) {
+                                        let out = serde_json::to_string(&v)
+                                            .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
+                                        self.stack.push(Value::Str(out));
+                                    } else {
+                                        let out = serde_json::to_string(&s)
+                                            .map_err(|e| BasilError(format!("JSON_STRINGIFY$: wrap failed: {}", e)))?;
+                                        self.stack.push(Value::Str(out));
+                                    }
+                                }
+                                other => {
+                                    let v = value_to_jvalue(other)?;
+                                    let out = serde_json::to_string(&v)
+                                        .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
+                                    self.stack.push(Value::Str(out));
+                                }
+                            }
+                        }
+                        #[cfg(feature = "obj-csv")]
+                        128 => { // CSV_PARSE$(csv_text$)
+                            if argc != 1 { return Err(BasilError("CSV_PARSE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let mut rdr = ReaderBuilder::new()
+                                .has_headers(true)
+                                .from_reader(s.as_bytes());
+                            let headers = rdr.headers()
+                                .map_err(|e| BasilError(format!("CSV_PARSE$: read headers failed: {}", e)))?
+                                .clone();
+                            let mut rows: Vec<JValue> = Vec::new();
+                            for rec in rdr.records() {
+                                let rec = rec.map_err(|e| BasilError(format!("CSV_PARSE$: read record failed: {}", e)))?;
+                                let mut obj = serde_json::Map::new();
+                                for (i, field) in rec.iter().enumerate() {
+                                    let key = headers.get(i).unwrap_or("").to_string();
+                                    obj.insert(key, JValue::String(field.to_string()));
+                                }
+                                rows.push(JValue::Object(obj));
+                            }
+                            let out = serde_json::to_string(&rows)
+                                .map_err(|e| BasilError(format!("CSV_PARSE$: serialize failed: {}", e)))?;
+                            self.stack.push(Value::Str(out));
+                        }
+                        #[cfg(feature = "obj-csv")]
+                        129 => { // CSV_WRITE$(rows_json$)
+                            if argc != 1 { return Err(BasilError("CSV_WRITE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let rows: JValue = serde_json::from_str(&s)
+                                .map_err(|e| BasilError(format!("CSV_WRITE$: invalid JSON: {}", e)))?;
+                            let arr = rows.as_array().ok_or_else(|| BasilError("CSV_WRITE$: expected JSON array of objects".into()))?;
+                            let mut headers: Vec<String> = Vec::new();
+                            let mut seen = std::collections::HashSet::new();
+                            if let Some(first) = arr.first().and_then(|v| v.as_object()) {
+                                for k in first.keys() {
+                                    headers.push(k.clone());
+                                    seen.insert(k.clone());
+                                }
+                            }
+                            for v in arr.iter() {
+                                if let Some(obj) = v.as_object() {
+                                    for k in obj.keys() {
+                                        if !seen.contains(k) {
+                                            headers.push(k.clone());
+                                            seen.insert(k.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            let mut wtr = WriterBuilder::new().from_writer(vec![]);
+                            wtr.write_record(headers.iter())
+                                .map_err(|e| BasilError(format!("CSV_WRITE$: write headers failed: {}", e)))?;
+                            for v in arr.iter() {
+                                let obj = v.as_object().ok_or_else(|| BasilError("CSV_WRITE$: array items must be objects".into()))?;
+                                let mut row: Vec<String> = Vec::with_capacity(headers.len());
+                                for h in headers.iter() {
+                                    let cell = match obj.get(h) {
+                                        Some(JValue::String(s)) => s.clone(),
+                                        Some(JValue::Number(n)) => n.to_string(),
+                                        Some(JValue::Bool(b)) => if *b { "true".to_string() } else { "false".to_string() },
+                                        Some(JValue::Null) => String::new(),
+                                        Some(other) => serde_json::to_string(other).unwrap_or_default(),
+                                        None => String::new(),
+                                    };
+                                    row.push(cell);
+                                }
+                                wtr.write_record(&row)
+                                    .map_err(|e| BasilError(format!("CSV_WRITE$: write row failed: {}", e)))?;
+                            }
+                            let bytes = wtr.into_inner().map_err(|e| BasilError(format!("CSV_WRITE$: finalize failed: {}", e)))?;
+                            let out = String::from_utf8(bytes).map_err(|e| BasilError(format!("CSV_WRITE$: utf8 failed: {}", e)))?;
+                            self.stack.push(Value::Str(out));
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        130 => { // SQLITE_OPEN%(path$)
+                            if argc != 1 { return Err(BasilError("SQLITE_OPEN% expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let h = sqlite_utils::sqlite_open(&path);
+                            self.stack.push(Value::Int(h));
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        131 => { // SQLITE_CLOSE(handle%)
+                            if argc != 1 { return Err(BasilError("SQLITE_CLOSE expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            sqlite_utils::sqlite_close(h);
+                            self.stack.push(Value::Null);
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        132 => { // SQLITE_EXEC%(handle%, sql$)
+                            if argc != 2 { return Err(BasilError("SQLITE_EXEC% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let sql = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let n = sqlite_utils::sqlite_exec(h, &sql);
+                            self.stack.push(Value::Int(n));
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        133 => { // SQLITE_QUERY2D$(handle%, sql$)
+                            if argc != 2 { return Err(BasilError("SQLITE_QUERY2D$ expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let sql = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let v = sqlite_utils::sqlite_query2d(h, &sql)?;
+                            self.stack.push(v);
+                        }
+                        #[cfg(feature = "obj-sqlite")]
+                        134 => { // SQLITE_LAST_INSERT_ID%(handle%)
+                            if argc != 1 { return Err(BasilError("SQLITE_LAST_INSERT_ID% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let id = sqlite_utils::sqlite_last_insert_id(h);
+                            self.stack.push(Value::Int(id));
+                        }
+                        138 => { // INTERNAL: STR2D_TO_ARRAY$(rowsxcols)
+                            if argc != 1 { return Err(BasilError("internal builtin 138 expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::StrArray2D { rows, cols, data } => {
+                                    // build 2D string array with dims [rows, cols]
+                                    let dims = vec![*rows, *cols];
+                                    let mut arr_data: Vec<Value> = Vec::with_capacity(data.len());
+                                    for s in data.iter() { arr_data.push(Value::Str(s.clone())); }
+                                    let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: std::cell::RefCell::new(arr_data) });
+                                    self.stack.push(Value::Array(arr));
+                                }
+                                other => return Err(BasilError(format!("builtin 138 expects StrArray2D, got {}", self.type_of(other)))),
+                            }
+                        }
+                        139 => { // ARRAY_ROWS%(arr$())
+                            if argc != 1 { return Err(BasilError("ARRAY_ROWS% expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Array(rc) => {
+                                    let a = rc.as_ref();
+                                    if a.dims.len() != 2 { return Err(BasilError("ARRAY_ROWS%: expected 2-D array".into())); }
+                                    self.stack.push(Value::Int(a.dims[0] as i64));
+                                }
+                                _ => return Err(BasilError("ARRAY_ROWS%: expected array".into())),
+                            }
+                        }
+                        140 => { // ARRAY_COLS%(arr$())
+                            if argc != 1 { return Err(BasilError("ARRAY_COLS% expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Array(rc) => {
+                                    let a = rc.as_ref();
+                                    if a.dims.len() != 2 { return Err(BasilError("ARRAY_COLS%: expected 2-D array".into())); }
+                                    self.stack.push(Value::Int(a.dims[1] as i64));
+                                }
+                                _ => return Err(BasilError("ARRAY_COLS%: expected array".into())),
+                            }
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -1537,6 +1845,7 @@ impl VM {
                 format!("{}[]", base)
             }
             Value::Object(rc) => rc.borrow().type_name().to_string(),
+            Value::StrArray2D { .. } => "STRING[][]".to_string(),
         }
     }
 
@@ -1609,6 +1918,7 @@ fn is_truthy(v: &Value) -> bool {
         Value::Func(_) => true,
         Value::Array(_) => true,
         Value::Object(_) => true,
+        Value::StrArray2D { rows, cols, data } => (*rows > 0) && (*cols > 0) && (!data.is_empty()),
     }
 }
 

@@ -102,6 +102,9 @@ pub enum Value {
     Func(Rc<Function>),
     Array(Rc<ArrayObj>),
     Object(ObjectRef),
+    // Special runtime-only value: 2-D string array, row-major order.
+    // Used as RHS for whole-array assignment (auto-redimensioning target array).
+    StrArray2D { rows: usize, cols: usize, data: Vec<String> },
 }
 
 impl PartialEq for Value {
@@ -141,6 +144,9 @@ impl fmt::Display for Value {
                 let obj = obj_rc.borrow();
                 write!(f, "<{}>", obj.type_name())
             }
+            Value::StrArray2D { rows, cols, .. } => {
+                write!(f, "<StrArray2D {}x{}>", rows, cols)
+            }
         }
     }
 }
@@ -158,6 +164,9 @@ impl fmt::Debug for Value {
             Value::Object(obj_rc) => {
                 let obj = obj_rc.borrow();
                 write!(f, "Object(<{}>)", obj.type_name())
+            }
+            Value::StrArray2D { rows, cols, data } => {
+                write!(f, "StrArray2D(rows={}, cols={}, data_len={})", rows, cols, data.len())
             }
         }
     }
@@ -287,6 +296,7 @@ pub fn serialize_program(p: &Program) -> Vec<u8> {
             }
             Value::Array(_) => { w_u8(b,250); } // unsupported in consts
             Value::Object(_) => { w_u8(b,251); }
+            Value::StrArray2D { .. } => { w_u8(b,252); }
         }
     }
     fn ser_chunk(b: &mut Vec<u8>, c: &Chunk) {
@@ -331,7 +341,7 @@ pub fn deserialize_program(data: &[u8]) -> basil_common::Result<Program> {
                 let chunk = de_chunk(p,data)?;
                 Value::Func(Rc::new(Function { arity: ar, name, chunk: std::rc::Rc::new(chunk) }))
             }
-            250|251 => Value::Null, // placeholder for unsupported
+            250|251|252 => Value::Null, // placeholder for unsupported in consts
             _ => return Err(BasilError("bad const tag".into())),
         })
     }

@@ -57,6 +57,14 @@ impl Registry {
 
 pub fn register_objects(_reg: &mut Registry) {
     // conditional registrations
+    #[cfg(feature = "obj-curl")]
+    {
+        crate::curl::register(_reg);
+    }
+    #[cfg(feature = "obj-base64")]
+    {
+        crate::base64::register(_reg);
+    }
     #[cfg(feature = "obj-bmx-rider")]
     {
         crate::bmx_rider::register(_reg);
@@ -65,9 +73,33 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::bmx_team::register(_reg);
     }
+    #[cfg(feature = "obj-zip")]
+    {
+        crate::zip::register(_reg);
+    }
+    #[cfg(feature = "obj-csv")]
+    {
+        crate::csv::register(_reg);
+    }
+    #[cfg(feature = "obj-sqlite")]
+    {
+        crate::sqlite::register(_reg);
+    }
 }
 
+#[cfg(feature = "obj-base64")]
+mod base64;
 #[cfg(feature = "obj-bmx-rider")]
 mod bmx_rider;
 #[cfg(feature = "obj-bmx-team")]
 mod bmx_team;
+#[cfg(feature = "obj-zip")]
+pub mod zip;
+#[cfg(feature = "obj-curl")]
+pub mod curl;
+#[cfg(feature = "obj-json")]
+pub mod json;
+#[cfg(feature = "obj-csv")]
+mod csv;
+#[cfg(feature = "obj-sqlite")]
+pub mod sqlite;
