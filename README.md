@@ -19,14 +19,16 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌿 Running a basil program without rebuilding the VM:
 ```terminal
-cargo run -q -p basilc -- run examples/hello.basil
-```
-
-🌿 Running a basil program with the BMX objects enabled:
-```terminal
 target/release/basilc run examples/hello.basil
 # or
 target/debug/basilc run examples/hello.basil
+```
+
+🌿 Running a basil program with the BMX example objects enabled:
+```terminal
+cargo run -q -p basilc --features obj-bmx -- run examples/hello.basil
+# or
+cargo run -q -p basilc --features "obj-bmx-rider obj-bmx-ream" -- run examples/hello.basil
 ```
 
 Building and deploying Basil to run CGI scripts on Linux:
@@ -34,12 +36,6 @@ Building and deploying Basil to run CGI scripts on Linux:
 ```
 cargo build --release -p basilc
 install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
-```
-
-🌿 Running a basil program with a full build (all libraries)
-
-```terminal
-cargo run -q -p basilc --features obj-all -- run examples/objects.basil
 ```
 
 🌿 Running a basil program with a bunch of libraries
@@ -54,14 +50,20 @@ cargo run -q -p basilc --features "obj-curl obj-zip obj-base64" -- run examples/
 cargo run -q -p basilc --features obj-all -- run examples/objects.basil
 ```
 
-
-
-Useful links:
+See:
+ + examples - lots of Basil program examples
+ + examples/hello.basil - "Hello World" program
+ + examples/website/ - a simple Basil CGI web app with login, register, user home, logout
+ + Useful links:
 
 🌿 https://yobasic.com/basil//basil.html - The original 15 Minute Presentation Handout (nicer one below)
+
 🌿 https://yobasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
+
 🌿 https://yobasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
+
 🌿 https://yobasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
+
 
 Interesting files to read in this repo:
 
@@ -182,9 +184,6 @@ END
 
 ````
 
-
-
-
 ### 🌿 STATUS UPDATE _"test" mode_ !!!
 
 + "test" CLI command to run non-interactively, mock input, and output comments
@@ -192,7 +191,6 @@ END
 Example usage:
 
 ```
-
  cargo run -q -p basilc --features obj-bmx -- test examples/input.basil
 
 ```
