@@ -1,0 +1,14 @@
+﻿let A$ = "";
+let B$ = "";
+let C$ = A$ + B$;
+println C$; // expected HiThere
+println A$, B$; // expected Hi	There
+
+println LEN(C$); // expected 7
+println MID$(C$, 3, 4); // expected Ther
+println MID$(C$, 3); // expected There
+println LEFT$(C$, 2); // expected Hi
+println RIGHT$(C$, 5); // expected There
+println INSTR(C$, ""); // expected 4
+println INSTR(C$, "", 5); // expected 6
+println INSTR(C$, ""); // expected 0

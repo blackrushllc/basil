@@ -1,0 +1,12 @@
+﻿rem One-shot whole-file operations: READFILE$, WRITEFILE, APPENDFILE
+
+let p$ = "";
+
+WRITEFILE(p$, "");
+APPENDFILE(p$, "");
+
+let all$ = READFILE$(p$);
+println "";
+print all$;
+
+DELETE(p$);  ' cleanup
