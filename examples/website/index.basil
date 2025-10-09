@@ -71,6 +71,46 @@
     PRINT "Location: " + loc$ + "\r\n\r\n";
     RETURN 0;
   END
+
+  // Render a table of users from the database (function context avoids top-level array quirks)
+  FUNC render_users() BEGIN
+    LET db% = SQLITE_OPEN%("website.db");
+    IF db% == 0 THEN BEGIN
+      LET tmp$ = ENV$("TMPDIR");
+      IF LEN(tmp$) == 0 THEN LET tmp$ = ENV$("TEMP");
+      IF LEN(tmp$) == 0 THEN LET tmp$ = ENV$("TMP");
+      IF LEN(tmp$) == 0 THEN LET tmp$ = "/tmp";
+      IF RIGHT$(tmp$, 1) == "/" OR RIGHT$(tmp$, 1) == "\\" THEN BEGIN
+        LET path$ = tmp$ + "website.db";
+      ELSE
+        LET path$ = tmp$ + "/" + "website.db";
+      END
+      LET db% = SQLITE_OPEN%(path$);
+    END
+
+    IF db% == 0 THEN BEGIN
+      PRINT "<p class=\"error\">Could not open database to list users.</p>";
+      RETURN 0;
+    END
+
+    LET _ = SQLITE_EXEC%(db%, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)");
+
+    DIM rows$(0,0);
+    LET rows$() = SQLITE_QUERY2D$(db%, "SELECT username, password FROM users ORDER BY id");
+    LET rc% = ARRAY_ROWS%(rows$);
+
+    PRINT "<section class=\"card\" style=\"margin-top:1rem\">";
+    PRINT "<h3>Users in DB (" + rc% + ")</h3>";
+    PRINT "<div style=\"overflow:auto\"><table border=\"1\" cellspacing=\"0\" cellpadding=\"6\"><thead><tr><th>#</th><th>Username</th><th>Password</th></tr></thead><tbody>";
+
+    FOR r% = 0 TO rc% - 1
+      PRINT "<tr><td>" + (r%+1) + "</td><td>" + HTML$(rows$(r%, 0)) + "</td><td>" + HTML$(rows$(r%, 1)) + "</td></tr>";
+    NEXT r%
+
+    PRINT "</tbody></table></div></section>";
+    SQLITE_CLOSE(db%);
+    RETURN 0;
+  END
 ?>
 <?basil
 
@@ -78,6 +118,9 @@ PRINT READFILE$("views/home.html");
 
 ?>
 <?basil
+  // After the view HTML, show current users table from the database
+  LET __d% = render_users();
+
   IF LEN(user$) > 0 THEN BEGIN
     PRINT "<section class=\"notice\">You appear to be logged in as <strong>" + HTML$(user$) + "</strong>.\n";
     PRINT " Visit your <a href=\"user_home.basil\">dashboard</a>.";
