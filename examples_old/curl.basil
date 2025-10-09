@@ -1,0 +1,23 @@
+﻿rem CURL demo using HTTP_GET$ and HTTP_POST$ (requires building with --features obj-curl)
+
+println ""
+
+let url$ = ""
+println "", url$
+
+let body$ = HTTP_GET$(url$)
+println "", LEN(body$)
+println ""
+println LEFT$(body$, 120)
+
+' Optional: print full body
+' PRINTLN body$
+
+'' Simple POST demo (echo service)
+
+let post_url$ = ""
+let json$ = ""hello\""world\""number\"" ' Yes, this is how to raw dog a JSON string in BASIL
+let resp$ = HTTP_POST$(post_url$, json$, "")
+println "", LEN(resp$)
+
+println ""

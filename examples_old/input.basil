@@ -1,0 +1,21 @@
+﻿// Demo of input$ and if statements.
+let A$ = input$("");
+
+print ""+A$+"";
+
+let ans$ = UCASE$(INPUTC$(""));
+
+// Block if:
+
+if ans$ == "" then
+    begin
+      print "";
+      print "";
+      print "";
+    else
+        print "";
+    end
+
+// Immediate if:
+if ans$ == "" then print ""; else print "";
+print "";

@@ -1,0 +1,18 @@
+﻿println ""
+
+' Compress a single file
+ZIP_COMPRESS_FILE("", "", "")
+println ""
+
+' Compress a directory recursively
+ZIP_COMPRESS_DIR("", "")
+println ""
+
+' List entries
+let list$ = ZIP_LIST$("")
+println ""
+println list$
+
+' Extract everything
+ZIP_EXTRACT_ALL("", "")
+println ""

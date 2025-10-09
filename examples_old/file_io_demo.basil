@@ -1,0 +1,29 @@
+﻿rem File I/O demo: open, write, readline, seek, eof
+
+let path$ = "";
+
+' Write a few lines
+let w% = FOPEN(path$, "");
+FWRITELN(w%, "");
+FWRITELN(w%, "");
+FWRITELN(w%, "");
+FFLUSH(w%);
+FCLOSE(w%);
+
+' Read back line by line
+let r% = FOPEN(path$, "");
+while not FEOF(r%) begin
+  let line$ = FREADLINE$(r%);
+  if LEN(line$) > 0 then println "", line$; else println "";
+end
+
+' Seek demonstration
+println "";
+FSEEK(r%, 0, 0);                ' rewind to beginning
+println "", FTELL&(r%);
+let first5$ = FREAD$(r%, 5);
+println "", first5$;
+println "", FTELL&(r%);
+FCLOSE(r%);
+
+DELETE(path$);  ' cleanup

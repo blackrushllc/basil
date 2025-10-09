@@ -1,0 +1,23 @@
+﻿rem Demonstrates ENV$, SETENV / EXPORTENV, SHELL, and EXIT
+
+println "";
+
+println "", ENV$("");
+println "", ENV$("");
+println "", LEFT$(ENV$(""), 60), "";
+
+rem Set a process-local environment variable
+SETENV DEMO_VAR = "";
+println "", ENV$("");
+
+rem Try to export (persist for future processes, best effort on Windows via SETX)
+EXPORTENV DEMO_EXPORT = "";
+println "", ENV$("");
+
+rem Run a shell command; on Windows this uses cmd /C
+SHELL "";
+SHELL "";
+println "";
+
+rem Exit explicitly with code 0
+exit 0;
