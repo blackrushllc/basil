@@ -30,8 +30,8 @@
     LET arr$() = REQUEST$();
     FOR EACH kv$ IN arr$()
     BEGIN
-        LET eq% = FIND(kv$, "=");
-        IF eq% >= 0 THEN
+        LET eq% = INSTR(kv$, "=");
+        IF eq% > 0 THEN
         BEGIN
             LET k$ = LEFT$(kv$, eq%);
             LET v$ = MID$(kv$, eq%+2);
@@ -48,11 +48,11 @@
     LET s$ = raw$;
     LET i% = 1;
     WHILE i% <= LEN(s$) BEGIN
-      LET semi% = FIND(s$, ";", i%-1);
-      IF semi% < 0 THEN LET semi% = LEN(s$);
+      LET semi% = INSTR(s$, ";", i%-1);
+      IF semi% == 0 THEN LET semi% = LEN(s$);
       LET part$ = TRIM$(MID$(s$, i%, semi% - i% + 1));
-      LET eq% = FIND(part$, "=");
-      IF eq% >= 0 THEN BEGIN
+      LET eq% = INSTR(part$, "=");
+      IF eq% > 0 THEN BEGIN
         LET ck$ = LEFT$(part$, eq%);
         LET cv$ = MID$(part$, eq%+2);
         IF ck$ == name$ THEN RETURN cv$;
