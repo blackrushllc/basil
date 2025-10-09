@@ -53,6 +53,7 @@ use basil_bytecode::{serialize_program, deserialize_program};
 use std::collections::HashMap;
 
 mod template;
+mod repl;
 use template::{precompile_template, parse_directives_and_bom, Directives};
 
 
@@ -289,6 +290,12 @@ fn cli_main() {
         }
         "run" => {
             cmd_run(args.get(0).cloned());
+        }
+        "cli" => {
+            // basilc cli [path]
+            let path = args.get(0).cloned();
+            let sess = repl::Session::new(repl::SessionSettings::default());
+            repl::start_repl(sess, path);
         }
         "test" => {
             cmd_test(args);

@@ -196,6 +196,8 @@ pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
     globals: Vec<Value>,
+    // Keep a copy of global names for reflection/snapshots (REPL, :vars, etc.)
+    global_names: Vec<String>,
     registry: Registry,
     enums: Vec<ArrEnum>,
     current_line: u32,
@@ -332,6 +334,8 @@ impl VM {
             frames: vec![frame],
             stack: Vec::new(),
             globals,
+            // snapshot the names so we can reflect later
+            global_names: p.globals.clone(),
             registry,
             enums: Vec::new(),
             current_line: 0,
@@ -365,6 +369,19 @@ impl VM {
 
     // Provide script path so CLASS() can resolve relative file names
     pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
+
+    // Snapshot (clone) the current global names and values. Useful for REPL sessions.
+    pub fn globals_snapshot(&self) -> (Vec<String>, Vec<Value>) {
+        (self.global_names.clone(), self.globals.clone())
+    }
+
+    // Seed a global by name (case-insensitive). Returns true if found.
+    pub fn set_global_by_name(&mut self, name: &str, v: Value) -> bool {
+        if let Some(idx) = self.global_names.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+            self.globals[idx] = v;
+            true
+        } else { false }
+    }
 
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
 
