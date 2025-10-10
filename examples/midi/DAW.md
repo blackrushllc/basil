@@ -466,9 +466,45 @@ Want me to hook these notes into **save/load** (serialize Piano Roll to project 
 
 
 > Yes please
- 
 
- 
+
+
+Saved + spicy 🎹
+
+[Download: mini-DAW with Piano Roll save/load + velocity lane](sandbox:/mnt/data/basil-mini-daw-pr-save-velocity.zip)
+
+### What’s new
+
+* **Save/Load Piano Roll**:
+
+    * **Ctrl+S** saves notes to `projects/<ProjectName>/pianoroll.json`.
+    * **Ctrl+O** loads them back.
+* **Velocity lane (bottom of Piano Roll)**: tiny bar graph of note velocities in-view.
+* **Velocity editing**:
+
+    * `,` decreases velocity by 5
+    * `.` increases velocity by 5
+    * Acts on the **note at the cursor** (same pitch and start grid).
+
+### Quick usage
+
+1. Press **F5** to open Piano Roll.
+2. Use arrows to place the cursor; **Enter** to add/remove a note.
+3. Adjust that note’s velocity with **,** / **.**
+4. **Ctrl+S** to save, **Ctrl+O** to load.
+5. **Space** to play—your notes dispatch to the synth in time with BPM/loop/count-in.
+
+### Under the hood
+
+* Adds `PR_Save$(project)` / `PR_Load$(project)` wrappers and `Storage_SavePR$` / `Storage_LoadPR$` JSON routines.
+* Minimal JSON helper `JSON_GET$` for parsing without external deps.
+* Velocity lane is drawn under the grid; columns align to note starts in the visible window.
+
+Want me to:
+
+* store Piano Roll inside the **project JSON** per-track/clip instead of a separate file,
+* add **selection & multi-note velocity scaling**, or
+* show a **velocity number HUD** near the cursor?
 
 
 
