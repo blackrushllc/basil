@@ -89,6 +89,12 @@ Returns a formatted description string of an object instance or array value.
 PRINTLN DESCRIBE$(r1@);
 ```
 
+### ESCAPE$
+Escapes a string for safe inclusion in SQL string literals by doubling single quotes.
+```basil
+PRINTLN ESCAPE$("O'Reilly");
+```
+
 ### GET$
 Returns an array of GET query parameters (as strings) in CGI mode.
 ```basil
@@ -207,6 +213,24 @@ PRINTLN TYPE$(42);
 Returns the uppercase version of a string.
 ```basil
 PRINTLN UCASE$("basil");
+```
+
+### UNESCAPE$
+Reverses SQL string-escaping by collapsing doubled single quotes back to single quotes.
+```basil
+PRINTLN UNESCAPE$("O''Reilly");
+```
+
+### URLDECODE$
+Decodes application/x-www-form-urlencoded text (e.g., from GET/POST): '+' becomes space and %HH bytes become UTF-8.
+```basil
+PRINTLN URLDECODE$("Bob+Smith%26Co");
+```
+
+### URLENCODE$
+Encodes text for use as an HTTP GET parameter using application/x-www-form-urlencoded: spaces to '+', other bytes percent-encoded.
+```basil
+PRINTLN URLENCODE$("Bob Smith & Co");
 ```
 
 ## Flow Control

@@ -196,6 +196,8 @@ pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
     globals: Vec<Value>,
+    // Keep a copy of global names for reflection/snapshots (REPL, :vars, etc.)
+    global_names: Vec<String>,
     registry: Registry,
     enums: Vec<ArrEnum>,
     current_line: u32,
@@ -332,6 +334,8 @@ impl VM {
             frames: vec![frame],
             stack: Vec::new(),
             globals,
+            // snapshot the names so we can reflect later
+            global_names: p.globals.clone(),
             registry,
             enums: Vec::new(),
             current_line: 0,
@@ -366,6 +370,19 @@ impl VM {
     // Provide script path so CLASS() can resolve relative file names
     pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
 
+    // Snapshot (clone) the current global names and values. Useful for REPL sessions.
+    pub fn globals_snapshot(&self) -> (Vec<String>, Vec<Value>) {
+        (self.global_names.clone(), self.globals.clone())
+    }
+
+    // Seed a global by name (case-insensitive). Returns true if found.
+    pub fn set_global_by_name(&mut self, name: &str, v: Value) -> bool {
+        if let Some(idx) = self.global_names.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+            self.globals[idx] = v;
+            true
+        } else { false }
+    }
+
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
 
     // --- CGI param helpers ---
@@ -383,6 +400,20 @@ impl VM {
                     if let Some(b) = hv { out.push(b as char); i += 3; } else { out.push('%'); i += 1; }
                 }
                 b => { out.push(b as char); i += 1; }
+            }
+        }
+        out
+    }
+    fn url_encode_form(&self, s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for &b in s.as_bytes() {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+                b' ' => out.push('+'),
+                _ => {
+                    out.push('%');
+                    out.push_str(&format!("{:02X}", b));
+                }
             }
         }
         out
@@ -1292,6 +1323,36 @@ impl VM {
                                 let _ = disable_raw_mode();
                                 self.stack.push(Value::Str(s));
                             }
+                        }
+                        20 => { // ESCAPE$(s) - SQL string literal escape (single quotes doubled)
+                            if argc != 1 { return Err(BasilError("ESCAPE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("ESCAPE$ arg must be string".into())) };
+                            let out = s.replace("'", "''");
+                            self.stack.push(Value::Str(out));
+                        }
+                        21 => { // UNESCAPE$(s) - reverse SQL string literal escaping ('' -> ')
+                            if argc != 1 { return Err(BasilError("UNESCAPE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("UNESCAPE$ arg must be string".into())) };
+                            let mut out = String::with_capacity(s.len());
+                            let mut it = s.chars().peekable();
+                            while let Some(c) = it.next() {
+                                if c == '\'' {
+                                    if let Some('\'') = it.peek().copied() { it.next(); out.push('\''); } else { out.push('\''); }
+                                } else { out.push(c); }
+                            }
+                            self.stack.push(Value::Str(out));
+                        }
+                        22 => { // URLENCODE$(s) - application/x-www-form-urlencoded encode (spaces -> '+')
+                            if argc != 1 { return Err(BasilError("URLENCODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("URLENCODE$ arg must be string".into())) };
+                            let out = self.url_encode_form(s);
+                            self.stack.push(Value::Str(out));
+                        }
+                        23 => { // URLDECODE$(s) - application/x-www-form-urlencoded decode ('+' -> space)
+                            if argc != 1 { return Err(BasilError("URLDECODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("URLDECODE$ arg must be string".into())) };
+                            let out = self.url_decode_form(s);
+                            self.stack.push(Value::Str(out));
                         }
                         40 => { // FOPEN(path$, mode$) -> fh%
                             if argc != 2 { return Err(BasilError("FOPEN expects 2 arguments".into())); }

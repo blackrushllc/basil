@@ -208,6 +208,13 @@ Returns the value of an environment variable named by its string argument, or an
 PRINTLN "PATH=", ENV$("PATH");
 ```
 
+## ESCAPE$
+*Type:* Function (returns String)  
+Escapes a string for safe inclusion in SQL string literals by doubling single quotes.
+```basil
+PRINTLN ESCAPE$("O'Reilly");  ' prints: O''Reilly
+```
+
 ## EXIT
 *Type:* Statement  
 Exits the interpreter with an optional numeric exit code (defaults to 0).
@@ -617,6 +624,27 @@ PRINTLN TYPE$(42);
 Returns the uppercase version of a string.
 ```basil
 PRINTLN UCASE$("basil");
+```
+
+## UNESCAPE$
+*Type:* Function (returns String)  
+Reverses SQL string-escaping by collapsing doubled single quotes back to single quotes.
+```basil
+PRINTLN UNESCAPE$("O''Reilly");  ' prints: O'Reilly
+```
+
+## URLDECODE$
+*Type:* Function (returns String)  
+Decodes application/x-www-form-urlencoded text (e.g., from GET/POST): '+' becomes space and %HH bytes become UTF-8.
+```basil
+PRINTLN URLDECODE$("Bob+Smith%26Co");  ' prints: Bob Smith&Co
+```
+
+## URLENCODE$
+*Type:* Function (returns String)  
+Encodes text for use as an HTTP GET parameter using application/x-www-form-urlencoded: spaces to '+', other bytes percent-encoded.
+```basil
+PRINTLN URLENCODE$("Bob Smith & Co");  ' prints: Bob+Smith+%26+Co
 ```
 
 ## WHILE

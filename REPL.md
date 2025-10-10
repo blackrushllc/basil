@@ -1,3 +1,183 @@
+# Building a REPL (Interactive Mode CLI for Basil)
+
+This doc is also an example of my back-and-forth with ChatGPT in developing the concept of a REPL for Basil.
+
+I've removed a large portion of the discussion which preceded this where I reviewed several fundamental concepts of
+Basil and how it works, order to make sure that ChatGPT understands the problem and the solution.
+
+> Me: ... So I want to build an "Immediate Mode", or REPL command prompt. I want it to be sort of like old BASICA or GWBASIC where you can
+> directly enter commands and see them run, but I also want it to function like Laravel's "artisan tinker" command which
+> lets you run in a loaded environment. I'm thinking of adding a new launch directive called "cli" or something. We
+> currently have "run", "test", and "lex" which runs basil programs in regular mode, or in test mode which skips over all
+> inputs by providing a mock keyboard response and outputs all comments in the code during execution, or lex mode which
+> dumps tokens and stuff while the program is running. "cli" mode would load a basil (or basilx) program like normal,
+> including build the basilx like it normally would if need be, and the program would execute. It would run through all of
+> the module-level code that might be setting variables, dimensioning arrays, or performing whatever basic statements
+> might be there, and setting up all of the function definitions, and even loading basilx class objects. The program might
+> also just do nothing at all. It doesn't matter. But when the program has finished running, I want a command prompt to
+> appear like the way old style BASIC or Laravel Tinker does. Then I want the user to be able to enter statements, or
+> multiple statements separated by semicolons (which the language already allows) and then execute them on the fly or
+> displaying any errors without terminating the interpreter. I want any runtime or parse errors to simply be reported and
+> allow the command prompt entry cycle to resume until the user enters the exit command (which already exists in the
+> language). What do you think about this? I'm thinking it might be hard because the Rust project wants to compile and run
+> everything as bytecode and it wants to crash at the slightest hint of trouble. How big of a task do you think this might
+> be, and I'll follow up after reading your thoughts with a question about building the prompt for Junie Ultimate.
+
+ChatGPT: This is a great fit for a “loaded-environment REPL.” You can keep Basil’s bytecode/VM model and still get an immediate mode by compiling tiny snippet-modules on the fly into the **same live VM** that just finished running the user’s program.
+
+Here’s a concrete plan that keeps things robust and incremental:
+
+# 1) Process model (what “cli” does)
+
+1. **Load & run the target program** exactly as today (`run` path): parse/compile to `.basilx` if needed, execute module-level code, load classes/linked Rust objects, define functions, fill globals, etc.
+2. When it returns to the top frame, **don’t tear down the VM**. Drop into a **REPL loop** bound to that same VM + global env + heap.
+3. Each REPL entry is compiled as its own **ephemeral module** (a “snippet”) and executed immediately.
+
+Benefits: you get *Tinker*-style access to everything the program set up (globals, DIM’d classes, arrays, loaded objects).
+
+# 2) Snippet compilation strategy
+
+* **Two parse modes**:
+
+    * **Stmt-list mode** (default): parse one or more statements (you already support `;` separators). Good for: `LET`, `DIM`, `FOR…NEXT`, `CALL`, etc.
+    * **Expr mode** (quality-of-life): if the line parses as a lone expression, implicitly `PRINT` the result. (Classic immediate-mode feel.)
+* **Synthetic wrapper**: compile a snippet as:
+
+    * A tiny module with a single function like `__repl_chunk_N()` containing the parsed stmt-list.
+    * Link it against the **current global symbol table** so it can see existing functions, classes, globals.
+    * Emit bytecode; **don’t persist** these snippets to disk (or optionally keep a `.basilx` in a temp cache).
+* **Name resolution**:
+
+    * Reads of unknown names → resolve against globals or report an error.
+    * Writes to unknown names → create/assign **globals** (REPL is top-level).
+* **Function/class definitions in REPL**:
+
+    * Optional: allow `FUNC`/`CLASS` definitions in snippets by installing their symbols into globals on successful compile. Later snippets can use them.
+
+# 3) State & safety: run snippets without crashing
+
+* **VM invariants**: Execute each snippet in a fresh call frame. On error, unwind to the REPL top-level; never propagate a panic.
+* **Transactional updates**:
+
+    * Parse/compile: if diagnostics exist → report, discard bytecode.
+    * Execute: if runtime error/trap occurs → report, **roll back partial side effects** only if you can (see below). Otherwise, document that side effects prior to the fault remain (like Python).
+    * Minimal viable path: *don’t* roll back; just guarantee the VM is back at a clean top-of-loop state.
+* **Error policy**:
+
+    * Parser/semantic errors → display diagnostics, continue loop.
+    * Runtime errors → display error (with stack trace if `:bt` is toggled), continue loop.
+
+# 4) Globals, heap, and lifetimes
+
+* **Globals** live for the session. REPL assigns into the same global frame created by the loaded program.
+* **Class instances (handles)** created in REPL persist in the heap; they’re freed when session ends (or when reassigned / GC’d if you have GC; if not, rely on session teardown).
+* **Files/IO**: your “auto-close on interpreter exit” still applies; the REPL session is “the interpreter” lifetime.
+
+# 5) Loader integration (source vs .basilx)
+
+* Keep your **ModuleLoader** and **BytecodeCache** around for the session. Snippets link against already-loaded modules.
+* When a REPL line references `CLASS("lib/foo.basil")`, use the normal load path: if `.basilx` exists and is fresh, load it; else compile source.
+* Consider **`:reload <module>`** to invalidate a module and re-load its `.basil`/`.basilx`.
+
+# 6) UX of the REPL
+
+Add a small command layer (lines starting with `:`):
+
+* `:help` – list commands.
+* `:vars` – show globals in scope (optionally filtered).
+* `:types` – print type info for names (best-effort).
+* `:methods <var>` – reflect available members on a class instance (if you have metadata).
+* `:disasm <name>` – disassemble a known function/class method.
+* `:reload [module]` – invalidate & reload module(s).
+* `:env` – show linked objects/features/features flags.
+* `:history`, `:save <file>`, `:load <file>` – usability.
+* `:bt on|off` – toggle stack traces on runtime errors.
+* `:exit` – end session (or regular `EXIT` already in language).
+
+CLI ergonomics:
+
+* **Multiline input** when block is incomplete (`BEGIN…END`, `IF…END IF`, open quotes, etc.). Keep reading until balanced, then compile.
+* **Line editing** with history and completion (e.g., rustyline). Optional completion for globals, function names, `CLASS("...")` paths.
+* Optional prompt flair: show current module / last error code, etc.
+
+# 7) Parser/compiler tweaks (usually small)
+
+* Expose a **“parse statements”** entry (not just full modules).
+* Allow a **“toplevel”** code path that binds symbols to the current global scope instead of making a brand-new isolated one.
+* Make sure diagnostics are **non-panicking** and recoverable (return `Result<Bytecode, Diagnostics>`).
+* Ensure the **linker** can link a snippet module that imports from the live program’s symbol table.
+
+# 8) VM execution API
+
+Add a stable API something like:
+
+```rust
+pub struct Session {
+    vm: Vm,
+    globals: GlobalEnv,
+    loader: ModuleLoader,
+    cache: BytecodeCache,
+    history: Vec<String>,
+}
+
+impl Session {
+    pub fn run_program(&mut self, path: &str) -> Result<(), Diags>;
+    pub fn eval_stmtlist(&mut self, src: &str) -> Result<ExecOutcome, Diags>;
+    pub fn eval_expr(&mut self, src: &str) -> Result<Value, Diags>;
+}
+```
+
+Internally, `eval_*`:
+
+1. Lex/parse (stmt-list or expr),
+2. Lower to IR/bytecode as module `__repl_chunk_N`,
+3. Link against `self.globals`,
+4. Push a call frame and `vm.run_until_return()`,
+5. Map traps to diagnostics; on success, update `globals` with any new/updated names.
+
+# 9) “cli” entry-point behavior
+
+* `basilc cli` – start empty session (no program).
+* `basilc cli main.basil` – load/execute `main.basil` first, then REPL.
+* Options:
+
+    * `--no-exec` (only load/define functions/classes, skip module main code),
+    * `--features ...` (reuse your feature flags),
+    * `--path …` (search path for class files),
+    * `--disallow-define` (lockdown mode: statements only).
+* Consider `--test-mocks` to reuse your mock input layer in REPL for reproducible demos.
+
+# 10) Complexity & effort (what changes where)
+
+* **Parsing**: add stmt-list/expr entry points; small, contained.
+* **Compiler/linker**: support compiling “snippet” modules that link to a pre-existing global env; moderate but straightforward.
+* **VM**: ensure recoverable errors + frame cleanup; usually small if you already return `Result` from `run`.
+* **Runtime**: a `Session` wrapper that owns VM + loader + cache; moderate glue.
+* **CLI**: command loop + line editor + helpers; small-to-moderate.
+* **Nice-to-haves** (optional later): symbol reflection, disassembler view, completion metadata.
+
+Overall: **very doable** without undermining your bytecode design. The key is to **preserve the VM and globals between snippet executions** and to make compilation/execution return diagnostics rather than abort. You don’t need hot patching of existing bytecode—just keep linking new snippet modules into the same session and let them call/modify global state.
+
+If this direction feels right, I can draft the Junie prompt that asks her to:
+
+* add the `cli` subcommand,
+* implement `Session`/snippet compilation,
+* wire REPL grammar (stmt-list + expr),
+* add the `:` commands above,
+* and define the exact error-handling contract.
+
+> Me: I love it! We don't need the test mocks and we don't need to worry about reloading class files, I don't think that
+> functionaty is necessary and might be difficult to manage internally. I LOVE the multi-line support. I think it might be
+> touch for Basil to really determine when a block ends in some cases, so an alternative to trusting the parser to know
+> when a block is actually done, how about we require a double semicolon to execute the code IN ALL CASES? I know this
+> sounds kind of funny, but not only would this prevent someone from prematurely executing code that they didn't mean to,
+> it would also make it really easy to enter many commands on multiple lines at one time before letting them get run.
+> Finally, I'd like to alias just the word "quit" with ":exit" because that's common, and I'd also like to alias the
+> word "system" with ":exit" as a nod to old school basic. I would like users to be able to exit shell commands with !,
+> for instance "!dir *.basil" or "!pwd" or even "!bash" to run the command shell (if on unix/linux) and then exit back to
+> the Basil CLI. I also love the :vars and :methods and similar commands because that would really make debugging with the
+> CLI even more powerful. Can you make me one of your cool Junie prompts now?
+
 # Junie Prompt — Implement Basil “cli” Immediate Mode / REPL
 
 You are helping build **Basil**, a modern BASIC interpreter written in Rust. Basil compiles `.basil` sources to `.basilx` bytecode on first execution or code change. Programs can load **class files** (regular Basil files whose main body serves as a constructor and whose LETs are public properties, with FUNC methods). Classes are instantiated like:
