@@ -1,0 +1,13 @@
+REM Demonstration of ESCAPE$, UNESCAPE$, URLENCODE$, URLDECODE$
+
+LET raw$ = "O'Reilly & Sons";
+PRINTLN "Raw:          ", raw$;
+
+LET sql$ = ESCAPE$(raw$);
+PRINTLN "SQL escaped:  ", sql$;                 REM -> O''Reilly & Sons
+PRINTLN "SQL unescape: ", UNESCAPE$(sql$);       REM -> O'Reilly & Sons
+
+LET q$ = "name=Bob Smith & title=Engineer";
+LET enc$ = URLENCODE$(q$);
+PRINTLN "URL encoded:  ", enc$;                 REM -> name%3DBob+Smith+%26+title%3DEngineer
+PRINTLN "URL decoded:  ", URLDECODE$(enc$);     REM -> name=Bob Smith & title=Engineer

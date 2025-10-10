@@ -12,6 +12,8 @@ basil-parser = { workspace = true }
 basil-compiler= { workspace = true }
 basil-vm = { workspace = true }
 basil-bytecode = { workspace = true }
+basil-ast = { workspace = true }
+rustyline = "13"
 
 [features]
 obj-bmx = ["basil-vm/obj-bmx"]
