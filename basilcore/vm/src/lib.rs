@@ -404,6 +404,20 @@ impl VM {
         }
         out
     }
+    fn url_encode_form(&self, s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for &b in s.as_bytes() {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+                b' ' => out.push('+'),
+                _ => {
+                    out.push('%');
+                    out.push_str(&format!("{:02X}", b));
+                }
+            }
+        }
+        out
+    }
     fn parse_pairs(&self, s: &str) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for part in s.split('&') {
@@ -1309,6 +1323,36 @@ impl VM {
                                 let _ = disable_raw_mode();
                                 self.stack.push(Value::Str(s));
                             }
+                        }
+                        20 => { // ESCAPE$(s) - SQL string literal escape (single quotes doubled)
+                            if argc != 1 { return Err(BasilError("ESCAPE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("ESCAPE$ arg must be string".into())) };
+                            let out = s.replace("'", "''");
+                            self.stack.push(Value::Str(out));
+                        }
+                        21 => { // UNESCAPE$(s) - reverse SQL string literal escaping ('' -> ')
+                            if argc != 1 { return Err(BasilError("UNESCAPE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("UNESCAPE$ arg must be string".into())) };
+                            let mut out = String::with_capacity(s.len());
+                            let mut it = s.chars().peekable();
+                            while let Some(c) = it.next() {
+                                if c == '\'' {
+                                    if let Some('\'') = it.peek().copied() { it.next(); out.push('\''); } else { out.push('\''); }
+                                } else { out.push(c); }
+                            }
+                            self.stack.push(Value::Str(out));
+                        }
+                        22 => { // URLENCODE$(s) - application/x-www-form-urlencoded encode (spaces -> '+')
+                            if argc != 1 { return Err(BasilError("URLENCODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("URLENCODE$ arg must be string".into())) };
+                            let out = self.url_encode_form(s);
+                            self.stack.push(Value::Str(out));
+                        }
+                        23 => { // URLDECODE$(s) - application/x-www-form-urlencoded decode ('+' -> space)
+                            if argc != 1 { return Err(BasilError("URLDECODE$ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("URLDECODE$ arg must be string".into())) };
+                            let out = self.url_decode_form(s);
+                            self.stack.push(Value::Str(out));
                         }
                         40 => { // FOPEN(path$, mode$) -> fh%
                             if argc != 2 { return Err(BasilError("FOPEN expects 2 arguments".into())); }
