@@ -1,0 +1,3 @@
+COLOR("brightyellow", "blue"); CLS;
+PRINTLN "Hello, colorful world!";
+COLOR_RESET; PRINTLN "Back to defaults.";

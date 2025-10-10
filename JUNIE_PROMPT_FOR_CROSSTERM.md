@@ -1,7 +1,3 @@
-Awesome—here’s a tight, copy-paste **build prompt for Junie** to add a new Basil Feature Object for terminal screen control using **Crossterm**. It defines the BASIC-style API (CLS/LOCATE/COLOR/etc.), behavior, edge cases, and quick tests—so she can implement without circling back.
-
----
-
 # JUNIE TASK — Add `obj-term` (Crossterm terminal screen library for Basil)
 
 **Goal:** Create a new Feature Object **`obj-term`** that exposes BASIC-style terminal screen manipulation backed by **Crossterm** (Windows/Linux/macOS). When the feature is enabled, Basil gains new commands that control the screen and colors and work naturally with `PRINT`, `PRINTLN`, and `INPUT`.

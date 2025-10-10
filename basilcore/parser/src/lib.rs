@@ -424,6 +424,28 @@ impl Parser {
             }
         }
 
+        // Special-case: SLEEP expr or SLEEP(expr) as a statement without requiring parentheses
+        if self.check(TokenKind::Ident) {
+            let save_i = self.i;
+            let name = self.expect_ident()?;
+            if name.eq_ignore_ascii_case("SLEEP") {
+                // Accept either SLEEP(expr) or SLEEP expr
+                let arg = if self.match_k(TokenKind::LParen) {
+                    let e = self.parse_expr_bp(0)?;
+                    self.expect(TokenKind::RParen)?;
+                    e
+                } else {
+                    self.parse_expr_bp(0)?
+                };
+                self.terminate_stmt()?;
+                let call = Expr::Call { callee: Box::new(Expr::Var("SLEEP".to_string())), args: vec![arg] };
+                return Ok(Stmt::ExprStmt(call));
+            } else {
+                // Not SLEEP; rewind and continue with regular parsing
+                self.i = save_i;
+            }
+        }
+
         // Fallback: either member property assignment (without LET) or expression statement
         let e = self.parse_expr_bp(0)?;
         if self.check(TokenKind::Assign) {

@@ -50,6 +50,23 @@ cargo run -q -p basilc --features "obj-curl obj-zip obj-base64" -- run examples/
 cargo run -q -p basilc --features obj-all -- run examples/objects.basil
 ```
 
+Terminal control (obj-term):
+
+- Enable the terminal feature and run examples:
+  cargo run -q -p basilc --features obj-term -- run examples/term/01_colors_and_cls.basil
+
+- New commands when enabled:
+  CLS, CLEAR, HOME, LOCATE(x%, y%), COLOR(fg, bg), COLOR_RESET, ATTR(bold%, underline%, reverse%), ATTR_RESET,
+  CURSOR_SAVE, CURSOR_RESTORE, TERM_COLS%(), TERM_ROWS%(), CURSOR_HIDE, CURSOR_SHOW, TERM_ERR$()
+
+Color values for COLOR can be 0..15 or names (case-insensitive):
+  0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White, 8=Grey,
+  9=BrightRed, 10=BrightGreen, 11=BrightYellow, 12=BrightBlue, 13=BrightMagenta, 14=BrightCyan, 15=BrightWhite
+  Names: "black","red","green","yellow","blue","magenta","cyan","white","grey",
+         "brightred","brightgreen","brightyellow","brightblue","brightmagenta","brightcyan","brightwhite"
+
+Examples are in examples/term/.
+
 See:
  + examples - lots of Basil program examples
  + examples/hello.basil - "Hello World" program
