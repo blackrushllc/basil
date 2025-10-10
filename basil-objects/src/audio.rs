@@ -1,5 +1,4 @@
 use basil_common::{Result, BasilError};
-use basil_bytecode::{Value, ObjectDescriptor, PropDesc, MethodDesc};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 // Minimal, compilable MVP for audio object helpers.
@@ -142,22 +141,296 @@ pub mod wavio {
 pub fn register(_reg: &mut crate::Registry) { let _ = _reg; }
 
 // Helper functions used by VM builtins
+#[cfg(feature = "obj-audio")]
+pub fn audio_default_rate() -> i64 {
+    use cpal::traits::{HostTrait, DeviceTrait};
+    let host = cpal::default_host();
+    if let Some(dev) = host.default_output_device() {
+        if let Ok(cfg) = dev.default_output_config() { return cfg.sample_rate().0 as i64; }
+    }
+    48000
+}
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_default_rate() -> i64 { 48000 }
+
+#[cfg(feature = "obj-audio")]
+pub fn audio_default_chans() -> i64 {
+    use cpal::traits::{HostTrait, DeviceTrait};
+    let host = cpal::default_host();
+    if let Some(dev) = host.default_output_device() {
+        if let Ok(cfg) = dev.default_output_config() { return cfg.channels() as i64; }
+    }
+    2
+}
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_default_chans() -> i64 { 2 }
 
+#[cfg(feature = "obj-audio")]
+pub fn audio_inputs() -> Vec<String> {
+    use cpal::traits::{HostTrait, DeviceTrait};
+    let host = cpal::default_host();
+    let mut v = Vec::new();
+    if let Ok(devs) = host.input_devices() {
+        for d in devs { v.push(d.name().unwrap_or_default()); }
+    }
+    v
+}
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_inputs() -> Vec<String> { Vec::new() }
+
+#[cfg(feature = "obj-audio")]
+pub fn audio_outputs() -> Vec<String> {
+    use cpal::traits::{HostTrait, DeviceTrait};
+    let host = cpal::default_host();
+    let mut v = Vec::new();
+    if let Ok(devs) = host.output_devices() {
+        for d in devs { v.push(d.name().unwrap_or_default()); }
+    }
+    v
+}
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_outputs() -> Vec<String> { Vec::new() }
 
+// Device I/O
+#[cfg(feature = "obj-audio")]
+mod devio {
+    use super::*;
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::cell::RefCell;
+    use std::sync::{Mutex, Arc};
+
+    pub struct InEntry { pub stream: cpal::Stream, pub ring: Option<Arc<Mutex<RingBuf>>> }
+    pub struct OutEntry { pub stream: cpal::Stream, pub ring: Option<Arc<Mutex<RingBuf>>> }
+
+    thread_local! {
+        static IN_TABLE: RefCell<Vec<Option<InEntry>>> = RefCell::new(Vec::new());
+        static OUT_TABLE: RefCell<Vec<Option<OutEntry>>> = RefCell::new(Vec::new());
+    }
+    fn in_tab_mut<F: FnOnce(&mut Vec<Option<InEntry>>)> (f: F) { IN_TABLE.with(|t| f(&mut *t.borrow_mut())) }
+    fn out_tab_mut<F: FnOnce(&mut Vec<Option<OutEntry>>)> (f: F) { OUT_TABLE.with(|t| f(&mut *t.borrow_mut())) }
+
+    fn find_input(substr: &str) -> Option<cpal::Device> {
+        let host = cpal::default_host();
+        if substr.trim().is_empty() { return host.default_input_device(); }
+        let needle = substr.to_lowercase();
+        if let Ok(devs) = host.input_devices() {
+            for d in devs { if d.name().ok()?.to_lowercase().contains(&needle) { return Some(d); } }
+        }
+        host.default_input_device()
+    }
+    fn find_output(substr: &str) -> Option<cpal::Device> {
+        let host = cpal::default_host();
+        if substr.trim().is_empty() { return host.default_output_device(); }
+        let needle = substr.to_lowercase();
+        if let Ok(devs) = host.output_devices() {
+            for d in devs { if d.name().ok()?.to_lowercase().contains(&needle) { return Some(d); } }
+        }
+        host.default_output_device()
+    }
+
+    pub fn open_in(substr: &str) -> Result<i64> {
+        let dev = find_input(substr).ok_or_else(|| BasilError(format!("AUDIO_OPEN_IN@: no input device matches '{}'", substr)))?;
+        let cfg = dev.default_input_config().map_err(|e| BasilError(format!("AUDIO_OPEN_IN@: get config failed: {e}")))?;
+        let sample_format = cfg.sample_format();
+        let config = cfg.config().clone();
+        let ring: Arc<Mutex<RingBuf>> = Arc::new(Mutex::new(RingBuf::new(1)));
+        let ring_clone = ring.clone();
+        let err_fn = |e| eprintln!("cpal input error: {e}");
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => {
+                let rc = ring_clone;
+                dev.build_input_stream(&config, move |buf: &[f32], _| {
+                    if let Ok(mut r) = rc.lock() { let _ = r.push(buf); }
+                }, err_fn, None)
+            }
+            cpal::SampleFormat::I16 => {
+                let rc = ring_clone;
+                dev.build_input_stream(&config, move |buf: &[i16], _| {
+                    if let Ok(mut r) = rc.lock() { for &s in buf { let _ = r.push(&[(s as f32)/32768.0]); } }
+                }, err_fn, None)
+            }
+            cpal::SampleFormat::U16 => {
+                let rc = ring_clone;
+                dev.build_input_stream(&config, move |buf: &[u16], _| {
+                    if let Ok(mut r) = rc.lock() { for &s in buf { let v = (s as f32 / u16::MAX as f32) * 2.0 - 1.0; let _ = r.push(&[v]); } }
+                }, err_fn, None)
+            }
+            _ => return Err(BasilError("AUDIO_OPEN_IN@: unsupported sample format".into())),
+        }.map_err(|e| BasilError(format!("AUDIO_OPEN_IN@: build stream failed: {e}")))?;
+        let mut handle = -1i64;
+        in_tab_mut(|tab| {
+            handle = super::alloc_handle(tab, InEntry { stream, ring: Some(ring) });
+        });
+        Ok(handle)
+    }
+
+    pub fn open_out(substr: &str) -> Result<i64> {
+        let dev = find_output(substr).ok_or_else(|| BasilError(format!("AUDIO_OPEN_OUT@: no output device matches '{}'", substr)))?;
+        let cfg = dev.default_output_config().map_err(|e| BasilError(format!("AUDIO_OPEN_OUT@: get config failed: {e}")))?;
+        let sample_format = cfg.sample_format();
+        let config = cfg.config().clone();
+        let ring: Arc<Mutex<RingBuf>> = Arc::new(Mutex::new(RingBuf::new(1)));
+        let ring_clone = ring.clone();
+        let err_fn = |e| eprintln!("cpal output error: {e}");
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => {
+                let rc = ring_clone;
+                dev.build_output_stream(&config, move |buf: &mut [f32], _| {
+                    if let Ok(mut r) = rc.lock() {
+                        let mut tmp = vec![0.0f32; buf.len()];
+                        let n = r.pop(&mut tmp);
+                        for i in 0..buf.len() { buf[i] = if i < n { tmp[i] } else { 0.0 }; }
+                    } else { for s in buf.iter_mut() { *s = 0.0; } }
+                }, err_fn, None)
+            }
+            cpal::SampleFormat::I16 => {
+                let rc = ring_clone;
+                dev.build_output_stream(&config, move |buf: &mut [i16], _| {
+                    if let Ok(mut r) = rc.lock() {
+                        let mut tmp = vec![0.0f32; buf.len()];
+                        let n = r.pop(&mut tmp);
+                        for i in 0..buf.len() { buf[i] = if i < n { (tmp[i].max(-1.0).min(1.0) * i16::MAX as f32) as i16 } else { 0 }; }
+                    } else { for s in buf.iter_mut() { *s = 0; } }
+                }, err_fn, None)
+            }
+            cpal::SampleFormat::U16 => {
+                let rc = ring_clone;
+                dev.build_output_stream(&config, move |buf: &mut [u16], _| {
+                    if let Ok(mut r) = rc.lock() {
+                        let mut tmp = vec![0.0f32; buf.len()];
+                        let n = r.pop(&mut tmp);
+                        for i in 0..buf.len() {
+                            if i < n {
+                                let v = (tmp[i].max(-1.0).min(1.0) * 0.5 + 0.5) * (u16::MAX as f32);
+                                buf[i] = v as u16;
+                            } else { buf[i] = u16::MIN; }
+                        }
+                    } else { for s in buf.iter_mut() { *s = u16::MIN; } }
+                }, err_fn, None)
+            }
+            _ => return Err(BasilError("AUDIO_OPEN_OUT@: unsupported sample format".into())),
+        }.map_err(|e| BasilError(format!("AUDIO_OPEN_OUT@: build stream failed: {e}")))?;
+        let mut handle = -1i64;
+        out_tab_mut(|tab| {
+            handle = super::alloc_handle(tab, OutEntry { stream, ring: Some(ring) });
+        });
+        Ok(handle)
+    }
+
+    pub fn start(h: i64) -> Result<i64> {
+        let mut found = false;
+        let mut err: Option<String> = None;
+        in_tab_mut(|tab| {
+            if let Some(Some(entry)) = tab.get_mut(h as usize) {
+                found = true;
+                if let Err(e) = entry.stream.play() { err = Some(format!("{}", e)); }
+            }
+        });
+        if found { return if let Some(e) = err { Err(BasilError(format!("AUDIO_START%: {}", e))) } else { Ok(0) }; }
+        out_tab_mut(|tab| {
+            if let Some(Some(entry)) = tab.get_mut(h as usize) {
+                found = true;
+                if let Err(e) = entry.stream.play() { err = Some(format!("{}", e)); }
+            }
+        });
+        if found { return if let Some(e) = err { Err(BasilError(format!("AUDIO_START%: {}", e))) } else { Ok(0) }; }
+        Err(BasilError("AUDIO_START%: invalid handle".into()))
+    }
+    pub fn stop(h: i64) -> Result<i64> {
+        let mut found = false;
+        let mut err: Option<String> = None;
+        in_tab_mut(|tab| {
+            if let Some(Some(entry)) = tab.get_mut(h as usize) {
+                found = true;
+                if let Err(e) = entry.stream.pause() { err = Some(format!("{}", e)); }
+            }
+        });
+        if found { return if let Some(e) = err { Err(BasilError(format!("AUDIO_STOP%: {}", e))) } else { Ok(0) }; }
+        out_tab_mut(|tab| {
+            if let Some(Some(entry)) = tab.get_mut(h as usize) {
+                found = true;
+                if let Err(e) = entry.stream.pause() { err = Some(format!("{}", e)); }
+            }
+        });
+        if found { return if let Some(e) = err { Err(BasilError(format!("AUDIO_STOP%: {}", e))) } else { Ok(0) }; }
+        Err(BasilError("AUDIO_STOP%: invalid handle".into()))
+    }
+    pub fn close(h: i64) -> Result<i64> {
+        let mut closed = false;
+        in_tab_mut(|tab| {
+            if let Some(slot) = tab.get_mut(h as usize) { *slot = None; closed = true; }
+        });
+        if !closed {
+            out_tab_mut(|tab| {
+                if let Some(slot) = tab.get_mut(h as usize) { *slot = None; closed = true; }
+            });
+        }
+        if closed { Ok(0) } else { Err(BasilError("AUDIO_CLOSE%: invalid handle".into())) }
+    }
+
+    pub fn connect_in_to_ring(in_h: i64, ring_h: i64) -> Result<i64> {
+        let rb = {
+            let tab = super::rb_tab().lock().unwrap();
+            let e = tab.get(ring_h as usize).and_then(|o| o.as_ref()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
+            e.rb.clone()
+        };
+        let mut ok = false;
+        in_tab_mut(|tab| {
+            if let Some(entry) = tab.get_mut(in_h as usize).and_then(|o| o.as_mut()) {
+                entry.ring = Some(rb.clone());
+                ok = true;
+            }
+        });
+        if ok { Ok(0) } else { Err(BasilError("Invalid input handle".into())) }
+    }
+    pub fn connect_ring_to_out(ring_h: i64, out_h: i64) -> Result<i64> {
+        let rb = {
+            let tab = super::rb_tab().lock().unwrap();
+            let e = tab.get(ring_h as usize).and_then(|o| o.as_ref()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
+            e.rb.clone()
+        };
+        let mut ok = false;
+        out_tab_mut(|tab| {
+            if let Some(entry) = tab.get_mut(out_h as usize).and_then(|o| o.as_mut()) {
+                entry.ring = Some(rb.clone());
+                ok = true;
+            }
+        });
+        if ok { Ok(0) } else { Err(BasilError("Invalid output handle".into())) }
+    }
+}
+
+#[cfg(not(feature = "obj-audio"))]
 // Device stubs
 pub fn audio_open_in(_substr: &str) -> Result<i64> { set_err("AUDIO_OPEN_IN@: device I/O not compiled in"); Err(BasilError("AUDIO_OPEN_IN@: not available".into())) }
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_open_out(_substr: &str) -> Result<i64> { set_err("AUDIO_OPEN_OUT@: device I/O not compiled in"); Err(BasilError("AUDIO_OPEN_OUT@: not available".into())) }
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_start(_h: i64) -> Result<i64> { set_err("AUDIO_START%: not available"); Err(BasilError("AUDIO_START%: not available".into())) }
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_stop(_h: i64) -> Result<i64> { Ok(0) }
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_close(_h: i64) -> Result<i64> { Ok(0) }
 
+#[cfg(feature = "obj-audio")]
+pub fn audio_open_in(substr: &str) -> Result<i64> { devio::open_in(substr) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_open_out(substr: &str) -> Result<i64> { devio::open_out(substr) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_start(h: i64) -> Result<i64> { devio::start(h) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_stop(h: i64) -> Result<i64> { devio::stop(h) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_close(h: i64) -> Result<i64> { devio::close(h) }
+
+#[cfg(feature = "obj-audio")]
+pub fn audio_connect_in_to_ring(in_h: i64, ring_h: i64) -> Result<i64> { devio::connect_in_to_ring(in_h, ring_h) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_connect_ring_to_out(ring_h: i64, out_h: i64) -> Result<i64> { devio::connect_ring_to_out(ring_h, out_h) }
+
 // Ring buffer handle table (simple)
-use std::sync::{Mutex, OnceLock};
-struct RbEntry { rb: RingBuf }
+use std::sync::{Mutex, OnceLock, Arc};
+struct RbEntry { rb: Arc<Mutex<RingBuf>> }
 static RB_TABLE: OnceLock<Mutex<Vec<Option<RbEntry>>>> = OnceLock::new();
 fn rb_tab() -> &'static Mutex<Vec<Option<RbEntry>>> { RB_TABLE.get_or_init(|| Mutex::new(Vec::new())) }
 fn alloc_handle<T>(tab: &mut Vec<Option<T>>, val: T) -> i64 {
@@ -170,19 +443,19 @@ fn alloc_handle<T>(tab: &mut Vec<Option<T>>, val: T) -> i64 {
 
 pub fn ring_create(frames: i64) -> Result<i64> {
     let mut tab = rb_tab().lock().unwrap();
-    let h = alloc_handle(&mut *tab, RbEntry{ rb: RingBuf::new(frames as usize) });
+    let h = alloc_handle(&mut *tab, RbEntry{ rb: Arc::new(Mutex::new(RingBuf::new(frames as usize))) });
     Ok(h)
 }
 pub fn ring_push(h: i64, data: &[f32]) -> Result<i64> {
     let mut tab = rb_tab().lock().unwrap();
     let entry = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
-    let n = entry.rb.push(data);
+    let n = entry.rb.lock().map_err(|_| BasilError("Ring lock poisoned".into()))?.push(data);
     Ok(n as i64)
 }
 pub fn ring_pop(h: i64, out: &mut [f32]) -> Result<i64> {
     let mut tab = rb_tab().lock().unwrap();
     let entry = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
-    let n = entry.rb.pop(out);
+    let n = entry.rb.lock().map_err(|_| BasilError("Ring lock poisoned".into()))?.pop(out);
     Ok(n as i64)
 }
 

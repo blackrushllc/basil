@@ -1,0 +1,8 @@
+REM Smoke test: short record + immediate playback to confirm device routing;
+PRINTLN "Quick check: 2s record → play.";
+rc% = AUDIO_RECORD%("usb", "qc.wav", 2);
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;
+
+rc% = AUDIO_PLAY%("usb", "qc.wav");
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;
+PRINTLN "OK.";

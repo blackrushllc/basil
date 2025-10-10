@@ -1,0 +1,37 @@
+REM Pick the first output containing a substring, then play a short beep via synth;
+outs$[] = AUDIO_OUTPUTS$[];
+match$ = "usb";
+pick$ = "";
+FOR i% = 0 TO LEN(outs$[]) - 1 BEGIN
+  IF INSTR(LOWER$(outs$[](i%)), match$) > 0 THEN pick$ = outs$[](i%);
+END
+IF pick$ == "" THEN PRINTLN "No match for 'usb' in outputs."; RETURN;
+
+out@ = AUDIO_OPEN_OUT@(pick$);
+rb@  = AUDIO_RING_CREATE@(AUDIO_DEFAULT_RATE%() * AUDIO_DEFAULT_CHANS%());
+ok%  = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@);
+ok%  = AUDIO_START%(out@);
+
+rate% = AUDIO_DEFAULT_RATE%();
+s@ = SYNTH_NEW@(rate%, 8);
+SYNTH_NOTE_ON%(s@, 69, 100);   REM A4
+DIM mono%[](rate% / 5);        REM 200ms
+DIM inter%[](LEN(mono%[]) * AUDIO_DEFAULT_CHANS%());
+
+FOR n% = 0 TO 4 BEGIN
+  SYNTH_RENDER%(s@, mono%[]);
+  idx% = 0;
+  FOR i% = 0 TO LEN(mono%[]) - 1 BEGIN
+    FOR c% = 0 TO AUDIO_DEFAULT_CHANS%() - 1 BEGIN
+      inter%[](idx%) = mono%[](i%); idx% = idx% + 1;
+    END
+  END
+  ok% = AUDIO_RING_PUSH%(rb@, inter%[]);
+END
+SYNTH_NOTE_OFF%(s@, 69);
+
+SLEEP 300;
+ok% = AUDIO_STOP%(out@);
+AUDIO_CLOSE%(out@);
+SYNTH_DELETE%(s@);
+PRINTLN "Beeped on: "; PRINTLN pick$;

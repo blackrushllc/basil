@@ -1,0 +1,4 @@
+REM Input → Output pass-through (helper is blocking; stop with DAW_STOP from another console);
+PRINTLN "Live monitor: input 'usb' → output 'usb'. Run examples/05_stop_helpers_now.basil in another terminal to stop.";
+rc% = AUDIO_MONITOR%("usb", "usb");
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$();

@@ -1,0 +1,24 @@
+REM Play a WAV by pushing decoded samples to an output ring;
+samples%[] = WAV_READ_ALL%[]("take_low.wav");
+out@  = AUDIO_OPEN_OUT@("usb");
+rb@   = AUDIO_RING_CREATE@(AUDIO_DEFAULT_RATE%() * AUDIO_DEFAULT_CHANS%() * 4);
+ok%   = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@);
+ok%   = AUDIO_START%(out@);
+
+PRINTLN "Playing take_low.wav…";
+i% = 0;
+chunk% = AUDIO_DEFAULT_RATE%() * AUDIO_DEFAULT_CHANS%() / 10; REM ~100ms
+DIM win%[](chunk%);
+
+WHILE i% < LEN(samples%[]) BEGIN
+  copy% = MIN(chunk%, LEN(samples%[]) - i%);
+  FOR k% = 0 TO copy% - 1 BEGIN
+    win%[](k%) = samples%[](i% + k%);
+  END
+  pushed% = AUDIO_RING_PUSH%(rb@, win%[]);
+  i% = i% + copy%;
+END
+
+SLEEP 500;
+ok% = AUDIO_STOP%(out@); ok% = AUDIO_CLOSE%(out@);
+PRINTLN "Done.";

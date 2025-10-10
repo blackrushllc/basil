@@ -1,0 +1,14 @@
+REM Poll MIDI input and print events until keypress;
+m@ = MIDI_OPEN_IN@("launchkey");
+
+PRINTLN "MIDI events (press any key to quit)…";
+DO
+  WHILE MIDI_POLL%(m@) > 0 BEGIN
+    ev$[] = MIDI_GET_EVENT$[](m@);  REM ["status","data1","data2"]
+    PRINT "MIDI: "; PRINT ev$[](0); PRINT ", "; PRINT ev$[](1); PRINT ", "; PRINTLN ev$[](2);
+  END
+  k$ = INKEY$();
+LOOP UNTIL k$ <> "";
+
+MIDI_CLOSE%(m@);
+PRINTLN "Bye.";
