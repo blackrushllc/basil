@@ -85,6 +85,18 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::sqlite::register(_reg);
     }
+    #[cfg(feature = "obj-audio")]
+    {
+        crate::audio::register(_reg);
+    }
+    #[cfg(feature = "obj-midi")]
+    {
+        crate::midi::register(_reg);
+    }
+    #[cfg(feature = "obj-daw")]
+    {
+        crate::daw::register(_reg);
+    }
 }
 
 #[cfg(feature = "obj-base64")]
@@ -103,3 +115,9 @@ pub mod json;
 mod csv;
 #[cfg(feature = "obj-sqlite")]
 pub mod sqlite;
+#[cfg(feature = "obj-audio")]
+pub mod audio;
+#[cfg(feature = "obj-midi")]
+pub mod midi;
+#[cfg(feature = "obj-daw")]
+pub mod daw;

@@ -1,0 +1,3 @@
+REM Play a WAV file to the first output device matching substring
+LET rc% = AUDIO_PLAY%("usb", "take1.wav");
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()

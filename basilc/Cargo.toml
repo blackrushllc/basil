@@ -25,4 +25,8 @@ obj-curl = ["basil-vm/obj-curl", "basil-compiler/obj-curl"]
 obj-json = ["basil-vm/obj-json", "basil-compiler/obj-json"]
 obj-csv = ["basil-vm/obj-csv", "basil-compiler/obj-csv"]
 obj-sqlite = ["basil-vm/obj-sqlite", "basil-compiler/obj-sqlite"]
+# New audio/MIDI/DAW features forwarded to VM and compiler
+obj-audio = ["basil-vm/obj-audio", "basil-compiler/obj-audio"]
+obj-midi  = ["basil-vm/obj-midi",  "basil-compiler/obj-midi"]
+obj-daw   = ["basil-vm/obj-daw", "basil-compiler/obj-daw", "obj-audio", "obj-midi"]
 obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx"]
