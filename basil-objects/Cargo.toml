@@ -38,3 +38,4 @@ rusqlite = { version = "0.31", features = ["bundled"], optional = true }
 hound = { version = "3", optional = true }
 cpal = { version = "0.15", optional = true }
 midir = { version = "0.10", optional = true }
+rtrb = "0.3"
