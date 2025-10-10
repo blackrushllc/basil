@@ -592,6 +592,45 @@ pub fn wav_read_all(path: &str) -> Result<Vec<f32>> {
     { set_err("WAV read not available (hound disabled)"); Err(BasilError("WAV read not available".into())) }
 }
 
+// --- Low-level Synth handle API (obj-audio) ---
+static SYNTH_TABLE: OnceLock<Mutex<Vec<Option<Synth>>>> = OnceLock::new();
+fn synth_tab() -> &'static Mutex<Vec<Option<Synth>>> { SYNTH_TABLE.get_or_init(|| Mutex::new(Vec::new())) }
+
+#[cfg(feature = "obj-audio")]
+pub fn synth_new(rate: i64, poly: i64) -> Result<i64> {
+    let mut tab = synth_tab().lock().unwrap();
+    let rate_u = if rate <= 0 { 48000 } else { rate as u32 };
+    let poly_u = if poly <= 0 { 8 } else { poly as usize };
+    let h = alloc_handle(&mut *tab, Synth::new(rate_u, poly_u));
+    Ok(h)
+}
+#[cfg(feature = "obj-audio")]
+pub fn synth_note_on(h: i64, note: i64, vel: i64) -> Result<i64> {
+    let mut tab = synth_tab().lock().unwrap();
+    let s = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid synth handle".into()))?;
+    s.note_on(note as u8, vel.max(0).min(127) as u8);
+    Ok(0)
+}
+#[cfg(feature = "obj-audio")]
+pub fn synth_note_off(h: i64, note: i64) -> Result<i64> {
+    let mut tab = synth_tab().lock().unwrap();
+    let s = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid synth handle".into()))?;
+    s.note_off(note as u8);
+    Ok(0)
+}
+#[cfg(feature = "obj-audio")]
+pub fn synth_render(h: i64, out: &mut [f32]) -> Result<i64> {
+    let mut tab = synth_tab().lock().unwrap();
+    let s = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid synth handle".into()))?;
+    s.render(out);
+    Ok(out.len() as i64)
+}
+#[cfg(feature = "obj-audio")]
+pub fn synth_delete(h: i64) -> Result<i64> {
+    let mut tab = synth_tab().lock().unwrap();
+    if let Some(slot) = tab.get_mut(h as usize) { *slot = None; Ok(0) } else { Err(BasilError("Invalid synth handle".into())) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
