@@ -19,3 +19,7 @@ obj-curl = []
 obj-json = []
 obj-csv = []
 obj-sqlite = []
+# Audio/MIDI/DAW features used as cfg gates in compiler (no deps here)
+obj-audio = []
+obj-midi  = []
+obj-daw   = ["obj-audio", "obj-midi"]

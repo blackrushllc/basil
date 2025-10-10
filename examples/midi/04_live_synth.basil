@@ -1,0 +1,4 @@
+REM Play your MIDI keyboard through a built-in poly synth → selected output;
+PRINTLN "Live synth: MIDI 'launchkey' → output 'usb' (poly=16).";
+rc% = SYNTH_LIVE%("launchkey", "usb", 16);
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$();

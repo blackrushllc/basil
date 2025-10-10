@@ -1,0 +1,4 @@
+REM Send a global stop to any blocking helper (monitor, capture, live synth);
+PRINTLN "Stopping all running DAW helpers…";
+DAW_STOP();
+PRINTLN "Stop requested.";

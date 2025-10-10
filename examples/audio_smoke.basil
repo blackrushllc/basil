@@ -1,0 +1,10 @@
+REM Minimal smoke test for low-level audio
+REM Try to open default output (empty substring = default)
+LET out@ = AUDIO_OPEN_OUT@("");
+IF out@ < 0 THEN PRINT "open_out failed: ", DAW_ERR$();
+LET rc% = AUDIO_START%(out@);
+PRINT "start rc=", rc%;
+LET rc% = AUDIO_STOP%(out@);
+PRINT "stop rc=", rc%;
+LET rc% = AUDIO_CLOSE%(out@);
+PRINT "close rc=", rc%;
