@@ -24,41 +24,8 @@ thread_local! {
 pub fn set_err(msg: impl Into<String>) { LAST_ERR.with(|e| *e.borrow_mut() = msg.into()); }
 pub fn take_err() -> String { LAST_ERR.with(|e| e.borrow().clone()) }
 
-// Simple ring buffer for interleaved f32 audio frames.
-#[derive(Clone)]
-pub struct RingBuf {
-    buf: Vec<f32>,
-    cap: usize,
-    read: usize,
-    write: usize,
-    len: usize,
-}
-impl RingBuf {
-    pub fn new(frames: usize) -> Self {
-        let cap = frames.max(1);
-        Self { buf: vec![0.0; cap], cap, read: 0, write: 0, len: 0 }
-    }
-    pub fn push(&mut self, data: &[f32]) -> usize {
-        let mut n = 0;
-        for &x in data.iter() {
-            if self.len == self.cap { break; }
-            self.buf[self.write] = x;
-            self.write = (self.write + 1) % self.cap;
-            self.len += 1; n += 1;
-        }
-        n
-    }
-    pub fn pop(&mut self, out: &mut [f32]) -> usize {
-        let mut n = 0;
-        for o in out.iter_mut() {
-            if self.len == 0 { break; }
-            *o = self.buf[self.read];
-            self.read = (self.read + 1) % self.cap;
-            self.len -= 1; n += 1;
-        }
-        n
-    }
-}
+// Lock-free SPSC ring using rtrb for interleaved f32 frames.
+// We expose push/pop via handle-based API below; no public RingBuf type is needed here.
 
 // Basic synth: polyphonic sine generator
 pub struct Synth {
@@ -199,8 +166,8 @@ mod devio {
     use std::cell::RefCell;
     use std::sync::{Mutex, Arc};
 
-    pub struct InEntry { pub stream: cpal::Stream, pub ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>>, pub chans: u16, pub rate: u32 }
-    pub struct OutEntry { pub stream: cpal::Stream, pub ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>>, pub chans: u16, pub rate: u32 }
+    pub struct InEntry { pub stream: cpal::Stream, pub ring_sel: Arc<Mutex<Option<rtrb::Producer<f32>>>>, pub chans: u16, pub rate: u32 }
+    pub struct OutEntry { pub stream: cpal::Stream, pub ring_sel: Arc<Mutex<Option<rtrb::Consumer<f32>>>>, pub chans: u16, pub rate: u32 }
 
     thread_local! {
         static IN_TABLE: RefCell<Vec<Option<InEntry>>> = RefCell::new(Vec::new());
@@ -243,16 +210,18 @@ mod devio {
         config.buffer_size = cpal::BufferSize::Fixed(256);
         let chans = config.channels;
         let rate = config.sample_rate.0;
-        let ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>> = Arc::new(Mutex::new(None));
+        let ring_sel: Arc<Mutex<Option<rtrb::Producer<f32>>>> = Arc::new(Mutex::new(None));
         let ring_sel_cb = ring_sel.clone();
         let err_fn = |e| eprintln!("cpal input error: {e}");
         let stream = match sample_format {
             cpal::SampleFormat::F32 => {
                 let rs = ring_sel_cb.clone();
                 dev.build_input_stream(&config, move |buf: &[f32], _| {
-                    if let Ok(sel) = rs.lock() {
-                        if let Some(rb) = sel.as_ref() {
-                            if let Ok(mut r) = rb.lock() { let _ = r.push(buf); }
+                    if let Ok(mut sel) = rs.lock() {
+                        if let Some(prod) = sel.as_mut() {
+                            for &s in buf.iter() {
+                                if prod.push(s).is_err() { break; }
+                            }
                         }
                     }
                 }, err_fn, None)
@@ -262,12 +231,12 @@ mod devio {
                 let rs = ring_sel_cb.clone();
                 let mut scratch: Vec<f32> = Vec::new();
                 dev.build_input_stream(&config, move |buf: &[i16], _| {
-                    if let Ok(sel) = rs.lock() {
-                        if let Some(rb) = sel.as_ref() {
-                            if let Ok(mut r) = rb.lock() {
-                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
-                                for (i, &s) in buf.iter().enumerate() { scratch[i] = (s as f32) / 32768.0; }
-                                let _ = r.push(&scratch[..buf.len()]);
+                    if let Ok(mut sel) = rs.lock() {
+                        if let Some(prod) = sel.as_mut() {
+                            if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                            for (i, &s) in buf.iter().enumerate() { scratch[i] = (s as f32) / 32768.0; }
+                            for &v in &scratch[..buf.len()] {
+                                if prod.push(v).is_err() { break; }
                             }
                         }
                     }
@@ -278,12 +247,12 @@ mod devio {
                 let rs = ring_sel_cb.clone();
                 let mut scratch: Vec<f32> = Vec::new();
                 dev.build_input_stream(&config, move |buf: &[u16], _| {
-                    if let Ok(sel) = rs.lock() {
-                        if let Some(rb) = sel.as_ref() {
-                            if let Ok(mut r) = rb.lock() {
-                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
-                                for (i, &s) in buf.iter().enumerate() { scratch[i] = (s as f32 / u16::MAX as f32) * 2.0 - 1.0; }
-                                let _ = r.push(&scratch[..buf.len()]);
+                    if let Ok(mut sel) = rs.lock() {
+                        if let Some(prod) = sel.as_mut() {
+                            if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                            for (i, &s) in buf.iter().enumerate() { scratch[i] = (s as f32 / u16::MAX as f32) * 2.0 - 1.0; }
+                            for &v in &scratch[..buf.len()] {
+                                if prod.push(v).is_err() { break; }
                             }
                         }
                     }
@@ -305,21 +274,22 @@ mod devio {
         let mut config = cfg.config().clone();
         // Best-effort smaller buffer for lower latency
         config.buffer_size = cpal::BufferSize::Fixed(256);
-        let ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>> = Arc::new(Mutex::new(None));
+        let ring_sel: Arc<Mutex<Option<rtrb::Consumer<f32>>>> = Arc::new(Mutex::new(None));
         let ring_sel_cb = ring_sel.clone();
         let err_fn = |e| eprintln!("cpal output error: {e}");
         let stream = match sample_format {
             cpal::SampleFormat::F32 => {
                 let rs = ring_sel_cb.clone();
                 dev.build_output_stream(&config, move |buf: &mut [f32], _| {
-                    if let Ok(sel) = rs.lock() {
-                        if let Some(rb) = sel.as_ref() {
-                            if let Ok(mut r) = rb.lock() {
-                                let n = r.pop(buf);
-                                if n < buf.len() { for i in n..buf.len() { buf[i] = 0.0; } }
-                            } else { for s in buf.iter_mut() { *s = 0.0; } }
-                        } else { for s in buf.iter_mut() { *s = 0.0; } }
-                    } else { for s in buf.iter_mut() { *s = 0.0; } }
+                    if let Ok(mut sel) = rs.lock() {
+                        if let Some(cons) = sel.as_mut() {
+                            for s in buf.iter_mut() { *s = cons.pop().unwrap_or(0.0); }
+                        } else {
+                            for s in buf.iter_mut() { *s = 0.0; }
+                        }
+                    } else {
+                        for s in buf.iter_mut() { *s = 0.0; }
+                    }
                 }, err_fn, None)
             }
             cpal::SampleFormat::I16 => {
@@ -327,13 +297,14 @@ mod devio {
                 let rs = ring_sel_cb.clone();
                 let mut scratch: Vec<f32> = Vec::new();
                 dev.build_output_stream(&config, move |buf: &mut [i16], _| {
-                    if let Ok(sel) = rs.lock() {
-                        if let Some(rb) = sel.as_ref() {
-                            if let Ok(mut r) = rb.lock() {
-                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
-                                let n = r.pop(&mut scratch);
-                                for i in 0..buf.len() { buf[i] = if i < n { (scratch[i].max(-1.0).min(1.0) * i16::MAX as f32) as i16 } else { 0 }; }
-                            } else { for s in buf.iter_mut() { *s = 0; } }
+                    if let Ok(mut sel) = rs.lock() {
+                        if let Some(cons) = sel.as_mut() {
+                            if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                            for i in 0..buf.len() {
+                                let v = cons.pop().unwrap_or(0.0);
+                                scratch[i] = v;
+                                buf[i] = (v.max(-1.0).min(1.0) * i16::MAX as f32) as i16;
+                            }
                         } else { for s in buf.iter_mut() { *s = 0; } }
                     } else { for s in buf.iter_mut() { *s = 0; } }
                 }, err_fn, None)
@@ -343,18 +314,15 @@ mod devio {
                 let rs = ring_sel_cb.clone();
                 let mut scratch: Vec<f32> = Vec::new();
                 dev.build_output_stream(&config, move |buf: &mut [u16], _| {
-                    if let Ok(sel) = rs.lock() {
-                        if let Some(rb) = sel.as_ref() {
-                            if let Ok(mut r) = rb.lock() {
-                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
-                                let n = r.pop(&mut scratch);
-                                for i in 0..buf.len() {
-                                    if i < n {
-                                        let v = (scratch[i].max(-1.0).min(1.0) * 0.5 + 0.5) * (u16::MAX as f32);
-                                        buf[i] = v as u16;
-                                    } else { buf[i] = u16::MIN; }
-                                }
-                            } else { for s in buf.iter_mut() { *s = u16::MIN; } }
+                    if let Ok(mut sel) = rs.lock() {
+                        if let Some(cons) = sel.as_mut() {
+                            if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                            for i in 0..buf.len() {
+                                let v = cons.pop().unwrap_or(0.0);
+                                scratch[i] = v;
+                                let vv = (v.max(-1.0).min(1.0) * 0.5 + 0.5) * (u16::MAX as f32);
+                                buf[i] = vv as u16;
+                            }
                         } else { for s in buf.iter_mut() { *s = u16::MIN; } }
                     } else { for s in buf.iter_mut() { *s = u16::MIN; } }
                 }, err_fn, None)
@@ -437,38 +405,42 @@ mod devio {
     }
 
     pub fn connect_in_to_ring(in_h: i64, ring_h: i64) -> Result<i64> {
-        let rb = {
-            let tab = super::rb_tab().lock().unwrap();
-            let e = tab.get(ring_h as usize).and_then(|o| o.as_ref()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
-            e.rb.clone()
+        // Take the Producer half from the ring handle and install into the input stream entry
+        let mut prod_opt = {
+            let mut tab = super::rb_tab().lock().unwrap();
+            let e = tab.get_mut(ring_h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
+            e.prod.take()
         };
         let mut ok = false;
         in_tab_mut(|tab| {
             if let Some(entry) = tab.get_mut(in_h as usize).and_then(|o| o.as_mut()) {
                 if let Ok(mut sel) = entry.ring_sel.lock() {
-                    *sel = Some(rb.clone());
-                    ok = true;
+                    if sel.is_none() {
+                        if let Some(p) = prod_opt.take() { *sel = Some(p); ok = true; }
+                    }
                 }
             }
         });
-        if ok { Ok(0) } else { Err(BasilError("Invalid input handle".into())) }
+        if ok { Ok(0) } else { Err(BasilError("Invalid input handle or ring producer already connected".into())) }
     }
     pub fn connect_ring_to_out(ring_h: i64, out_h: i64) -> Result<i64> {
-        let rb = {
-            let tab = super::rb_tab().lock().unwrap();
-            let e = tab.get(ring_h as usize).and_then(|o| o.as_ref()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
-            e.rb.clone()
+        // Take the Consumer half from the ring handle and install into the output stream entry
+        let mut cons_opt = {
+            let mut tab = super::rb_tab().lock().unwrap();
+            let e = tab.get_mut(ring_h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
+            e.cons.take()
         };
         let mut ok = false;
         out_tab_mut(|tab| {
             if let Some(entry) = tab.get_mut(out_h as usize).and_then(|o| o.as_mut()) {
                 if let Ok(mut sel) = entry.ring_sel.lock() {
-                    *sel = Some(rb.clone());
-                    ok = true;
+                    if sel.is_none() {
+                        if let Some(c) = cons_opt.take() { *sel = Some(c); ok = true; }
+                    }
                 }
             }
         });
-        if ok { Ok(0) } else { Err(BasilError("Invalid output handle".into())) }
+        if ok { Ok(0) } else { Err(BasilError("Invalid output handle or ring consumer already connected".into())) }
     }
 }
 
@@ -522,9 +494,9 @@ pub fn daw_cleanup_all() {
     }
 }
 
-// Ring buffer handle table (simple)
-use std::sync::{Mutex, OnceLock, Arc};
-struct RbEntry { rb: Arc<Mutex<RingBuf>> }
+// Ring buffer handle table (lock-free rtrb SPSC)
+use std::sync::{Mutex, OnceLock};
+struct RbEntry { prod: Option<rtrb::Producer<f32>>, cons: Option<rtrb::Consumer<f32>> }
 static RB_TABLE: OnceLock<Mutex<Vec<Option<RbEntry>>>> = OnceLock::new();
 fn rb_tab() -> &'static Mutex<Vec<Option<RbEntry>>> { RB_TABLE.get_or_init(|| Mutex::new(Vec::new())) }
 fn alloc_handle<T>(tab: &mut Vec<Option<T>>, val: T) -> i64 {
@@ -536,21 +508,32 @@ fn alloc_handle<T>(tab: &mut Vec<Option<T>>, val: T) -> i64 {
 }
 
 pub fn ring_create(frames: i64) -> Result<i64> {
+    let capacity = (frames as usize).max(1);
+    let (prod, cons) = rtrb::RingBuffer::<f32>::new(capacity);
     let mut tab = rb_tab().lock().unwrap();
-    let h = alloc_handle(&mut *tab, RbEntry{ rb: Arc::new(Mutex::new(RingBuf::new(frames as usize))) });
+    let h = alloc_handle(&mut *tab, RbEntry{ prod: Some(prod), cons: Some(cons) });
     Ok(h)
 }
 pub fn ring_push(h: i64, data: &[f32]) -> Result<i64> {
     let mut tab = rb_tab().lock().unwrap();
     let entry = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
-    let n = entry.rb.lock().map_err(|_| BasilError("Ring lock poisoned".into()))?.push(data);
-    Ok(n as i64)
+    let prod = entry.prod.as_mut().ok_or_else(|| BasilError("Ring producer not available (already connected to input)".into()))?;
+    let mut n = 0i64;
+    for &x in data.iter() {
+        if prod.push(x).is_err() { break; }
+        n += 1;
+    }
+    Ok(n)
 }
 pub fn ring_pop(h: i64, out: &mut [f32]) -> Result<i64> {
     let mut tab = rb_tab().lock().unwrap();
     let entry = tab.get_mut(h as usize).and_then(|o| o.as_mut()).ok_or_else(|| BasilError("Invalid ring handle".into()))?;
-    let n = entry.rb.lock().map_err(|_| BasilError("Ring lock poisoned".into()))?.pop(out);
-    Ok(n as i64)
+    let cons = entry.cons.as_mut().ok_or_else(|| BasilError("Ring consumer not available (already connected to output)".into()))?;
+    let mut n = 0i64;
+    for o in out.iter_mut() {
+        if let Ok(x) = cons.pop() { *o = x; n += 1; } else { break; }
+    }
+    Ok(n)
 }
 
 // WAV writer handle table (accumulate then write on close)
@@ -637,13 +620,14 @@ mod tests {
 
     #[test]
     fn ring_push_pop_counts() {
-        let mut rb = RingBuf::new(8);
-        assert_eq!(rb.push(&[1.0, 2.0, 3.0, 4.0]), 4);
+        let h = ring_create(8).unwrap();
+        assert_eq!(ring_push(h, &[1.0, 2.0, 3.0, 4.0]).unwrap(), 4);
         let mut out = [0.0f32; 3];
-        let n = rb.pop(&mut out);
+        let n = ring_pop(h, &mut out).unwrap();
         assert_eq!(n, 3);
         assert_eq!(&out, &[1.0, 2.0, 3.0]);
-        assert_eq!(rb.push(&[5.0, 6.0, 7.0, 8.0, 9.0]), 5); // total 6 in buf, cap 8
+        // After popping 3, one element remains; pushing five should accept all five (cap 8)
+        assert_eq!(ring_push(h, &[5.0, 6.0, 7.0, 8.0, 9.0]).unwrap(), 5);
     }
 
     #[test]

@@ -1,10 +1,11 @@
-# Basil + AI
+# Basil + AI ( + MIDI)
+
+
+# Phase 1 & 2 spec for `obj-ai` feature
+
 
 * **Goal**: make it easy to build AI-powered tools and apps in Basil.
 * **Audience**: students, hobbyists, and professionals.
-
-
-
 
 * **Two entry points**
 
@@ -35,7 +36,7 @@
 
     * `basilc --ai` opens a REPL: you type questions; it answers; `:code` emits a snippet block; `:explain file.basil:50` explains a line.
 
-# Phase 2 (next 1–2 weeks)
+### Part 2 (next 1–2 weeks)
 
 * **Function calling / Tools**: allow the model to request calling Basil-exposed functions (safe, whitelisted).
 * **Embeddings**: `AI.EMBED(vec$)` returns a numeric vector[]; add tiny local cosine similarity helper.
@@ -429,9 +430,9 @@ If you want, I can spit out the exact **system prompt**, a **Rust skeleton** for
 # ANYWAY ... Where was I? Oh yeah. Feature Object --feature obj-ai ...
 
 > That's going to be off the chain! Anyway, coming back down to earth, please provide me a prompt that I can give Junie
-> to create your AI phase 1 and 2 all in one go. I'd ask you do try it yourself, but she's right there inside the Rust IDE
+> to create your AI parts 1 and 2 all in one go. I'd ask you do try it yourself, but she's right there inside the Rust IDE
 > with the code and can already has her hands dirty. (LOL). Give me a consice detailed prompt for creating the obj-ai
-> feature up through Phase 2 but stopping short of the "Tool / Function-calling (Phase 2+)" features. Include a reqiest to
+> feature up through part 2 but stopping short of the "Tool / Function-calling (Phase 2+)" features. Include a reqiest to
 > make some demo programs, and to create an instruction file for getting the necessary pre-requites (API key, and
 > whatever) to use the feature in a markdown file.
 
@@ -661,13 +662,468 @@ Create a crate/module `obj-ai` behind feature flag `obj-ai`:
 
 END OF PROMPT.
 
-> Implement now. Stop short of tool/function-calling. Keep the code clean, modular, and documented inline.
+### Implement now. Stop short of tool/function-calling. Keep the code clean, modular, and documented inline.
 
 
+> Nice! Thank you!
+
+
+You got it! 🙌
+If you want, I can also prep:
+
+* a sister prompt for **AI.MUSIC + DAWG** (ClipSpec schema + validators + demos),
+* a **.basil-ai.toml** starter with safe defaults,
+* or a tiny **smoke-test script** that validates `AI.CHAT$`, `STREAM`, `EMBED`, and `MODERATE%` in `--test` mode.
+
+Tell me which one you want first and I’ll spit it out.
+
+## Phase 2b: here’s a drop-in starter config and a tiny smoke test
+
+Awesome—here’s a drop-in starter config and a tiny smoke test.
+
+# `.basil-ai.toml` (safe defaults)
+
+```toml
+# Where to get your key:
+#  - Preferred: set environment variable OPENAI_API_KEY
+#  - Or put the literal key here (not recommended)
+api_key = "env:OPENAI_API_KEY"
+
+# Sensible defaults (tweak per project)
+default_model = "gpt-4o-mini"
+temperature = 0.3
+max_tokens = 400
+cache = true
+
+# Guardrails (prevent surprise spend)
+max_tokens_per_run = 8000
+max_requests_per_min = 30
+
+# Networking (override if needed)
+# base_url = "https://api.openai.com/v1"
+# chat_path = "/chat/completions"
+# embeddings_path = "/embeddings"
+# moderation_path = "/moderations"
+timeout_ms = 60000
+```
+
+# `examples/obj-ai/00_smoke_test.basil`
+
+Validates `AI.CHAT$`, `AI.STREAM`, `AI.EMBED`, and `AI.MODERATE%` in **test mode**.
+
+```basic
+REM ------------------------------------------------------------
+REM obj-ai smoke test (run in TEST mode)
+REM Expects deterministic outputs with --test or TEST_MODE=1
+REM ------------------------------------------------------------
+
+FUNCTION Assert%(cond%, msg$)
+  IF cond% THEN
+    PRINT "✅ "; PRINT msg$;
+    PRINT
+    RETURN 1
+  ELSE
+    PRINT "❌ FAIL: "; PRINT msg$;
+    PRINT
+    STOP
+  END IF
+END FUNCTION
+
+REM 1) CHAT
+DIM reply$ = AI.CHAT$("Hello from smoke test", "{ temperature:0.2 }")
+Assert%(LEN(reply$) > 0, "AI.CHAT$ returned text")
+Assert%(LEFT$(reply$, 8) = "[[TEST]]", "AI.CHAT$ produced deterministic test prefix")
+Assert%(LEN(AI.LAST_ERROR$) = 0, "AI.LAST_ERROR$ empty after CHAT")
+
+REM 2) STREAM
+PRINT "Streaming: ";
+DIM full$ = AI.STREAM("Stream a tiny line", "{ temperature:0.0 }")
+PRINT
+Assert%(LEN(full$) > 0, "AI.STREAM returned text")
+Assert%(LEFT$(full$, 8) = "[[TEST]]", "AI.STREAM produced deterministic test prefix")
+Assert%(LEN(AI.LAST_ERROR$) = 0, "AI.LAST_ERROR$ empty after STREAM")
+
+REM 3) EMBEDDINGS (expect fixed-size vector in test mode, e.g., 16)
+DIM v[] = AI.EMBED("embed this text")
+Assert%(UBOUND(v[]) + 1 > 0, "AI.EMBED returned a vector")
+Assert%(UBOUND(v[]) + 1 = 16, "AI.EMBED vector length == 16 (test mode)")
+Assert%(LEN(AI.LAST_ERROR$) = 0, "AI.LAST_ERROR$ empty after EMBED")
+
+REM 4) MODERATION (0 = OK, 1 = flagged)
+DIM ok% = AI.MODERATE%("Write a friendly greeting.")
+Assert%(ok% = 0, "AI.MODERATE% returns 0 for safe text")
+DIM flagged% = AI.MODERATE%("FLAG_ME")
+Assert%(flagged% = 1, "AI.MODERATE% returns 1 for flagged text")
+Assert%(LEN(AI.LAST_ERROR$) = 0, "AI.LAST_ERROR$ empty after MODERATE")
+
+PRINT
+PRINT "🎉 obj-ai smoke test passed."
+```
+
+## How to run
+
+```bash
+# 1) Build with obj-ai
+cargo run -q -p basilc --features obj-ai -- --version
+
+# 2) Test mode (either way works)
+# a) CLI flag:
+cargo run -q -p basilc --features obj-ai -- --test run examples/obj-ai/00_smoke_test.basil
+
+# b) Env var:
+# TEST_MODE=1 cargo run -q -p basilc --features obj-ai -- run examples/obj-ai/00_smoke_test.basil
+```
 
 
 
 # Phase 3: Tool/Function-calling (later)
+
+
+
+# Phase 4: AI-powered music generation (AI.MUSIC + DAWG - ClipSpec schema + validators + demos)
+
+If you want, I can now whip up the **AI.MUSIC + DAWG** prompt pack (ClipSpec schema + validators + demos).
+
+
+
+> Ok, let's whip up the AI.MUSIC + DAWG prompt pack now (who's sleepy now??)
+
+
+
+Heck yeah—here’s a tight, copy-pasteable **Junie prompt pack** to wire up **AI.MUSIC + DAWG**. It includes the ClipSpec schema, validators, Basil/Rust surfaces, CLI commands, fallbacks, demos, and acceptance tests. Paste this into Junie inside your DAWG/Basil repo.
+
+---
+
+# Prompt for Junie: Implement `AI.MUSIC + DAWG` (Phase 1)
+
+You’re working inside our Rust DAW (“DAWG”) + Basil interpreter repo. Implement a music-aware AI bridge that turns **natural language → structured MIDI clips** and drops them into the DAWG timeline. Use our existing transport, piano-roll, and MIDI emit logic. Build on the `obj-ai` feature you just created (chat + streaming).
+
+**Do not** implement external tool/function-calling; this is pure prompt→JSON→MIDI with local validators and fallbacks.
+
+## High-level Goals
+
+* One-liner UX for users: “make 4 bars of lofi drums @85 BPM” → clip appears and plays.
+* Deterministic offline behavior in `--test` (no network).
+* Strict schema: AI returns a compact **ClipSpec** JSON only. We validate, fix, and insert.
+* Resilient: if model output is malformed or API missing, fall back to built-in generators.
+
+---
+
+## Namespaces & Surfaces
+
+### Basil API (public)
+
+Provide these functions behind features `obj-ai,obj-midi`:
+
+* `AI.MUSIC.GENERATE$(prompt$[, opts$]) -> string`
+  Returns **ClipSpec** as a JSON-ish string (forgiving parser: single quotes/trailing commas ok).
+
+* `AI.MUSIC.VARIATION$(clip_spec$[, prompt_or_opts$]) -> string`
+  Takes an existing ClipSpec (as string) and returns a modified ClipSpec (e.g., “sparser hats”, “double-time feel bar 4”).
+
+* `AI.MUSIC.DESCRIBE$(clip_spec$) -> string`
+  Human-readable summary (“4 bars Am, swing 54%, hats 16ths, snare fill bar 4”).
+
+* `MIDI.CLIP.FROM_SPEC(clip_spec$) -> int`
+  Build an internal clip, return `clip_id%`.
+
+* `MIDI.CLIP.INSERT clip_id%, track_or_name$, start_bar%`
+
+* `MIDI.CLIP.REPLACE clip_id%, track_or_name$, start_bar%`
+
+* `MIDI.CLIP.PREVIEW clip_id%` (audition through current output device)
+
+* `MIDI.CLIP.TO_SPEC(track_or_name$, start_bar%, bars%) -> string` (export selection to ClipSpec for editing/variation)
+
+* Helpers (optional but useful):
+  `MIDI.CLIP.HUMANIZE clip_id%, amount%` (timing/velocity jitter)
+  `MIDI.CLIP.QUANTIZE clip_id%, grid_denominator%` (e.g., 16)
+
+> Keep these consistent with existing DAWG transport: `TRANSPORT.PLAY`, `TRANSPORT.LOOP.SET start_bar%, end_bar%`.
+
+### CLI (DAWG REPL)
+
+Augment the REPL with:
+
+* `:ai make <free text>` — calls `AI.MUSIC.GENERATE$` and inserts at playhead on selected track.
+* `:ai var <free text>` — applies `AI.MUSIC.VARIATION$` to the selected clip.
+* `:ai chords <free text>` — convenience alias for chord tracks.
+* `:ai describe` — describe the selected clip.
+* `:ai humanize <pct>` — call local humanize.
+* `:ai quantize <grid>` — call local quantize.
+
+Stream token progress to a status line (use `obj-ai` streaming if available; otherwise spinner).
+
+---
+
+## ClipSpec (the contract)
+
+Strict but compact, beats-based, 1-based bars. This is the **only** format AI should output.
+
+```json
+{
+  "version": 1,
+  "bars": 4,                 // required, integer >0
+  "tempo": 85,               // optional; if omitted, use project tempo
+  "key": "Am",               // optional; MIDI drum clips may omit
+  "track": "Drums",          // optional hint; we may override via target track
+  "swing": 0.54,             // optional [0..0.75], applied to 8th/16th grid
+  "grid": 16,                // optional quantization grid (4,8,16,32); default 16
+  "notes": [
+    { "beat": 1.0, "len": 0.5, "pitch": 36, "vel": 110, "ch": 10 },
+    { "beat": 2.0, "len": 0.5, "pitch": 38, "vel": 100, "ch": 10 },
+    { "beat": 1.0, "len": 0.5, "pitch": 42, "vel": 70,  "ch": 10 },
+    { "beat": 1.5, "len": 0.5, "pitch": 42, "vel": 64,  "ch": 10 }
+  ],
+  "controls": [              // optional MIDI CCs (rare, but handy)
+    { "beat": 1.0, "cc": 1, "value": 40, "ch": 1 }
+  ],
+  "meta": {                  // optional: style tags, source prompt hash, etc.
+    "style": ["lofi","hiphop"],
+    "root": 57,              // optional MIDI root note for tonal clips
+    "scale": "aeolian"       // optional scale name
+  }
+}
+```
+
+**Semantics**
+
+* `beat` is *absolute within the clip*, starting at `1.0`.
+  For 4 bars @ 4/4, valid `beat` range is `[1.0, 17.0)`.
+* Default values: `len=0.5`, `vel=96`, `ch=1`.
+* Drums default `ch=10` and use GM pitches (36 kick, 38 snare, 42 closed hat, 46 open hat, 49 crash, 51 ride).
+* For pitched instruments, `pitch` 0–127 (we clamp).
+* `grid` is used by validator to snap (if needed).
+
+---
+
+## System Prompt (the “brain” of AI.MUSIC)
+
+Create a constant string used by `AI.MUSIC.GENERATE$` & `VARIATION$`:
+
+* Role: *“You are a MIDI clip generator. You output ONLY a valid ClipSpec JSON. No commentary, no code fences.”*
+* Include the ClipSpec schema, defaults, and constraints (above).
+* Include a GM drum pitch map (kick 36, snare 38, ch10, etc.).
+* Include examples (few-shot) of **drums** and **chords**.
+
+**Few-shot 1: Drums (lofi 4 bars)**
+User: “4 bars, 85 BPM, lofi hip hop drums, swing 54%. Sparse kick, snare on beats 2 and 4, ghost hats.”
+Assistant (only JSON): *(give a minimal, valid example conforming to schema)*
+
+**Few-shot 2: Chords (Am progression)**
+User: “4 bars, key Am, i–VI–III–VII, pad, legato, soft dynamics.”
+Assistant: *(valid ClipSpec with pitched notes, e.g., triads or 7ths)*
+
+**Few-shot 3: Variation**
+User: “Increase hat density by ~10% and add a snare fill on the last 2 beats of bar 4.”
+Assistant: *(return ClipSpec with adjusted notes)*
+
+---
+
+## Validation & Repair Pipeline
+
+Create `music/spec.rs` with:
+
+* `parse_clip_spec(str) -> ClipSpec`
+  Forgiving parser: single quotes ok, trailing commas ok. Normalize to canonical struct.
+
+* `validate_and_fix(ClipSpec, project) -> (ClipSpec, Diagnostics)`
+  Rules:
+
+    * Clamp `bars >= 1`, `swing ∈ [0.0, 0.75]`, `grid ∈ {4,8,16,32}`.
+    * Snap `beat`/`len` to grid; apply swing offsets (swing applies to off-beats of selected grid).
+    * Trim notes exceeding `bars` (drop or shorten to boundary).
+    * Velocity clamp `[1..127]`, default 96.
+    * Pitch clamp `[0..127]`; if `track` indicates “Drums”, map unknown drum names→GM or drop.
+    * If channel omitted: `10` for “Drums”, else `1`.
+    * Ensure notes are sorted by `beat`.
+    * Produce diagnostics: `fixed:N`, `dropped:M`, `snapped:X`.
+
+* `to_internal_clip(ClipSpec) -> Clip` (tick-based using our PPQ)
+
+* `from_internal_clip(Clip) -> ClipSpec` (for `MIDI.CLIP.TO_SPEC`)
+
+**Malformed output handling**
+
+* First attempt parse; if fails, call `AI.FIX.JSON$(raw)` (a tiny helper using the same model to “repair to nearest valid JSON of ClipSpec”) **once**.
+* If still invalid: **fallback generator** (see below), and attach warning diag.
+
+---
+
+## Fallback Generators (no AI / test mode)
+
+`music/fallback.rs`: deterministic, seedable (use SHA1 of prompt + project seed).
+
+* `PATTERN.DRUMS(style, bars, swing) -> ClipSpec`
+  Styles: `lofi`, `rock`, `house`. Hardcoded grids (kicks/snares/hats), swing applied.
+
+* `CHORDS.PROG(key, roman[], bars) -> ClipSpec`
+  Simple voicing engine (triads/sevenths), 1 chord per bar by default.
+
+* `BASS.FOLLOW(chords_spec, density)`
+  Root or root+fifths, optional passing tones.
+
+These are also included (summarized) in the system prompt as **few-shot guidance**, but run locally when offline/test.
+
+**Test mode (`--test` or `TEST_MODE=1`)**
+
+* `AI.MUSIC.GENERATE$` and `VARIATION$` **skip API** and call fallbacks deterministically.
+* Seed from `hash(prompt)` to keep outputs stable across runs.
+
+---
+
+## Rust Structure
+
+* `src/ai_music/mod.rs`
+
+    * `prompt.rs` (system prompt + few-shots)
+    * `schema.rs` (ClipSpec struct + serde)
+    * `parser.rs` (permissive string→ClipSpec)
+    * `validator.rs` (validate_and_fix)
+    * `bridge.rs` (to/from internal `Clip` structure)
+    * `fallback.rs` (lofi/rock/house/chords/bass)
+    * `service.rs` (`generate(prompt, opts)`, `variation(spec, prompt_or_opts)`)
+* `src/midi/clip_from_spec.rs`, `clip_to_spec.rs`
+* `src/repl/ai_commands.rs` (the `:ai` subcommands)
+
+Feature flags: `obj-ai,obj-midi` required for build. Ensure graceful “feature missing” errors.
+
+---
+
+## Options (`opts$`) for AI.MUSIC calls
+
+Accept the same permissive JSON-ish as obj-ai:
+
+```
+model        (string) default from obj-ai
+temperature  (float)  default 0.3 (music often benefits from 0.2–0.4)
+max_tokens   (int)    default 600
+cache        (bool)   default true
+grid         (int)    optional (4,8,16,32) force quantization grid
+swing        (float)  optional overrides prompt
+track        (string) optional target (“Drums”, “Bass”, “Pads”, …)
+key          (string) optional (e.g., “Am”, “C# dorian”)
+```
+
+Unknown keys ignored.
+
+---
+
+## Demos (place under `examples/ai-music/`)
+
+1. `01_make_lofi_drums.basil`
+
+```basic
+DIM ask$ = "4 bars, 85 BPM, lofi hip hop drums, swing 54%, sparse kicks, ghost hats.";
+DIM spec$ = AI.MUSIC.GENERATE$(ask$, "{ grid:16 }");
+DIM id% = MIDI.CLIP.FROM_SPEC(spec$)
+MIDI.CLIP.INSERT id%, "Drums", 1
+TRANSPORT.LOOP.SET 1, 5
+TRANSPORT.PLAY
+```
+
+2. `02_chords_and_bass.basil`
+
+```basic
+DIM chords$ = AI.MUSIC.GENERATE$("4 bars, key Am, i–VI–III–VII, pad, legato, soft.", "{}");
+DIM c_id% = MIDI.CLIP.FROM_SPEC(chords$)
+MIDI.CLIP.INSERT c_id%, "Pads", 1
+
+DIM bass$ = AI.MUSIC.VARIATION$(chords$, "Generate bass that follows roots with occasional passing tones; 8ths; mellow.")
+DIM b_id% = MIDI.CLIP.FROM_SPEC(bass$)
+MIDI.CLIP.INSERT b_id%, "Bass", 1
+
+TRANSPORT.LOOP.SET 1, 5
+TRANSPORT.PLAY
+```
+
+3. `03_make_busier_and_fill.basil`
+
+```basic
+DIM d$ = AI.MUSIC.GENERATE$("4 bars, 92 BPM, boom-bap drums, 16th hats.", "{}")
+DIM id% = MIDI.CLIP.FROM_SPEC(d$)
+MIDI.CLIP.INSERT id%, "Drums", 1
+
+DIM v$ = AI.MUSIC.VARIATION$(d$, "Increase hat density by 10% and add snare fill on last 2 beats of bar 4.")
+DIM vid% = MIDI.CLIP.FROM_SPEC(v$)
+MIDI.CLIP.REPLACE vid%, "Drums", 1
+```
+
+4. `04_describe_clip.basil`
+
+```basic
+DIM spec$ = MIDI.CLIP.TO_SPEC("Drums", 1, 4)
+PRINT AI.MUSIC.DESCRIBE$(spec$)
+```
+
+5. `05_fallback_offline.basil`
+
+```basic
+REM Run with --test to force local generator.
+DIM ask$ = "4 bars, 120 BPM, house drums (kicks on every beat), open hats on offbeats."
+DIM spec$ = AI.MUSIC.GENERATE$(ask$)
+DIM id% = MIDI.CLIP.FROM_SPEC(spec$)
+MIDI.CLIP.INSERT id%, "Drums", 1
+TRANSPORT.PLAY
+```
+
+---
+
+## README (`docs/ai-music/README.md`)
+
+Include:
+
+* What AI.MUSIC does and the ClipSpec schema (copy from above).
+* Quickstart:
+
+  ```bash
+  cargo run -q -p basilc --features obj-ai,obj-midi -- run examples/ai-music/01_make_lofi_drums.basil
+  ```
+* How to use the REPL:
+
+  ```
+  cargo run -q -p basilc --features obj-ai,obj-midi -- --ai
+  :ai make 4 bars lofi 85bpm swing 54, sparse kicks, ghost hats
+  :ai var busier hats + snare fill bar 4
+  :ai describe
+  ```
+* Offline/test mode behavior & deterministic outputs.
+* Troubleshooting (missing API key, malformed JSON → fallback used).
+
+---
+
+## Acceptance Criteria
+
+* **Schema**: `ClipSpec` parsed, validated, and converted to internal clip.
+* **Generate/Variation**: Work online (model) and offline (`--test`) deterministically.
+* **Insertion**: `MIDI.CLIP.FROM_SPEC` + `INSERT/REPLACE` integrate with piano-roll and transport.
+* **Swing/Quantize**: Validator snaps to grid and applies swing to off-beats.
+* **Drums**: Defaults to GM pitches & ch10 when unspecified.
+* **Demos**: All five examples run; in `--test` they produce consistent, musical (if simple) clips.
+* **CLI**: `:ai make/var/describe` functional with selected track and playhead.
+* **Docs**: README present with schema, quickstart, and REPL usage.
+
+---
+
+## Implementation Notes
+
+* Use the existing `obj-ai` to call chat; set system prompt to **“ONLY return ClipSpec JSON”** (no backticks, no prose).
+* In `service.rs`, keep a short retry (once) on 429/5xx; otherwise fall back.
+* Cache AI responses keyed by `hash(prompt + opts + project tempo + selected track)` to reduce repeat cost.
+* Diagnostics can be printed to status line (e.g., “snapped=12, dropped=1, swing=0.54”).
+* Keep token budgets small (`max_tokens=600`) and `temperature≈0.3` by default.
+
+---
+
+> Build this now. Ensure the model never emits code fences or commentary—ClipSpec JSON only. If anything is invalid, repair once; otherwise use a fallback pattern. Keep the UX snappy and deterministic in test mode.
+
+
+
+# Phase 3: Tool/Function-calling (later)
+
+
+
+# Phase 4: AI-powered music generation (AI.MUSIC + DAWG - ClipSpec schema + validators + demos)
 
 
 
