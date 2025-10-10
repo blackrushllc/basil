@@ -18,7 +18,7 @@ use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Debug)]
 pub struct MidiEvent { pub status: u8, pub d1: u8, pub d2: u8 }
-struct InPort { name: String, q: std::collections::VecDeque<MidiEvent> }
+struct InPort { _name: String, q: std::collections::VecDeque<MidiEvent> }
 static IN_TABLE: OnceLock<Mutex<Vec<Option<InPort>>>> = OnceLock::new();
 fn in_tab() -> &'static Mutex<Vec<Option<InPort>>> { IN_TABLE.get_or_init(|| Mutex::new(Vec::new())) }
 
@@ -31,7 +31,7 @@ pub fn midi_open_in(substr: &str) -> Result<i64> {
     let name = format!("{} (stub)", substr);
     // In stub mode, we create a queue but never receive real events.
     let mut tab = in_tab().lock().unwrap();
-    let h = alloc_handle(&mut *tab, InPort { name, q: std::collections::VecDeque::new() });
+    let h = alloc_handle(&mut *tab, InPort { _name: name, q: std::collections::VecDeque::new() });
     Ok(h)
 }
 pub fn midi_close(h: i64) -> Result<i64> {

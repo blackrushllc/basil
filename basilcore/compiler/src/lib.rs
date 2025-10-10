@@ -983,6 +983,8 @@ impl C {
                         #[cfg(feature = "obj-audio")] "WAV_WRITER_WRITE%" => Some(203u8),
                         #[cfg(feature = "obj-audio")] "WAV_WRITER_CLOSE%" => Some(204u8),
                         #[cfg(feature = "obj-audio")] "WAV_READ_ALL![]" => Some(205u8),
+                        #[cfg(feature = "obj-audio")] "AUDIO_CONNECT_IN_TO_RING%" => Some(206u8),
+                        #[cfg(feature = "obj-audio")] "AUDIO_CONNECT_RING_TO_OUT%" => Some(207u8),
                         #[cfg(feature = "obj-midi")]  "MIDI_PORTS$" => Some(210u8),
                         #[cfg(feature = "obj-midi")]  "MIDI_OPEN_IN@" => Some(211u8),
                         #[cfg(feature = "obj-midi")]  "MIDI_POLL%" => Some(212u8),

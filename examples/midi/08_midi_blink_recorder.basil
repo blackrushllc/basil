@@ -1,0 +1,4 @@
+REM Capture MIDI for ~10 seconds and stop with DAW_STOP if desired;
+PRINTLN "Start MIDI capture to blink.jsonl. Stop from another terminal with DAW_STOP().";
+rc% = MIDI_CAPTURE%("launchkey", "blink.jsonl");
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$();

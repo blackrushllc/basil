@@ -1962,6 +1962,22 @@ impl VM {
                             let arr = Rc::new(ArrayObj { elem: ElemType::Num, dims: vec![data.len()], data: std::cell::RefCell::new(data) });
                             self.stack.push(Value::Array(arr));
                         }
+                        #[cfg(feature = "obj-audio")]
+                        206 => { // AUDIO_CONNECT_IN_TO_RING%(in@, ring@)
+                            if argc != 2 { return Err(BasilError("AUDIO_CONNECT_IN_TO_RING% expects 2 arguments".into())); }
+                            let in_h = self.to_i64(&args[0])?;
+                            let ring_h = self.to_i64(&args[1])?;
+                            let rc = match audio_utils::audio_connect_in_to_ring(in_h, ring_h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        207 => { // AUDIO_CONNECT_RING_TO_OUT%(ring@, out@)
+                            if argc != 2 { return Err(BasilError("AUDIO_CONNECT_RING_TO_OUT% expects 2 arguments".into())); }
+                            let ring_h = self.to_i64(&args[0])?;
+                            let out_h = self.to_i64(&args[1])?;
+                            let rc = match audio_utils::audio_connect_ring_to_out(ring_h, out_h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
                         // --- MIDI ---
                         #[cfg(feature = "obj-midi")]
                         210 => { // MIDI_PORTS$[]
