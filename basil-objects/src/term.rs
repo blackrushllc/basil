@@ -4,10 +4,13 @@
 #![allow(dead_code)]
 
 use std::sync::{Mutex, OnceLock};
-use std::io;
+use std::io::{self, Write};
+use std::time::Duration;
 
 use basil_bytecode::Value;
-use crossterm::{execute, cursor, style::{Color, SetForegroundColor, SetBackgroundColor, ResetColor, SetAttribute, Attribute}, terminal::{self, Clear, ClearType}};
+use crossterm::{execute, cursor, style::{Color, SetForegroundColor, SetBackgroundColor, ResetColor, SetAttribute, Attribute}, terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen}};
+use crossterm::event::{self, Event, KeyEvent, KeyCode};
+use crossterm::tty::IsTty;
 
 #[derive(Debug, Default, Clone)]
 struct TermState {
@@ -18,6 +21,10 @@ struct TermState {
     reverse: bool,
     pos_stack: Vec<(u16,u16)>,
     last_err: Option<String>,
+    // Phase 2 additions
+    initialized: bool,
+    raw_on: bool,
+    alt_on: bool,
 }
 
 static GLOBAL: OnceLock<Mutex<TermState>> = OnceLock::new();
@@ -188,6 +195,109 @@ pub fn term_rows() -> i64 { terminal::size().map(|(_,r)| r as i64).unwrap_or(25)
 pub fn cursor_hide() -> i64 { match execute!(io::stdout(), cursor::Hide) { Ok(_)=>ok(), Err(e)=>{ set_err(format!("CURSOR_HIDE: {}", e)); 1 } } }
 pub fn cursor_show() -> i64 { match execute!(io::stdout(), cursor::Show) { Ok(_)=>ok(), Err(e)=>{ set_err(format!("CURSOR_SHOW: {}", e)); 1 } } }
 
+// -------- Phase 2 additions --------
+fn stdout_is_tty() -> bool { io::stdout().is_tty() }
+
+pub fn term_init() -> i64 {
+    let mut st = state().lock().unwrap();
+    if st.initialized { return ok(); }
+    st.initialized = true;
+    ok()
+}
+
+pub fn term_end() -> i64 {
+    // Always try to restore sane state; ignore errors
+    let mut st = state().lock().unwrap();
+    let mut out = io::stdout();
+    let _ = execute!(out, cursor::Show);
+    let _ = execute!(out, SetAttribute(Attribute::Reset));
+    let _ = execute!(out, ResetColor);
+    if st.raw_on { let _ = terminal::disable_raw_mode(); st.raw_on = false; }
+    if st.alt_on { let _ = execute!(out, LeaveAlternateScreen); st.alt_on = false; }
+    st.initialized = false;
+    ok()
+}
+
+pub fn term_raw(mode: &Value) -> i64 {
+    // Accept: 0/1, or strings "ON"/"OFF" (case-insensitive)
+    let on = match mode {
+        Value::Int(i) => *i != 0,
+        Value::Num(n) => n.trunc() as i64 != 0,
+        Value::Str(s) => {
+            let up = s.to_ascii_uppercase();
+            up == "ON" || up == "1" || up == "TRUE"
+        }
+        _ => { set_err(format!("TERM.RAW expects ON/OFF or 0/1, got {}", mode)); return 2; }
+    };
+    if !stdout_is_tty() { return ok(); }
+    let mut st = state().lock().unwrap();
+    if on {
+        if !st.raw_on {
+            if let Err(e) = terminal::enable_raw_mode() { set_err(format!("enable_raw_mode: {}", e)); return 1; }
+            st.raw_on = true;
+        }
+    } else {
+        if st.raw_on {
+            if let Err(e) = terminal::disable_raw_mode() { set_err(format!("disable_raw_mode: {}", e)); return 1; }
+            st.raw_on = false;
+        }
+    }
+    ok()
+}
+
+pub fn altscreen_on() -> i64 {
+    if !stdout_is_tty() { return ok(); }
+    let mut st = state().lock().unwrap();
+    if !st.alt_on {
+        if let Err(e) = execute!(io::stdout(), EnterAlternateScreen) { set_err(format!("ALTSCREEN_ON: {}", e)); return 1; }
+        st.alt_on = true;
+    }
+    ok()
+}
+
+pub fn altscreen_off() -> i64 {
+    if !stdout_is_tty() { return ok(); }
+    let mut st = state().lock().unwrap();
+    if st.alt_on {
+        if let Err(e) = execute!(io::stdout(), LeaveAlternateScreen) { set_err(format!("ALTSCREEN_OFF: {}", e)); return 1; }
+        st.alt_on = false;
+    }
+    ok()
+}
+
+pub fn term_flush() -> i64 {
+    match io::stdout().flush() { Ok(_)=>ok(), Err(e)=>{ set_err(format!("FLUSH: {}", e)); 1 } }
+}
+
+pub fn term_pollkey_s() -> String {
+    if !stdout_is_tty() { return String::new(); }
+    let _ = event::EnableMouseCapture; // not used yet, placeholder for future
+    // Short non-blocking poll
+    match event::poll(Duration::from_millis(0)) {
+        Ok(false) => String::new(),
+        Ok(true) => {
+            match event::read() {
+                Ok(Event::Key(KeyEvent { code, .. })) => match code {
+                    KeyCode::Enter => "Enter".into(),
+                    KeyCode::Esc => "Esc".into(),
+                    KeyCode::Tab => "Tab".into(),
+                    KeyCode::Backspace => "Backspace".into(),
+                    KeyCode::Up => "Up".into(),
+                    KeyCode::Down => "Down".into(),
+                    KeyCode::Left => "Left".into(),
+                    KeyCode::Right => "Right".into(),
+                    KeyCode::Char(c) => {
+                        let mut s = String::from("Char:"); s.push(c); s
+                    }
+                    _ => String::new(),
+                },
+                _ => String::new(),
+            }
+        }
+        Err(_) => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +315,30 @@ mod tests {
         let _ = cursor_save();
         let _ = cursor_restore();
         let _ = cursor_restore(); // underflow no-op
+    }
+    #[test]
+    fn test_state_lifecycle_init_end() {
+        let _ = term_init();
+        let st = state().lock().unwrap().clone();
+        assert!(st.initialized);
+        let _ = term_end();
+        let st2 = state().lock().unwrap().clone();
+        assert!(!st2.initialized);
+        assert!(!st2.raw_on);
+        assert!(!st2.alt_on);
+    }
+
+    // Integration-like tests for TTY behavior (ignored by default)
+    #[test]
+    #[ignore]
+    fn test_tty_raw_and_alt_and_poll() {
+        if !stdout_is_tty() { return; }
+        assert_eq!(term_raw(&Value::Int(1)), 0);
+        assert_eq!(term_raw(&Value::Int(0)), 0);
+        assert_eq!(altscreen_on(), 0);
+        assert_eq!(altscreen_off(), 0);
+        let s = term_pollkey_s();
+        // Likely no key pressed in short window
+        assert!(s == "" || s.starts_with("Char:") || s == "Enter" || s == "Esc" || s == "Tab" || s == "Backspace" || s == "Up" || s == "Down" || s == "Left" || s == "Right");
     }
 }

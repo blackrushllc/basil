@@ -46,6 +46,7 @@ pub enum TokenKind {
     LParen, RParen, Comma, Semicolon,
     Plus, Minus, Star, Slash,
     Dot,
+    Mod,
     Lt, Gt, Assign,        // '<' '>' '='
     // Two-char
     EqEq, BangEq, LtEq, GtEq,
@@ -319,6 +320,7 @@ impl<'a> Lexer<'a> {
             "LABEL"  => TokenKind::Label,
             "GOTO"   => TokenKind::Goto,
             "GOSUB"  => TokenKind::Gosub,
+            "MOD"    => TokenKind::Mod,
             _        => TokenKind::Ident,
         };
         Ok(self.make_with_span(kind, start, end))

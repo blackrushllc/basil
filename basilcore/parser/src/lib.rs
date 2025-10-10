@@ -508,7 +508,7 @@ impl Parser {
                 continue;
             }
             if self.match_k(TokenKind::Dot) {
-                let name = self.expect_ident()?;
+                let name = self.expect_member_name()?;
                 if self.match_k(TokenKind::LParen) {
                     let mut args = Vec::new();
                     if !self.check(TokenKind::RParen) {
@@ -652,6 +652,7 @@ impl Parser {
             // multiplicative
             TokenKind::Star => Some((BinOp::Mul, 70, 71)),
             TokenKind::Slash => Some((BinOp::Div, 70, 71)),
+            TokenKind::Mod => Some((BinOp::Mod, 70, 71)),
             _ => None,
         }
     }
@@ -662,6 +663,57 @@ impl Parser {
     }
     fn expect_ident(&mut self) -> Result<String> {
         if self.check(TokenKind::Ident) { Ok(self.next().unwrap().lexeme) } else { Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))) }
+    }
+    // Accept an identifier or a keyword token as a member name after '.'
+    fn expect_member_name(&mut self) -> Result<String> {
+        match self.peek_kind() {
+            Some(TokenKind::Ident)
+            | Some(TokenKind::Func)
+            | Some(TokenKind::Return)
+            | Some(TokenKind::If)
+            | Some(TokenKind::Then)
+            | Some(TokenKind::Else)
+            | Some(TokenKind::While)
+            | Some(TokenKind::Do)
+            | Some(TokenKind::Begin)
+            | Some(TokenKind::End)
+            | Some(TokenKind::Break)
+            | Some(TokenKind::Continue)
+            | Some(TokenKind::Let)
+            | Some(TokenKind::Print)
+            | Some(TokenKind::Println)
+            | Some(TokenKind::True)
+            | Some(TokenKind::False)
+            | Some(TokenKind::Null)
+            | Some(TokenKind::And)
+            | Some(TokenKind::Or)
+            | Some(TokenKind::Not)
+            | Some(TokenKind::Author)
+            | Some(TokenKind::For)
+            | Some(TokenKind::To)
+            | Some(TokenKind::Step)
+            | Some(TokenKind::Next)
+            | Some(TokenKind::Each)
+            | Some(TokenKind::In)
+            | Some(TokenKind::Foreach)
+            | Some(TokenKind::Endfor)
+            | Some(TokenKind::Dim)
+            | Some(TokenKind::As)
+            | Some(TokenKind::Describe)
+            | Some(TokenKind::New)
+            | Some(TokenKind::Class)
+            | Some(TokenKind::Setenv)
+            | Some(TokenKind::Exportenv)
+            | Some(TokenKind::Shell)
+            | Some(TokenKind::Exit)
+            | Some(TokenKind::Label)
+            | Some(TokenKind::Goto)
+            | Some(TokenKind::Gosub)
+            | Some(TokenKind::Mod) => {
+                Ok(self.next().unwrap().lexeme)
+            }
+            _ => Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))),
+        }
     }
     fn check(&self, k: TokenKind) -> bool { self.peek_kind() == Some(k) }
     fn match_k(&mut self, k: TokenKind) -> bool { if self.check(k) { self.next(); true } else { false } }

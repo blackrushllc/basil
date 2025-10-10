@@ -186,7 +186,7 @@ pub enum Op {
     StoreLocal = 12,
 
     // arithmetic
-    Add = 20, Sub = 21, Mul = 22, Div = 23, Neg = 24,
+    Add = 20, Sub = 21, Mul = 22, Div = 23, Neg = 24, Mod = 25,
 
     // comparisons
     Eq = 30, Ne = 31, Lt = 32, Le = 33, Gt = 34, Ge = 35,
