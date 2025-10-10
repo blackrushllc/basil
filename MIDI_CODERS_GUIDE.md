@@ -1,3 +1,14 @@
+Updates:
+
+Freeing resources if a run was cancelled
+You already have DAW_RESET to release any CPAL/midir resources held by the current process:
+cargo run -p basilc --features obj-daw -- run examples\daw_reset.basil
+If a stuck basilc.exe is locking files/devices, terminate it:
+tasklist /FI "IMAGENAME eq basilc.exe"
+taskkill /F /IM basilc.exe
+
+
+
 # 🌿 Basil MIDI Programming Guide
 
 ## 🌱 PART 1: High Level Basil Midi/Audio program examples
@@ -528,5 +539,6 @@ cargo run -p basilc --features obj-audio,obj-midi -- run examples/low/06_synth_l
 ```
 
 Want me to bundle these into your repo (folders + files) and hand you a zip?
+
 
 

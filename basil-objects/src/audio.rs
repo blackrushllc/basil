@@ -199,8 +199,8 @@ mod devio {
     use std::cell::RefCell;
     use std::sync::{Mutex, Arc};
 
-    pub struct InEntry { pub stream: cpal::Stream, pub ring: Option<Arc<Mutex<RingBuf>>> }
-    pub struct OutEntry { pub stream: cpal::Stream, pub ring: Option<Arc<Mutex<RingBuf>>> }
+    pub struct InEntry { pub stream: cpal::Stream, pub ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>>, pub chans: u16, pub rate: u32 }
+    pub struct OutEntry { pub stream: cpal::Stream, pub ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>>, pub chans: u16, pub rate: u32 }
 
     thread_local! {
         static IN_TABLE: RefCell<Vec<Option<InEntry>>> = RefCell::new(Vec::new());
@@ -208,6 +208,12 @@ mod devio {
     }
     fn in_tab_mut<F: FnOnce(&mut Vec<Option<InEntry>>)> (f: F) { IN_TABLE.with(|t| f(&mut *t.borrow_mut())) }
     fn out_tab_mut<F: FnOnce(&mut Vec<Option<OutEntry>>)> (f: F) { OUT_TABLE.with(|t| f(&mut *t.borrow_mut())) }
+
+    pub fn cleanup_all() {
+        // Dropping streams by clearing the tables releases OS audio resources.
+        IN_TABLE.with(|t| t.borrow_mut().clear());
+        OUT_TABLE.with(|t| t.borrow_mut().clear());
+    }
 
     fn find_input(substr: &str) -> Option<cpal::Device> {
         let host = cpal::default_host();
@@ -232,34 +238,62 @@ mod devio {
         let dev = find_input(substr).ok_or_else(|| BasilError(format!("AUDIO_OPEN_IN@: no input device matches '{}'", substr)))?;
         let cfg = dev.default_input_config().map_err(|e| BasilError(format!("AUDIO_OPEN_IN@: get config failed: {e}")))?;
         let sample_format = cfg.sample_format();
-        let config = cfg.config().clone();
-        let ring: Arc<Mutex<RingBuf>> = Arc::new(Mutex::new(RingBuf::new(1)));
-        let ring_clone = ring.clone();
+        let mut config = cfg.config().clone();
+        // Best-effort smaller buffer for lower latency
+        config.buffer_size = cpal::BufferSize::Fixed(256);
+        let chans = config.channels;
+        let rate = config.sample_rate.0;
+        let ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>> = Arc::new(Mutex::new(None));
+        let ring_sel_cb = ring_sel.clone();
         let err_fn = |e| eprintln!("cpal input error: {e}");
         let stream = match sample_format {
             cpal::SampleFormat::F32 => {
-                let rc = ring_clone;
+                let rs = ring_sel_cb.clone();
                 dev.build_input_stream(&config, move |buf: &[f32], _| {
-                    if let Ok(mut r) = rc.lock() { let _ = r.push(buf); }
+                    if let Ok(sel) = rs.lock() {
+                        if let Some(rb) = sel.as_ref() {
+                            if let Ok(mut r) = rb.lock() { let _ = r.push(buf); }
+                        }
+                    }
                 }, err_fn, None)
             }
             cpal::SampleFormat::I16 => {
-                let rc = ring_clone;
+                // Reuse scratch to avoid per-callback allocations
+                let rs = ring_sel_cb.clone();
+                let mut scratch: Vec<f32> = Vec::new();
                 dev.build_input_stream(&config, move |buf: &[i16], _| {
-                    if let Ok(mut r) = rc.lock() { for &s in buf { let _ = r.push(&[(s as f32)/32768.0]); } }
+                    if let Ok(sel) = rs.lock() {
+                        if let Some(rb) = sel.as_ref() {
+                            if let Ok(mut r) = rb.lock() {
+                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                                for (i, &s) in buf.iter().enumerate() { scratch[i] = (s as f32) / 32768.0; }
+                                let _ = r.push(&scratch[..buf.len()]);
+                            }
+                        }
+                    }
                 }, err_fn, None)
             }
             cpal::SampleFormat::U16 => {
-                let rc = ring_clone;
+                // Reuse scratch to avoid per-callback allocations
+                let rs = ring_sel_cb.clone();
+                let mut scratch: Vec<f32> = Vec::new();
                 dev.build_input_stream(&config, move |buf: &[u16], _| {
-                    if let Ok(mut r) = rc.lock() { for &s in buf { let v = (s as f32 / u16::MAX as f32) * 2.0 - 1.0; let _ = r.push(&[v]); } }
+                    if let Ok(sel) = rs.lock() {
+                        if let Some(rb) = sel.as_ref() {
+                            if let Ok(mut r) = rb.lock() {
+                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                                for (i, &s) in buf.iter().enumerate() { scratch[i] = (s as f32 / u16::MAX as f32) * 2.0 - 1.0; }
+                                let _ = r.push(&scratch[..buf.len()]);
+                            }
+                        }
+                    }
                 }, err_fn, None)
             }
             _ => return Err(BasilError("AUDIO_OPEN_IN@: unsupported sample format".into())),
         }.map_err(|e| BasilError(format!("AUDIO_OPEN_IN@: build stream failed: {e}")))?;
         let mut handle = -1i64;
         in_tab_mut(|tab| {
-            handle = super::alloc_handle(tab, InEntry { stream, ring: Some(ring) });
+            handle = super::alloc_handle(tab, InEntry { stream, ring_sel, chans, rate });
         });
         Ok(handle)
     }
@@ -268,43 +302,60 @@ mod devio {
         let dev = find_output(substr).ok_or_else(|| BasilError(format!("AUDIO_OPEN_OUT@: no output device matches '{}'", substr)))?;
         let cfg = dev.default_output_config().map_err(|e| BasilError(format!("AUDIO_OPEN_OUT@: get config failed: {e}")))?;
         let sample_format = cfg.sample_format();
-        let config = cfg.config().clone();
-        let ring: Arc<Mutex<RingBuf>> = Arc::new(Mutex::new(RingBuf::new(1)));
-        let ring_clone = ring.clone();
+        let mut config = cfg.config().clone();
+        // Best-effort smaller buffer for lower latency
+        config.buffer_size = cpal::BufferSize::Fixed(256);
+        let ring_sel: Arc<Mutex<Option<Arc<Mutex<RingBuf>>>>> = Arc::new(Mutex::new(None));
+        let ring_sel_cb = ring_sel.clone();
         let err_fn = |e| eprintln!("cpal output error: {e}");
         let stream = match sample_format {
             cpal::SampleFormat::F32 => {
-                let rc = ring_clone;
+                let rs = ring_sel_cb.clone();
                 dev.build_output_stream(&config, move |buf: &mut [f32], _| {
-                    if let Ok(mut r) = rc.lock() {
-                        let mut tmp = vec![0.0f32; buf.len()];
-                        let n = r.pop(&mut tmp);
-                        for i in 0..buf.len() { buf[i] = if i < n { tmp[i] } else { 0.0 }; }
+                    if let Ok(sel) = rs.lock() {
+                        if let Some(rb) = sel.as_ref() {
+                            if let Ok(mut r) = rb.lock() {
+                                let n = r.pop(buf);
+                                if n < buf.len() { for i in n..buf.len() { buf[i] = 0.0; } }
+                            } else { for s in buf.iter_mut() { *s = 0.0; } }
+                        } else { for s in buf.iter_mut() { *s = 0.0; } }
                     } else { for s in buf.iter_mut() { *s = 0.0; } }
                 }, err_fn, None)
             }
             cpal::SampleFormat::I16 => {
-                let rc = ring_clone;
+                // Reuse scratch to avoid per-callback allocations
+                let rs = ring_sel_cb.clone();
+                let mut scratch: Vec<f32> = Vec::new();
                 dev.build_output_stream(&config, move |buf: &mut [i16], _| {
-                    if let Ok(mut r) = rc.lock() {
-                        let mut tmp = vec![0.0f32; buf.len()];
-                        let n = r.pop(&mut tmp);
-                        for i in 0..buf.len() { buf[i] = if i < n { (tmp[i].max(-1.0).min(1.0) * i16::MAX as f32) as i16 } else { 0 }; }
+                    if let Ok(sel) = rs.lock() {
+                        if let Some(rb) = sel.as_ref() {
+                            if let Ok(mut r) = rb.lock() {
+                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                                let n = r.pop(&mut scratch);
+                                for i in 0..buf.len() { buf[i] = if i < n { (scratch[i].max(-1.0).min(1.0) * i16::MAX as f32) as i16 } else { 0 }; }
+                            } else { for s in buf.iter_mut() { *s = 0; } }
+                        } else { for s in buf.iter_mut() { *s = 0; } }
                     } else { for s in buf.iter_mut() { *s = 0; } }
                 }, err_fn, None)
             }
             cpal::SampleFormat::U16 => {
-                let rc = ring_clone;
+                // Reuse scratch to avoid per-callback allocations
+                let rs = ring_sel_cb.clone();
+                let mut scratch: Vec<f32> = Vec::new();
                 dev.build_output_stream(&config, move |buf: &mut [u16], _| {
-                    if let Ok(mut r) = rc.lock() {
-                        let mut tmp = vec![0.0f32; buf.len()];
-                        let n = r.pop(&mut tmp);
-                        for i in 0..buf.len() {
-                            if i < n {
-                                let v = (tmp[i].max(-1.0).min(1.0) * 0.5 + 0.5) * (u16::MAX as f32);
-                                buf[i] = v as u16;
-                            } else { buf[i] = u16::MIN; }
-                        }
+                    if let Ok(sel) = rs.lock() {
+                        if let Some(rb) = sel.as_ref() {
+                            if let Ok(mut r) = rb.lock() {
+                                if scratch.len() < buf.len() { scratch.resize(buf.len(), 0.0); }
+                                let n = r.pop(&mut scratch);
+                                for i in 0..buf.len() {
+                                    if i < n {
+                                        let v = (scratch[i].max(-1.0).min(1.0) * 0.5 + 0.5) * (u16::MAX as f32);
+                                        buf[i] = v as u16;
+                                    } else { buf[i] = u16::MIN; }
+                                }
+                            } else { for s in buf.iter_mut() { *s = u16::MIN; } }
+                        } else { for s in buf.iter_mut() { *s = u16::MIN; } }
                     } else { for s in buf.iter_mut() { *s = u16::MIN; } }
                 }, err_fn, None)
             }
@@ -312,7 +363,7 @@ mod devio {
         }.map_err(|e| BasilError(format!("AUDIO_OPEN_OUT@: build stream failed: {e}")))?;
         let mut handle = -1i64;
         out_tab_mut(|tab| {
-            handle = super::alloc_handle(tab, OutEntry { stream, ring: Some(ring) });
+            handle = super::alloc_handle(tab, OutEntry { stream, ring_sel, chans: config.channels, rate: config.sample_rate.0 });
         });
         Ok(handle)
     }
@@ -368,6 +419,23 @@ mod devio {
         if closed { Ok(0) } else { Err(BasilError("AUDIO_CLOSE%: invalid handle".into())) }
     }
 
+    pub fn in_params(h: i64) -> Result<(u32,u16)> {
+        let mut res: Option<(u32,u16)> = None;
+        IN_TABLE.with(|t| {
+            let tab = t.borrow();
+            if let Some(Some(e)) = tab.get(h as usize) { res = Some((e.rate, e.chans)); }
+        });
+        res.ok_or_else(|| BasilError("Invalid input handle".into()))
+    }
+    pub fn out_params(h: i64) -> Result<(u32,u16)> {
+        let mut res: Option<(u32,u16)> = None;
+        OUT_TABLE.with(|t| {
+            let tab = t.borrow();
+            if let Some(Some(e)) = tab.get(h as usize) { res = Some((e.rate, e.chans)); }
+        });
+        res.ok_or_else(|| BasilError("Invalid output handle".into()))
+    }
+
     pub fn connect_in_to_ring(in_h: i64, ring_h: i64) -> Result<i64> {
         let rb = {
             let tab = super::rb_tab().lock().unwrap();
@@ -377,8 +445,10 @@ mod devio {
         let mut ok = false;
         in_tab_mut(|tab| {
             if let Some(entry) = tab.get_mut(in_h as usize).and_then(|o| o.as_mut()) {
-                entry.ring = Some(rb.clone());
-                ok = true;
+                if let Ok(mut sel) = entry.ring_sel.lock() {
+                    *sel = Some(rb.clone());
+                    ok = true;
+                }
             }
         });
         if ok { Ok(0) } else { Err(BasilError("Invalid input handle".into())) }
@@ -392,8 +462,10 @@ mod devio {
         let mut ok = false;
         out_tab_mut(|tab| {
             if let Some(entry) = tab.get_mut(out_h as usize).and_then(|o| o.as_mut()) {
-                entry.ring = Some(rb.clone());
-                ok = true;
+                if let Ok(mut sel) = entry.ring_sel.lock() {
+                    *sel = Some(rb.clone());
+                    ok = true;
+                }
             }
         });
         if ok { Ok(0) } else { Err(BasilError("Invalid output handle".into())) }
@@ -422,11 +494,33 @@ pub fn audio_start(h: i64) -> Result<i64> { devio::start(h) }
 pub fn audio_stop(h: i64) -> Result<i64> { devio::stop(h) }
 #[cfg(feature = "obj-audio")]
 pub fn audio_close(h: i64) -> Result<i64> { devio::close(h) }
-
 #[cfg(feature = "obj-audio")]
 pub fn audio_connect_in_to_ring(in_h: i64, ring_h: i64) -> Result<i64> { devio::connect_in_to_ring(in_h, ring_h) }
 #[cfg(feature = "obj-audio")]
 pub fn audio_connect_ring_to_out(ring_h: i64, out_h: i64) -> Result<i64> { devio::connect_ring_to_out(ring_h, out_h) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_in_params(h: i64) -> Result<(u32,u16)> { devio::in_params(h) }
+#[cfg(feature = "obj-audio")]
+pub fn audio_out_params(h: i64) -> Result<(u32,u16)> { devio::out_params(h) }
+
+/// Cleanup all audio-related resources (streams, rings, wav writers) and clear stop flag.
+pub fn daw_cleanup_all() {
+    daw_stop_clear();
+    #[cfg(feature = "obj-audio")]
+    {
+        devio::cleanup_all();
+    }
+    // Clear ring buffers
+    {
+        let mut tab = rb_tab().lock().unwrap();
+        tab.clear();
+    }
+    // Clear WAV writer accumulators
+    {
+        let mut tab = wav_tab().lock().unwrap();
+        tab.clear();
+    }
+}
 
 // Ring buffer handle table (simple)
 use std::sync::{Mutex, OnceLock, Arc};

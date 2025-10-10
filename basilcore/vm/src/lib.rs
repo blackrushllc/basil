@@ -1816,6 +1816,12 @@ impl VM {
                             let rc = daw_utils::synth_live(&a, &b, poly);
                             self.stack.push(Value::Int(rc));
                         }
+                        #[cfg(feature = "obj-daw")]
+                        187 => { // DAW_RESET
+                            if argc != 0 { return Err(BasilError("DAW_RESET expects 0 arguments".into())); }
+                            daw_utils::reset();
+                            self.stack.push(Value::Str(String::new()));
+                        }
                         // --- Audio low-level ---
                         #[cfg(feature = "obj-audio")]
                         190 => { // AUDIO_OUTPUTS$[]
