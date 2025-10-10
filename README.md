@@ -56,6 +56,8 @@ See:
  + examples/website/ - a simple Basil CGI web app with login, register, user home, logout
  + Useful links:
 
+🌿 https://yobasic.com - The website for Basil
+
 🌿 https://yobasic.com/basil//basil.html - The original 15 Minute Presentation Handout (nicer one below)
 
 🌿 https://yobasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
@@ -64,6 +66,7 @@ See:
 
 🌿 https://yobasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
 
+🌿 https://yobasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
 
 Interesting files to read in this repo:
 
