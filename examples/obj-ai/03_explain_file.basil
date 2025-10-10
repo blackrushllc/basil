@@ -1,0 +1,2 @@
+LET src$ = READFILE$("examples/hello.basil");
+PRINT AI.CHAT$("Explain briefly what this code does:\n\n" + src$, "{ system:'You are a calm Basil tutor.', max_tokens:300 }");

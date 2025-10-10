@@ -23,3 +23,5 @@ obj-sqlite = []
 obj-audio = []
 obj-midi  = []
 obj-daw   = ["obj-audio", "obj-midi"]
+# AI feature gate (no deps here)
+obj-ai = []

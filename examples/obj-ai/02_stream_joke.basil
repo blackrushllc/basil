@@ -1,0 +1,3 @@
+PRINT "AI says: ";
+LET full$ = AI.STREAM("Tell a one-liner about BASIC", "{ temperature:0.2 }");
+PRINT "\n---\n"; PRINT full$;

@@ -1,7 +1,0 @@
-﻿#CGI_NO_HEADER
-<?basil
-  // Clear cookie by expiring it
-  print "";
-  print "";
-  print "";
-?>
