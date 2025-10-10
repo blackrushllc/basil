@@ -1,0 +1,15 @@
+﻿rem Demo: Using CLASS to instantiate and interact with a class instance
+
+dim user@ as class("");
+
+rem Access and modify a public variable
+println "", user@.Description$;
+let user@.Description$ = "";
+println "", user@.Description$;
+
+rem Call public functions
+user@.AddUser("");
+user@.AddUser("");
+user@.AddUser("");
+
+println "", user@.CountMyUsers%();

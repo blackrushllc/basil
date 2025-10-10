@@ -593,12 +593,18 @@ impl C {
                 // Evaluate enumerable and create enumerator
                 self.emit_expr_in(chunk, enumerable, Some(env))?;
                 chunk.push_op(Op::EnumNew);
+                // Save enumerator handle in a temp local so the loop body can freely use the stack
+                let tmp_name = format!("$__enumH%{}", env.next);
+                let tmp_slot = env.bind_next_if_absent(tmp_name);
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(tmp_slot);
                 // test
                 let test_here = chunk.here();
+                chunk.push_op(Op::LoadLocal); chunk.push_u8(tmp_slot);
                 chunk.push_op(Op::EnumMoveNext);
                 chunk.push_op(Op::JumpIfFalse);
                 let j_end = chunk.emit_u16_placeholder();
                 // current -> assign to loop var (local if exists else global)
+                chunk.push_op(Op::LoadLocal); chunk.push_u8(tmp_slot);
                 chunk.push_op(Op::EnumCurrent);
                 if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 if let Some(slot) = env.lookup(var) {
@@ -616,6 +622,8 @@ impl C {
                 // end
                 let end_here = chunk.here();
                 let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                // dispose enumerator
+                chunk.push_op(Op::LoadLocal); chunk.push_u8(tmp_slot);
                 chunk.push_op(Op::EnumDispose);
             }
             Stmt::For { var, start, end, step, body } => {

@@ -1,0 +1,119 @@
+﻿#CGI_NO_HEADER
+<?basil
+  // ----- minimal helpers (same as index, plus DB and cookie setter) -----
+  let SITE_TITLE$ = ""
+  func send_header_ok_html() begin
+    print "";
+    print "";
+    print "";
+    return 0;
+  end
+  func header_flush() begin
+    print "";
+    return 0;
+  end
+  func set_cookie(name$, value$) begin
+    print "" + name$ + "" + value$ + "";
+    return 0;
+  end
+  func send_header_redirect(loc$) begin
+    print "";
+    print "" + loc$ + "";
+    return 0;
+  end
+  func layout_start(title$) begin
+    print ""en\""utf-8\"" + HTML$(title$) + "";
+    print ""viewport\""width=device-width, initial-scale=1\"";
+    print ""stylesheet\""css/site.css\""top\""wrap\"" + HTML$(SITE_TITLE$) + ""wrap\"";
+    return 0;
+  end
+  func layout_end() begin
+    print ""foot\""wrap\""index.basil\""js/site.js\"";
+    return 0;
+  end
+
+  func param$(name$) begin
+    for each kv$ in REQUEST$()
+      begin
+          let eq% = INSTR(kv$, "");
+          if eq% > 0 then begin
+            let k$ = LEFT$(kv$, eq%);
+            let v$ = MID$(kv$, eq%+2);
+            if k$ == name$ then return v$;
+          end
+      end
+    next
+    return "";
+  end
+
+  // ----- SQLite helpers -----
+  func db_open%() begin
+    // Try DB in script directory first
+    let db% = SQLITE_OPEN%("");
+    if db% == 0 then begin
+      // Fallback to a writable temp dir
+      let tmp$ = ENV$("");
+      if LEN(tmp$) == 0 then let tmp$ = ENV$("");
+      if LEN(tmp$) == 0 then let tmp$ = ENV$("");
+      if LEN(tmp$) == 0 then let tmp$ = "";
+      // Join path safely
+      if RIGHT$(tmp$, 1) == "" or RIGHT$(tmp$, 1) == "" then begin
+        let path$ = tmp$ + "";
+      else
+        let path$ = tmp$ + "" + "";
+      end
+      let db% = SQLITE_OPEN%(path$);
+    end
+    if db% == 0 then return 0;
+    let _ = SQLITE_EXEC%(db%, "");
+    return db%;
+  end
+  func user_exists%(db%, username$) begin
+    dim rows$(0,0)
+    let rows$() = SQLITE_QUERY2D$(db%, "" + username$ + "")
+    return ARRAY_ROWS%(rows$) > 0
+  end
+  func check_login%(db%, username$, password$) begin
+    dim rows$(0,0)
+    let rows$() = SQLITE_QUERY2D$(db%, "" + username$ + "" + password$ + "")
+    return ARRAY_ROWS%(rows$) > 0
+  end
+
+  // ----- handle POST -----
+  let method$ = ENV$("");
+  if method$ == "" then begin
+    let u$ = param$("");
+    let p$ = param$("");
+
+    let db% = db_open%();
+    if db% == 0 then begin
+      print "";
+      exit 0;
+    end
+
+    if check_login%(db%, u$, p$) then begin
+      // Set cookie and redirect to user_home
+      print "";
+      let __d% = set_cookie("", u$);
+      print "";
+      SQLITE_CLOSE(db%);
+      exit 0;
+
+    else
+      // fall through to render with error
+      let err$ = "";
+    end
+    SQLITE_CLOSE(db%);
+  end
+
+  // ----- GET or failed POST -> show form -----
+  let __d% = send_header_ok_html();
+  let __d% = layout_start("");
+?>
+<?basil print READFILE$(""); ?>
+<?basil
+  if LEN(err$) > 0 then begin
+    print ""error\"" + HTML$(err$) + "";
+  end
+  let __d% = layout_end()
+?>
