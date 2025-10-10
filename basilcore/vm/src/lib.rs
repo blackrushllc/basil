@@ -594,6 +594,7 @@ impl VM {
                 Op::Sub => self.bin_num(|a,b| a-b)?,
                 Op::Mul => self.bin_num(|a,b| a*b)?,
                 Op::Div => self.bin_num(|a,b| a/b)?,
+                Op::Mod => self.bin_num(|a,b| a % b)?,
                 Op::Neg => {
                     let v = self.pop()?;
                     let n = self.as_num(v)?;
@@ -1379,6 +1380,21 @@ impl VM {
                             let msu = if ms < 0 { 0 } else { ms as u64 };
                             std::thread::sleep(std::time::Duration::from_millis(msu));
                             self.stack.push(Value::Int(0));
+                        }
+                        26 => { // STRING$(n, ch$ or code%)
+                            if argc != 2 { return Err(BasilError("STRING$ expects 2 arguments".into())); }
+                            let n = self.to_i64(&args[0])?;
+                            let n = if n <= 0 { 0usize } else { (n as usize).min(1_000_000) };
+                            let unit = match &args[1] {
+                                Value::Str(s) => s.clone(),
+                                other => {
+                                    let code = self.to_i64(other)?;
+                                    let ch = std::char::from_u32((code as u32) & 0xFF).unwrap_or('\u{0000}');
+                                    ch.to_string()
+                                }
+                            };
+                            let out = if unit.is_empty() || n == 0 { String::new() } else { unit.repeat(n) };
+                            self.stack.push(Value::Str(out));
                         }
                         40 => { // FOPEN(path$, mode$) -> fh%
                             if argc != 2 { return Err(BasilError("FOPEN expects 2 arguments".into())); }
@@ -2204,6 +2220,48 @@ impl VM {
                             let s = basil_objects::term::term_err();
                             self.stack.push(Value::Str(s));
                         }
+                        #[cfg(feature = "obj-term")]
+                        244 => { // TERM.INIT
+                            if argc != 0 { return Err(BasilError("TERM.INIT expects 0 arguments".into())); }
+                            let rc = basil_objects::term::term_init();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        245 => { // TERM.END
+                            if argc != 0 { return Err(BasilError("TERM.END expects 0 arguments".into())); }
+                            let rc = basil_objects::term::term_end();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        246 => { // TERM.RAW ON|OFF
+                            if argc != 1 { return Err(BasilError("TERM.RAW expects 1 argument (ON/OFF or 0/1)".into())); }
+                            let rc = basil_objects::term::term_raw(&args[0]);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        247 => { // ALTSCREEN_ON
+                            if argc != 0 { return Err(BasilError("ALTSCREEN_ON expects 0 arguments".into())); }
+                            let rc = basil_objects::term::altscreen_on();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        248 => { // ALTSCREEN_OFF
+                            if argc != 0 { return Err(BasilError("ALTSCREEN_OFF expects 0 arguments".into())); }
+                            let rc = basil_objects::term::altscreen_off();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        249 => { // TERM.FLUSH
+                            if argc != 0 { return Err(BasilError("TERM.FLUSH expects 0 arguments".into())); }
+                            let rc = basil_objects::term::term_flush();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        250 => { // TERM.POLLKEY$()
+                            if argc != 0 { return Err(BasilError("TERM.POLLKEY$ expects 0 arguments".into())); }
+                            let s = basil_objects::term::term_pollkey_s();
+                            self.stack.push(Value::Str(s));
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -2227,7 +2285,7 @@ impl VM {
         let op = match byte {
             1=>Op::Const, 2=>Op::LoadGlobal, 3=>Op::StoreGlobal,
             11=>Op::LoadLocal, 12=>Op::StoreLocal,
-            20=>Op::Add, 21=>Op::Sub, 22=>Op::Mul, 23=>Op::Div, 24=>Op::Neg,
+            20=>Op::Add, 21=>Op::Sub, 22=>Op::Mul, 23=>Op::Div, 24=>Op::Neg, 25=>Op::Mod,
             30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
             40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
             50=>Op::Call, 51=>Op::Ret,

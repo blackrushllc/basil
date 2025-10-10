@@ -1,0 +1,16 @@
+TERM.INIT;
+// Comment here
+TERM.RAW (TRUE);
+CURSOR_HIDE;
+CLS;
+PRINT "Press ESC to quit…"; TERM.FLUSH;
+WHILE TRUE BEGIN
+  LET k$ = TERM.POLLKEY$();
+  IF k$ <> "" THEN BEGIN
+     IF k$ == "Esc" THEN BREAK;
+     PRINT "\rKey: "; PRINT k$; PRINT "     "; TERM.FLUSH;
+  END
+END
+CURSOR_SHOW;
+TERM.RAW(FALSE);
+TERM.END;

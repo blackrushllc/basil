@@ -166,4 +166,113 @@ Similar to LLVM plan but faster to bring up; great for “compile-run” loops a
 * **Phase 2:** Stand up an LLVM backend in parallel (Inkwell). Keep both backends behind flags (`--backend=c`, `--backend=llvm`).
 * **Phase 3:** Optimize hot paths (string ops, array loops), add DWARF, and a `-O` story. Consider Cranelift as a “dev mode” fast compiler if you want super-snappy compile-run cycles.
 
-If you want, I can sketch the exact IR (instruction set + type model) and a tiny end-to-end example: Basil `PRINTLN "hi"` lowered to IR, then to C and to LLVM IR, so Junie can scaffold the crates right away.
+# What that looks like:
+
+Short answer: yes—ship **two executables** in one Rust workspace, **share the frontend** (lexer/parser/AST), and let users who want AOT builds install *only* the Rust toolchain. They won’t need your Basil repo if you publish the runtime as crates.
+
+Here’s the clean setup.
+
+# 1) Binaries you ship
+
+* **`basil` (the interpreter/VM)**
+  Single self-contained exe. You can build variants with feature flags (e.g., `--features obj-audio,obj-midi,obj-daw,obj-term`) or one “kitchen sink” build that includes everything.
+* **`basilc` (the compiler/transpiler driver)**
+  A small CLI that:
+
+    1. parses Basil → IR (reuses the shared frontend),
+    2. emits a tiny Rust crate to a temp dir (main.rs + Cargo.toml), and
+    3. runs `cargo build --release` to produce a native exe.
+
+These live in the same **Cargo workspace**, so code reuse is maximal and the interpreter doesn’t carry compiler code.
+
+```
+/crates
+  basil-frontend     # lexer, parser, AST, spans  (shared)
+  basil-ir           # simple IR + passes         (shared)
+  libbasilrt         # runtime crate              (shared, published)
+  obj-audio ...      # feature crates             (shared, published)
+  backend-rs         # IR → Rust emitter          (compiler-only)
+  backend-c (opt)    # keep optional              (compiler-only)
+/bins
+  basil              # VM binary
+  basilc             # AOT/transpile driver
+```
+
+# 2) Code reuse & bloat
+
+* The **interpreter** links: `basil-frontend` + VM + `libbasilrt` + chosen `obj-*` features.
+  It **does not** depend on `backend-rs` or other compiler bits.
+* The **compiler** links: `basil-frontend` + `basil-ir` + `backend-rs` (and spawns `cargo`).
+  It **does not** pull in the VM.
+  Result: small, focused binaries; no unnecessary bloat.
+
+# 3) What end-users need (by scenario)
+
+## A) They only want to run Basil scripts (the VM)
+
+* **They need:** just your `basil` executable.
+* **No Rust toolchain required.**
+* You can ship multiple platform builds (Windows, macOS, Linux; possibly a static `musl` Linux build for maximal portability).
+
+## B) They want to compile to native EXEs (AOT via transpile→Rust)
+
+* **They need:**
+
+    * **Rust toolchain** from rustup (this installs `rustc` + `cargo`).
+    * Platform prerequisites the Rust target expects:
+
+        * Windows (MSVC): “Visual Studio Build Tools” (the C++ build tools) – standard Rust guidance.
+        * Windows (GNU): MinGW toolchain if using the `*-pc-windows-gnu` target.
+        * macOS: Xcode Command Line Tools.
+        * Linux: usually nothing extra; for fully static, add the `x86_64-unknown-linux-musl` target.
+    * **Your `basilc` binary** (the compiler driver).
+* **They do NOT need your Basil repo.**
+  `basilc` can generate a tiny temp Cargo project that depends on **published crates**:
+
+    * `libbasilrt` (your runtime)
+    * any `obj-*` feature crates
+      Cargo will fetch those from crates.io once, cache them, and build the user’s program into a native exe.
+
+> Offline option: ship `basilc --emit-project` to dump the generated Cargo project, or vendor the runtime crates in a zip; `basilc` can point Cargo to a local path so no network is needed.
+
+# 4) Typical user flow (AOT)
+
+```
+basilc aot hello.basil \
+  --features obj-audio,obj-midi \
+  --target x86_64-pc-windows-msvc \
+  --opt 3 --lto thin
+# => produces hello.exe in ./target-out/
+```
+
+Under the hood, `basilc` writes:
+
+* `generated/Cargo.toml` with deps: `libbasilrt = "x.y"`, `obj-audio = "x.y"`, …
+* `generated/src/main.rs` (your emitted Rust)
+* runs `cargo build --release --target …`
+* copies the artifact to `target-out/`
+
+# 5) Cross-compiling notes
+
+* Users can add targets with `rustup target add <triple>`.
+* Some targets need a linker (e.g., MinGW for `*-gnu`, `musl` toolchain for fully static Linux).
+* You can also publish prebuilt interpreter binaries for all OSes, and let AOT users build locally with their toolchain.
+
+# 6) Packaging choices (nice-to-have)
+
+* **Publish crates:** `libbasilrt` and each `obj-*` on crates.io. Keep them monomorphic (no heavy generics) to speed compiles.
+* **Lock versions:** have `basilc` pin exact versions it knows (avoid surprise breakage).
+* **Emit-only mode:** `basilc aot main.basil --emit-project ./out-crate` for users who want to edit then `cargo build` manually.
+* **Static builds:** offer `--target x86_64-unknown-linux-musl` for “drop anywhere” Linux EXEs.
+
+# 7) TL;DR answers to your questions
+
+* **Separate exe for the compiler?** Yes. Ship `basil` (VM) and `basilc` (AOT). The VM stays lean and doesn’t embed compiler code.
+* **Same project? Reuse parser?** Yes. One workspace; both binaries reuse the same `basil-frontend` (lexer/parser/AST) and other shared crates.
+* **What must AOT users install?** At minimum: the **Rust toolchain** (via rustup) + target prerequisites. They don’t need your Basil repo if you publish `libbasilrt` and the `obj-*` crates—`basilc` will generate/compile a tiny Rust project that depends on those.
+
+If you want, I can draft:
+
+* the `libbasilrt` public API surface (types + key fns),
+* the `basilc` CLI spec,
+* and the exact `Cargo.toml` template `basilc` should emit.

@@ -1,0 +1,13 @@
+TERM.INIT;
+ALTSCREEN_ON;
+CLS;
+PRINTLN "Basil + Crossterm (Alt Screen)";
+PRINTLN "Press any key to exit…";
+TERM.FLUSH;
+WHILE TRUE BEGIN
+    LET k$ = TERM.POLLKEY$();
+    IF k$ <> "" THEN BREAK;
+END
+
+ALTSCREEN_OFF;
+TERM.END;

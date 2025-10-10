@@ -877,7 +877,7 @@ impl C {
                         self.emit_expr_in(chunk, lhs, env)?;
                         self.emit_expr_in(chunk, rhs, env)?;
                         chunk.push_op(match op {
-                            BinOp::Add => Op::Add, BinOp::Sub => Op::Sub, BinOp::Mul => Op::Mul, BinOp::Div => Op::Div,
+                            BinOp::Add => Op::Add, BinOp::Sub => Op::Sub, BinOp::Mul => Op::Mul, BinOp::Div => Op::Div, BinOp::Mod => Op::Mod,
                             BinOp::Eq  => Op::Eq,  BinOp::Ne  => Op::Ne,
                             BinOp::Lt  => Op::Lt,  BinOp::Le  => Op::Le, BinOp::Gt => Op::Gt, BinOp::Ge => Op::Ge,
                             BinOp::And | BinOp::Or => unreachable!(),
@@ -923,6 +923,7 @@ impl C {
                         "UNESCAPE$" => Some(21u8),
                         "URLENCODE$" => Some(22u8),
                         "URLDECODE$" => Some(23u8),
+                        "STRING$" => Some(26u8),
                         "SLEEP" => Some(24u8),
                         "FOPEN" => Some(40u8),
                         "FCLOSE" => Some(41u8),
@@ -976,6 +977,14 @@ impl C {
                         #[cfg(feature = "obj-term")] "CURSOR_HIDE" => Some(241u8),
                         #[cfg(feature = "obj-term")] "CURSOR_SHOW" => Some(242u8),
                         #[cfg(feature = "obj-term")] "TERM_ERR$" => Some(243u8),
+                        // Phase 2 additions
+                        #[cfg(feature = "obj-term")] "TERM.INIT" => Some(244u8),
+                        #[cfg(feature = "obj-term")] "TERM.END" => Some(245u8),
+                        #[cfg(feature = "obj-term")] "TERM.RAW" => Some(246u8),
+                        #[cfg(feature = "obj-term")] "ALTSCREEN_ON" => Some(247u8),
+                        #[cfg(feature = "obj-term")] "ALTSCREEN_OFF" => Some(248u8),
+                        #[cfg(feature = "obj-term")] "TERM.FLUSH" => Some(249u8),
+                        #[cfg(feature = "obj-term")] "TERM.POLLKEY$" => Some(250u8),
                         // --- Audio/MIDI/DAW builtins ---
                         #[cfg(feature = "obj-daw")] "DAW_STOP" => Some(180u8),
                         #[cfg(feature = "obj-daw")] "DAW_ERR$" => Some(181u8),
@@ -1044,17 +1053,74 @@ impl C {
                         }
                     }
                 }
+                // Special case: TERM.* as builtins when parsed as member-get callee
+                if let Expr::MemberGet { target, name } = &**callee {
+                    if let Expr::Var(tn) = &**target {
+                        if tn.to_ascii_uppercase() == "TERM" {
+                            let m = name.to_ascii_uppercase();
+                            let bid_opt = match &*m {
+                                #[cfg(feature = "obj-term")] "INIT" => Some(244u8),
+                                #[cfg(feature = "obj-term")] "END" => Some(245u8),
+                                #[cfg(feature = "obj-term")] "RAW" => Some(246u8),
+                                #[cfg(feature = "obj-term")] "FLUSH" => Some(249u8),
+                                #[cfg(feature = "obj-term")] "POLLKEY$" => Some(250u8),
+                                _ => None,
+                            };
+                            if let Some(bid) = bid_opt {
+                                for a in args { self.emit_expr_in(chunk, a, env)?; }
+                                chunk.push_op(Op::Builtin); chunk.push_u8(bid); chunk.push_u8(args.len() as u8);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
                 // Regular call
                 self.emit_expr_in(chunk, callee, env)?;
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
             }
             Expr::MemberGet { target, name } => {
+                // Allow zero-arg TERM.* calls written without parentheses (e.g., TERM.INIT;)
+                if let Expr::Var(tn) = &**target {
+                    if tn.to_ascii_uppercase() == "TERM" {
+                        let m = name.to_ascii_uppercase();
+                        let bid_opt = match &*m {
+                            #[cfg(feature = "obj-term")] "INIT" => Some(244u8),
+                            #[cfg(feature = "obj-term")] "END" => Some(245u8),
+                            #[cfg(feature = "obj-term")] "FLUSH" => Some(249u8),
+                            #[cfg(feature = "obj-term")] "POLLKEY$" => Some(250u8),
+                            _ => None,
+                        };
+                        if let Some(bid) = bid_opt {
+                            chunk.push_op(Op::Builtin); chunk.push_u8(bid); chunk.push_u8(0u8);
+                            return Ok(());
+                        }
+                    }
+                }
                 self.emit_expr_in(chunk, target, env)?;
                 let ci = chunk.add_const(Value::Str(name.clone()));
                 chunk.push_op(Op::GetProp); chunk.push_u16(ci);
             }
             Expr::MemberCall { target, method, args } => {
+                // Map TERM.* member-call forms to builtins
+                if let Expr::Var(tn) = &**target {
+                    if tn.to_ascii_uppercase() == "TERM" {
+                        let m = method.to_ascii_uppercase();
+                        let bid_opt = match &*m {
+                            #[cfg(feature = "obj-term")] "INIT" => Some(244u8),
+                            #[cfg(feature = "obj-term")] "END" => Some(245u8),
+                            #[cfg(feature = "obj-term")] "RAW" => Some(246u8),
+                            #[cfg(feature = "obj-term")] "FLUSH" => Some(249u8),
+                            #[cfg(feature = "obj-term")] "POLLKEY$" => Some(250u8),
+                            _ => None,
+                        };
+                        if let Some(bid) = bid_opt {
+                            for a in args { self.emit_expr_in(chunk, a, env)?; }
+                            chunk.push_op(Op::Builtin); chunk.push_u8(bid); chunk.push_u8(args.len() as u8);
+                            return Ok(());
+                        }
+                    }
+                }
                 self.emit_expr_in(chunk, target, env)?;
                 for a in args { self.emit_expr_in(chunk, a, env)?; }
                 let ci = chunk.add_const(Value::Str(method.clone()));
