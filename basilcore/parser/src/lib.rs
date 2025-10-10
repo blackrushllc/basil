@@ -441,7 +441,26 @@ impl Parser {
                 let call = Expr::Call { callee: Box::new(Expr::Var("SLEEP".to_string())), args: vec![arg] };
                 return Ok(Stmt::ExprStmt(call));
             } else {
-                // Not SLEEP; rewind and continue with regular parsing
+                // Support zero-arg terminal commands as bare statements without parentheses
+                // e.g., CLS; HOME; CLEAR; COLOR_RESET; ATTR_RESET; CURSOR_SAVE; CURSOR_RESTORE; CURSOR_HIDE; CURSOR_SHOW;
+                let uname = name.to_ascii_uppercase();
+                const ZERO_ARG_TERMINAL_CMDS: [&str; 9] = [
+                    "CLS", "CLEAR", "HOME",
+                    "COLOR_RESET", "ATTR_RESET",
+                    "CURSOR_SAVE", "CURSOR_RESTORE",
+                    "CURSOR_HIDE", "CURSOR_SHOW",
+                ];
+                if ZERO_ARG_TERMINAL_CMDS.contains(&uname.as_str()) {
+                    // Optionally accept empty parentheses: NAME or NAME()
+                    if self.match_k(TokenKind::LParen) {
+                        // For these commands, only empty parens are allowed in statement form
+                        self.expect(TokenKind::RParen)?;
+                    }
+                    self.terminate_stmt()?;
+                    let call = Expr::Call { callee: Box::new(Expr::Var(name)), args: vec![] };
+                    return Ok(Stmt::ExprStmt(call));
+                }
+                // Not a special-case; rewind and continue with regular parsing
                 self.i = save_i;
             }
         }
