@@ -1,0 +1,15 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Windows (MSVC and OS noise)
+*.pdb
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# IDE / Editor
+/.idea/
+/.vscode/

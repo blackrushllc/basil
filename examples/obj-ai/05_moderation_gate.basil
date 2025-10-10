@@ -1,0 +1,6 @@
+REM Simple moderation gate before calling the model
+IF AI.MODERATE%("Generate a polite meeting request email") = 0 THEN
+  PRINT AI.CHAT$("Write a polite 3-sentence meeting request.");
+ELSE
+  PRINT "Request blocked by moderation.";
+END IF
