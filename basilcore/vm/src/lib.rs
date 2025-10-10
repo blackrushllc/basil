@@ -336,7 +336,7 @@ impl VM {
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
-        Self {
+        let mut s = Self {
             frames: vec![frame],
             stack: Vec::new(),
             globals,
@@ -357,7 +357,18 @@ impl VM {
             file_table: HashMap::new(),
             next_fh: 1,
             close_handles_on_ret: true,
+        };
+        #[cfg(feature = "obj-ai")]
+        {
+            // Reset test flag unless in explicit test VM
+            basil_objects::ai::set_test_mode(false);
+            // If program references global AI, seed it with an instance
+            if s.global_names.iter().any(|n| n.eq_ignore_ascii_case("AI")) {
+                let obj = basil_objects::ai::new_ai();
+                s.set_global_by_name("AI", Value::Object(obj));
+            }
         }
+        s
     }
 
     pub fn new_with_test(p: BCProgram, mock: MockInputProvider, trace: bool, script_path: Option<String>, comments_map: Option<HashMap<u32, Vec<String>>>, max_mocked_inputs: Option<usize>) -> Self {
@@ -368,6 +379,8 @@ impl VM {
         vm.comments_map = comments_map;
         vm.max_mocked_inputs = max_mocked_inputs;
         vm.mock = Some(mock);
+        #[cfg(feature = "obj-ai")]
+        { basil_objects::ai::set_test_mode(true); }
         vm
     }
 

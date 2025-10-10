@@ -104,12 +104,14 @@ fn print_help() {
     println!("  serve (greenhouse) Serve local HTTP (stub)");
     println!("  doc  (bouquet)     Generate docs (stub)\n");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
+    println!("  --ai               Start AI REPL (streaming chat)\n");
     println!("Usage:");
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
     println!("  basilc sprout examples/expr.basil");
     println!("  basilc init myapp");
+    println!("  basilc --ai");
 
 }
 
