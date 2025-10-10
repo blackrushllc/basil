@@ -325,3 +325,150 @@ Plan:
 * Nice to have: audition notes when moving/adding (MIDI-thru to synth).
 
 Say the word and I’ll add the Piano Roll screen scaffold (drawing + basic insert/delete/nudge) to this repo.
+
+
+> The word is given
+
+
+Piano Roll is in. Grab the fresh build here:
+
+[Download: mini-DAW + Piano Roll screen](sandbox:/mnt/data/basil-mini-daw-with-pianoroll.zip)
+
+### What you got
+
+* **New screen:** Piano Roll (press **F5**)
+* **Editing:**
+
+    * Arrow keys = move cursor (Left/Right moves by grid step; Up/Down changes pitch)
+    * **Enter** = toggle a note at the cursor (adds/removes; default length = 1 grid step)
+    * **Z / X** = zoom grid (1/4, 1/8, 1/16, 1/32)
+    * **[ / ]** = horizontal scroll (by 8 grid steps)
+* **Display:** live grid with bar markers, note blocks, and a solid cursor
+* **State:** stored in-memory as parallel arrays (`pitch/start/len/velocity`), ready to hook into the scheduler
+
+### Run it
+
+```bash
+cargo run -p basilc --features obj-daw,obj-term,obj-audio -- run src/main.basil
+```
+
+### Next easy upgrades (say the word)
+
+* **Audition notes** on move/insert (MIDI-thru to the built-in synth)
+* **Selection & nudge** multiple notes; **velocity lane** with V+/V-
+* **Save/load** the piano-roll notes into your project JSON
+* **Dispatch to transport** so the MIDI plays during timeline playback (clip scheduling)
+
+Want me to wire in audition + dispatch-to-transport so notes you place actually sound during playback?
+
+
+
+
+> "Want me to wire in audition + dispatch-to-transport so notes you place actually sound during playback?" what does this mean, exactly?
+
+
+Great question! Short version:
+
+* **Audition** = when you move the cursor or insert/delete a note in the Piano Roll, you immediately hear that note (quick “MIDI-thru” ping), without pressing Play.
+* **Dispatch to transport** = when the transport is playing, the engine takes the notes you drew in the Piano Roll and schedules them (note-on/note-off) into the audio/MIDI render loop so they actually sound in time—respecting BPM, loop, and count-in.
+
+Here’s what that means in practice for our mini-DAW:
+
+### 1) Audition (instant feedback while editing)
+
+* On **Enter** (add note) or when you **move the cursor**, we trigger a short note on the built-in synth:
+
+    * Send `SYNTH_NOTE_ON%(pitch, vel)` immediately, and schedule a short `SYNTH_NOTE_OFF%` ~100–200ms later (or the grid-step length).
+* Optional toggle (e.g., **A**): audition on/off.
+* Latency is minimal because we render directly into the output stream’s next block.
+
+### 2) Dispatch to transport (make the Piano Roll play during playback)
+
+* While **Space** is playing, each audio block the engine renders will:
+
+    1. Convert the block’s time window (in **samples**) → timeline **ticks** using PPQ (960).
+    2. Find all notes whose start/end **ticks** fall inside this block (including loop wrap).
+    3. Emit the corresponding **note-on/note-off** to the synth for those notes.
+* This means your grid notes become part of the song: they follow **BPM changes**, **loop region**, and **count-in**.
+
+### Tiny pseudo-slice (how it plugs into the engine)
+
+```basic
+REM inside Eng_PumpAudio%() before pushing block to the ring:
+startTick% = (loopStartSamples% + playheadSamples%) / samplesPerTick%;
+endTick%   = (loopStartSamples% + playheadSamples% + blockFrames%) / samplesPerTick%;
+
+FOR i% = 0 TO pr_count% - 1 BEGIN
+  noteOnTick%  = pr_start%[](i%);
+  noteOffTick% = noteOnTick% + pr_len%[](i%);
+
+  IF TICK_IN_WINDOW%(noteOnTick%, startTick%, endTick%, loopEnabled%) THEN
+    SYNTH_NOTE_ON%(pr_pitch%[](i%), pr_vel%[](i%));
+  ENDIF
+  IF TICK_IN_WINDOW%(noteOffTick%, startTick%, endTick%, loopEnabled%) THEN
+    SYNTH_NOTE_OFF%(pr_pitch%[](i%));
+  ENDIF
+END
+```
+
+### Why it matters
+
+* **Audition** makes editing musical—you hear what you’re placing, instantly.
+* **Dispatch** makes the Piano Roll more than a drawing—it’s now the source for actual playback, synced with the metronome, loop, and BBT.
+
+If you want, I can wire both in so:
+
+* hitting **Enter** plays a blip of the note under the cursor, and
+* pressing **Space** plays all notes you drew, perfectly aligned to the bar:beat:tick display.
+
+
+> Let's do it!
+
+
+
+Done! Your Piano Roll now **sounds**:
+
+[Download: mini-DAW with audition + transport-dispatch](sandbox:/mnt/data/basil-mini-daw-audition-transport.zip)
+
+### What I wired up
+
+* **Audition (while stopped or editing)**
+
+    * Press **A** to toggle audition on/off (default **On**).
+    * Move the cursor (Up/Down) or **Enter** to add/delete a note → you hear a short blip.
+    * Works even when the transport is **stopped**: the engine renders the synth just for the audition burst.
+
+* **Dispatch to transport (during playback)**
+
+    * When you press **Space**, the engine scans the Piano Roll notes per audio block and emits **note-on/note-off** to the built-in synth aligned to the loop, BPM, and PPQ.
+    * Notes you drew now play in time with the **metronome**, **count-in**, and **loop region**.
+
+### Controls recap
+
+* **F5** Piano Roll
+
+    * Arrows: move cursor (Left/Right by grid step; Up/Down by semitone)
+    * **Enter**: toggle note at cursor (length = 1 grid step)
+    * **Z / X**: grid zoom (1/4, 1/8, 1/16, 1/32)
+    * **[ / ]**: scroll horizontally
+    * **A**: audition toggle
+* Transport/UI (unchanged):
+
+    * **Space** play/stop • **M** metronome • **L** loop • **C** count-in • **+/-** BPM • **R** 3s memo demo • **F1–F4** screens • **Q** quit
+
+### Under the hood (high-level)
+
+* Added a **synth instance** (`SYNTH_NEW@`) in the engine.
+* During **playback**: for each 20ms audio block, convert the window to ticks, detect note-on/off events (with loop wrap), send to synth, **render synth audio**, then mix in **clicks**.
+* While **stopped**: if an audition is active, render synth for a short burst and auto-`NOTE_OFF`.
+
+Want me to hook these notes into **save/load** (serialize Piano Roll to project JSON) and add a basic **velocity lane** next?
+
+
+> Yes please
+ 
+
+ 
+
+
+

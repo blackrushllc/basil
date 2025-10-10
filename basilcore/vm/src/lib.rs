@@ -1984,6 +1984,56 @@ impl VM {
                             let rc = match audio_utils::audio_connect_ring_to_out(ring_h, out_h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
                             self.stack.push(Value::Int(rc));
                         }
+                        #[cfg(feature = "obj-audio")]
+                        220 => { // SYNTH_NEW@(rate%, poly%)
+                            if argc != 2 { return Err(BasilError("SYNTH_NEW@ expects 2 arguments".into())); }
+                            let rate = self.to_i64(&args[0])?;
+                            let poly = self.to_i64(&args[1])?;
+                            match audio_utils::synth_new(rate, poly) {
+                                Ok(h) => self.stack.push(Value::Int(h)),
+                                Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); }
+                            }
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        221 => { // SYNTH_NOTE_ON%(synth@, note%, vel%)
+                            if argc != 3 { return Err(BasilError("SYNTH_NOTE_ON% expects 3 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let note = self.to_i64(&args[1])?;
+                            let vel = self.to_i64(&args[2])?;
+                            let rc = match audio_utils::synth_note_on(h, note, vel) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        222 => { // SYNTH_NOTE_OFF%(synth@, note%)
+                            if argc != 2 { return Err(BasilError("SYNTH_NOTE_OFF% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let note = self.to_i64(&args[1])?;
+                            let rc = match audio_utils::synth_note_off(h, note) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        223 => { // SYNTH_RENDER%(synth@, OUT frames![])
+                            if argc != 2 { return Err(BasilError("SYNTH_RENDER% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let (len, arr_rc) = match &args[1] {
+                                Value::Array(arr_rc) => { let len = arr_rc.data.borrow().len(); (len, Rc::clone(arr_rc)) },
+                                other => return Err(BasilError(format!("SYNTH_RENDER% expects array, got {}", self.type_of(other))))
+                            };
+                            let mut tmp = vec![0.0f32; len];
+                            let n = match audio_utils::synth_render(h, &mut tmp) { Ok(n)=> n as usize, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 0 } };
+                            {
+                                let mut data = arr_rc.data.borrow_mut();
+                                for i in 0..n { data[i] = Value::Num(tmp[i] as f64); }
+                            }
+                            self.stack.push(Value::Int(n as i64));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        224 => { // SYNTH_DELETE%(synth@)
+                            if argc != 1 { return Err(BasilError("SYNTH_DELETE% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let rc = match audio_utils::synth_delete(h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
                         // --- MIDI ---
                         #[cfg(feature = "obj-midi")]
                         210 => { // MIDI_PORTS$[]
