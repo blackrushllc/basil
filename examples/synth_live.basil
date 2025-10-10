@@ -1,0 +1,3 @@
+REM Play a polyphonic sine synth from a MIDI keyboard to output
+rc% = SYNTH_LIVE%("launchkey", "usb", 16)
+IF rc% <> 0 THEN PRINT "Error: "; DAW_ERR$()

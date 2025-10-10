@@ -27,3 +27,10 @@ obj-curl = ["basil-objects/obj-curl"]
 obj-json = ["serde_json", "basil-objects/obj-json"]
 obj-csv = ["csv", "serde_json", "basil-objects/obj-csv"]
 obj-sqlite = ["basil-objects/obj-sqlite"]
+# New audio/MIDI/DAW features forwarded to basil-objects and basil-compiler
+obj-audio = ["basil-objects/obj-audio", "basil-compiler/obj-audio"]
+obj-midi  = ["basil-objects/obj-midi",  "basil-compiler/obj-midi"]
+obj-daw   = [
+    "basil-objects/obj-daw", "basil-objects/obj-audio", "basil-objects/obj-midi",
+    "basil-compiler/obj-daw", "basil-compiler/obj-audio", "basil-compiler/obj-midi"
+]

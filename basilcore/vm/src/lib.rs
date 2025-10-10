@@ -68,6 +68,12 @@ use serde_json::{Value as JValue};
 use csv::{ReaderBuilder, WriterBuilder};
 #[cfg(feature = "obj-sqlite")]
 use basil_objects::sqlite as sqlite_utils;
+#[cfg(feature = "obj-audio")]
+use basil_objects::audio as audio_utils;
+#[cfg(feature = "obj-midi")]
+use basil_objects::midi as midi_utils;
+#[cfg(feature = "obj-daw")]
+use basil_objects::daw as daw_utils;
 
 #[cfg(feature = "obj-json")]
 fn value_to_jvalue(v: &Value) -> Result<JValue> {
@@ -1754,6 +1760,243 @@ impl VM {
                             let h = self.to_i64(&args[0])?;
                             let id = sqlite_utils::sqlite_last_insert_id(h);
                             self.stack.push(Value::Int(id));
+                        }
+                        // --- DAW helpers ---
+                        #[cfg(feature = "obj-daw")]
+                        180 => { // DAW_STOP()
+                            if argc != 0 { return Err(BasilError("DAW_STOP expects 0 arguments".into())); }
+                            daw_utils::stop();
+                            self.stack.push(Value::Str(String::new()));
+                        }
+                        #[cfg(feature = "obj-daw")]
+                        181 => { // DAW_ERR$()
+                            if argc != 0 { return Err(BasilError("DAW_ERR$ expects 0 arguments".into())); }
+                            let s = daw_utils::get_err();
+                            self.stack.push(Value::Str(s));
+                        }
+                        #[cfg(feature = "obj-daw")]
+                        182 => { // AUDIO_RECORD%(inputSubstr$, outPath$, seconds%)
+                            if argc != 3 { return Err(BasilError("AUDIO_RECORD% expects 3 arguments".into())); }
+                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let secs = self.to_i64(&args[2])?;
+                            let rc = daw_utils::audio_record(&a, &b, secs);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-daw")]
+                        183 => { // AUDIO_PLAY%(outputSubstr$, filePath$)
+                            if argc != 2 { return Err(BasilError("AUDIO_PLAY% expects 2 arguments".into())); }
+                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let rc = daw_utils::audio_play(&a, &b);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-daw")]
+                        184 => { // AUDIO_MONITOR%(inputSubstr$, outputSubstr$)
+                            if argc != 2 { return Err(BasilError("AUDIO_MONITOR% expects 2 arguments".into())); }
+                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let rc = daw_utils::audio_monitor(&a, &b);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-daw")]
+                        185 => { // MIDI_CAPTURE%(portSubstr$, outJsonlPath$)
+                            if argc != 2 { return Err(BasilError("MIDI_CAPTURE% expects 2 arguments".into())); }
+                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let rc = daw_utils::midi_capture(&a, &b);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-daw")]
+                        186 => { // SYNTH_LIVE%(midiPortSubstr$, outputSubstr$, poly%)
+                            if argc != 3 { return Err(BasilError("SYNTH_LIVE% expects 3 arguments".into())); }
+                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let poly = self.to_i64(&args[2])?;
+                            let rc = daw_utils::synth_live(&a, &b, poly);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        // --- Audio low-level ---
+                        #[cfg(feature = "obj-audio")]
+                        190 => { // AUDIO_OUTPUTS$[]
+                            if argc != 0 { return Err(BasilError("AUDIO_OUTPUTS$ expects 0 arguments".into())); }
+                            let v = audio_utils::audio_outputs();
+                            let arr = VM::make_string_array(v);
+                            self.stack.push(arr);
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        191 => { // AUDIO_INPUTS$[]
+                            if argc != 0 { return Err(BasilError("AUDIO_INPUTS$ expects 0 arguments".into())); }
+                            let v = audio_utils::audio_inputs();
+                            let arr = VM::make_string_array(v);
+                            self.stack.push(arr);
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        192 => { // AUDIO_DEFAULT_RATE%()
+                            if argc != 0 { return Err(BasilError("AUDIO_DEFAULT_RATE% expects 0 arguments".into())); }
+                            self.stack.push(Value::Int(audio_utils::audio_default_rate()));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        193 => { // AUDIO_DEFAULT_CHANS%()
+                            if argc != 0 { return Err(BasilError("AUDIO_DEFAULT_CHANS% expects 0 arguments".into())); }
+                            self.stack.push(Value::Int(audio_utils::audio_default_chans()));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        194 => { // AUDIO_OPEN_IN@(deviceSubstr$)
+                            if argc != 1 { return Err(BasilError("AUDIO_OPEN_IN@ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            match audio_utils::audio_open_in(&s) {
+                                Ok(h) => self.stack.push(Value::Int(h)),
+                                Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); }
+                            }
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        195 => { // AUDIO_OPEN_OUT@(deviceSubstr$)
+                            if argc != 1 { return Err(BasilError("AUDIO_OPEN_OUT@ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            match audio_utils::audio_open_out(&s) {
+                                Ok(h) => self.stack.push(Value::Int(h)),
+                                Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); }
+                            }
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        196 => { // AUDIO_START%(handle@)
+                            if argc != 1 { return Err(BasilError("AUDIO_START% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let rc = match audio_utils::audio_start(h) { Ok(_) => 0, Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        197 => { // AUDIO_STOP%(handle@)
+                            if argc != 1 { return Err(BasilError("AUDIO_STOP% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let rc = match audio_utils::audio_stop(h) { Ok(_) => 0, Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        198 => { // AUDIO_CLOSE%(handle@)
+                            if argc != 1 { return Err(BasilError("AUDIO_CLOSE% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let rc = match audio_utils::audio_close(h) { Ok(_) => 0, Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        199 => { // AUDIO_RING_CREATE@(frames%)
+                            if argc != 1 { return Err(BasilError("AUDIO_RING_CREATE@ expects 1 argument".into())); }
+                            let n = self.to_i64(&args[0])?;
+                            match audio_utils::ring_create(n) { Ok(h) => self.stack.push(Value::Int(h)), Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); } }
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        200 => { // AUDIO_RING_PUSH%(ring@, frames![])
+                            if argc != 2 { return Err(BasilError("AUDIO_RING_PUSH% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let data: Vec<f32> = match &args[1] {
+                                Value::Array(arr_rc) => {
+                                    let arr = arr_rc.as_ref();
+                                    let v = arr.data.borrow();
+                                    let mut out = Vec::with_capacity(v.len());
+                                    for e in v.iter() { match e { Value::Num(f)=> out.push(*f as f32), Value::Int(i)=> out.push(*i as f32), _=> out.push(0.0) } }
+                                    out
+                                }
+                                other => return Err(BasilError(format!("AUDIO_RING_PUSH% expects array, got {}", self.type_of(other))))
+                            };
+                            let rc = match audio_utils::ring_push(h, &data) { Ok(n)=> n, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } -1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        201 => { // AUDIO_RING_POP%(ring@, OUT frames![])
+                            if argc != 2 { return Err(BasilError("AUDIO_RING_POP% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let (len, arr_rc) = match &args[1] {
+                                Value::Array(arr_rc) => { let len = arr_rc.data.borrow().len(); (len, Rc::clone(arr_rc)) },
+                                other => return Err(BasilError(format!("AUDIO_RING_POP% expects array, got {}", self.type_of(other))))
+                            };
+                            let mut tmp = vec![0.0f32; len];
+                            let n = match audio_utils::ring_pop(h, &mut tmp) { Ok(n)=> n as usize, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 0 } };
+                            // fill array with popped values (remaining unchanged)
+                            {
+                                let mut data = arr_rc.data.borrow_mut();
+                                for i in 0..n { data[i] = Value::Num(tmp[i] as f64); }
+                            }
+                            self.stack.push(Value::Int(n as i64));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        202 => { // WAV_WRITER_OPEN@(path$, rate%, chans%)
+                            if argc != 3 { return Err(BasilError("WAV_WRITER_OPEN@ expects 3 arguments".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let rate = self.to_i64(&args[1])?;
+                            let chans = self.to_i64(&args[2])?;
+                            match audio_utils::wav_writer_open(&path, rate, chans) { Ok(h)=> self.stack.push(Value::Int(h)), Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); } }
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        203 => { // WAV_WRITER_WRITE%(writer@, frames![])
+                            if argc != 2 { return Err(BasilError("WAV_WRITER_WRITE% expects 2 arguments".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let data: Vec<f32> = match &args[1] {
+                                Value::Array(arr_rc) => {
+                                    let arr = arr_rc.as_ref();
+                                    let v = arr.data.borrow();
+                                    let mut out = Vec::with_capacity(v.len());
+                                    for e in v.iter() { match e { Value::Num(f)=> out.push(*f as f32), Value::Int(i)=> out.push(*i as f32), _=> out.push(0.0) } }
+                                    out
+                                }
+                                other => return Err(BasilError(format!("WAV_WRITER_WRITE% expects array, got {}", self.type_of(other))))
+                            };
+                            let rc = match audio_utils::wav_writer_write(h, &data) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        204 => { // WAV_WRITER_CLOSE%(writer@)
+                            if argc != 1 { return Err(BasilError("WAV_WRITER_CLOSE% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let rc = match audio_utils::wav_writer_close(h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-audio")]
+                        205 => { // WAV_READ_ALL![](path$)
+                            if argc != 1 { return Err(BasilError("WAV_READ_ALL![] expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            let frames = audio_utils::wav_read_all(&path)?;
+                            let mut data: Vec<Value> = Vec::with_capacity(frames.len());
+                            for f in frames { data.push(Value::Num(f as f64)); }
+                            let arr = Rc::new(ArrayObj { elem: ElemType::Num, dims: vec![data.len()], data: std::cell::RefCell::new(data) });
+                            self.stack.push(Value::Array(arr));
+                        }
+                        // --- MIDI ---
+                        #[cfg(feature = "obj-midi")]
+                        210 => { // MIDI_PORTS$[]
+                            if argc != 0 { return Err(BasilError("MIDI_PORTS$ expects 0 arguments".into())); }
+                            let v = midi_utils::midi_ports();
+                            let arr = VM::make_string_array(v);
+                            self.stack.push(arr);
+                        }
+                        #[cfg(feature = "obj-midi")]
+                        211 => { // MIDI_OPEN_IN@(portSubstr$)
+                            if argc != 1 { return Err(BasilError("MIDI_OPEN_IN@ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
+                            match midi_utils::midi_open_in(&s) { Ok(h)=> self.stack.push(Value::Int(h)), Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); } }
+                        }
+                        #[cfg(feature = "obj-midi")]
+                        212 => { // MIDI_POLL%(in@)
+                            if argc != 1 { return Err(BasilError("MIDI_POLL% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let n = match midi_utils::midi_poll(h) { Ok(n)=>n, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } -1 } };
+                            self.stack.push(Value::Int(n));
+                        }
+                        #[cfg(feature = "obj-midi")]
+                        213 => { // MIDI_GET_EVENT$[](in@)
+                            if argc != 1 { return Err(BasilError("MIDI_GET_EVENT$[] expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let (s, d1, d2) = midi_utils::midi_get_event(h)?;
+                            let arr = VM::make_string_array(vec![s.to_string(), d1.to_string(), d2.to_string()]);
+                            self.stack.push(arr);
+                        }
+                        #[cfg(feature = "obj-midi")]
+                        214 => { // MIDI_CLOSE%(in@)
+                            if argc != 1 { return Err(BasilError("MIDI_CLOSE% expects 1 argument".into())); }
+                            let h = self.to_i64(&args[0])?;
+                            let rc = match midi_utils::midi_close(h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
+                            self.stack.push(Value::Int(rc));
                         }
                         138 => { // INTERNAL: STR2D_TO_ARRAY$(rowsxcols)
                             if argc != 1 { return Err(BasilError("internal builtin 138 expects 1 argument".into())); }

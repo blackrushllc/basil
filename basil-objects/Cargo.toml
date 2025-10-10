@@ -19,7 +19,11 @@ obj-curl = ["ureq"]
 obj-json = ["serde_json"]
 obj-csv = ["csv", "serde_json"]
 obj-sqlite = ["rusqlite"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx"]
+# New audio/MIDI/DAW feature objects
+obj-audio = ["hound"]
+obj-midi  = []
+obj-daw   = ["obj-audio", "obj-midi"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw"]
 
 [dependencies]
 basil-common = { workspace = true }
@@ -31,3 +35,4 @@ ureq = { version = "2.9", optional = true, features = ["json", "tls"] }
 serde_json = { version = "1", optional = true }
 csv = { version = "1.3", optional = true }
 rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+hound = { version = "3", optional = true }

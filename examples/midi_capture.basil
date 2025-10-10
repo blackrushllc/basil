@@ -1,0 +1,3 @@
+REM Capture MIDI to JSON Lines file
+rc% = MIDI_CAPTURE%("keystation", "midilog.jsonl")
+IF rc% <> 0 THEN PRINT "Error: "; DAW_ERR$()
