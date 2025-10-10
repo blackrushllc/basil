@@ -2,6 +2,8 @@
 
 This document reorganizes the Basil language reference by category. Entries are grouped under their Type and listed alphabetically within each category. Descriptions and examples are taken verbatim from BASIL_REFERENCE.md.
 
+Availability: Entries are part of the Core interpreter unless a Feature tag is shown (for example, "Feature: obj-term").
+
 ## Statements
 
 ### AS
@@ -598,4 +600,162 @@ SHELL "cmd /C echo Hi > out.txt";
 Exits the interpreter with an optional numeric exit code (defaults to 0).
 ```basil
 EXIT 0;
+```
+
+## Terminal (obj-term)
+
+All of the following are part of the obj-term feature module.
+
+### ALTSCREEN_OFF
+*Feature:* obj-term  
+Leaves the terminal's alternate screen buffer and returns to the main screen buffer.
+```basil
+TERM.INIT; ALTSCREEN_ON; PRINTLN "Alt"; ALTSCREEN_OFF; TERM.END;
+```
+
+### ALTSCREEN_ON
+*Feature:* obj-term  
+Enters the terminal's alternate screen buffer (a separate full-screen buffer).
+```basil
+TERM.INIT; ALTSCREEN_ON; PRINTLN "Hello (alt)"; TERM.FLUSH;
+```
+
+### ATTR
+*Feature:* obj-term  
+Sets text attributes: bold%, underline%, reverse% (each 0 or 1).
+```basil
+ATTR(1,0,0); PRINTLN "Bold"; ATTR_RESET;
+```
+
+### ATTR_RESET
+*Feature:* obj-term  
+Clears all text attributes to defaults.
+```basil
+ATTR_RESET;
+```
+
+### CLEAR
+*Feature:* obj-term  
+Clears the screen and moves the cursor to home. Alias of CLS and HOME.
+```basil
+CLEAR;
+```
+
+### CLS
+*Feature:* obj-term  
+Clears the screen and moves the cursor to home. Alias of CLEAR and HOME.
+```basil
+CLS;
+```
+
+### COLOR
+*Feature:* obj-term  
+Sets foreground/background colors by name or code (0..15), -1 to keep.
+```basil
+COLOR("yellow", -1);
+```
+
+### COLOR_RESET
+*Feature:* obj-term  
+Resets terminal colors to defaults.
+```basil
+COLOR_RESET;
+```
+
+### CURSOR_HIDE
+*Feature:* obj-term  
+Hides the text cursor.
+```basil
+CURSOR_HIDE;
+```
+
+### CURSOR_RESTORE
+*Feature:* obj-term  
+Restores the most recently saved cursor position; no-op if none.
+```basil
+CURSOR_RESTORE;
+```
+
+### CURSOR_SAVE
+*Feature:* obj-term  
+Saves the current cursor position (small stack maintained).
+```basil
+CURSOR_SAVE;
+```
+
+### CURSOR_SHOW
+*Feature:* obj-term  
+Shows the text cursor.
+```basil
+CURSOR_SHOW;
+```
+
+### HOME
+*Feature:* obj-term  
+Clears the screen and moves the cursor to home. Alias of CLEAR and CLS.
+```basil
+HOME;
+```
+
+### LOCATE
+*Feature:* obj-term  
+Moves the cursor to column x%, row y% (1-based), clamped to terminal size.
+```basil
+LOCATE(1,1);
+```
+
+### TERM.END
+*Feature:* obj-term  
+Restores console state (show cursor, raw off, leave alt-screen); idempotent.
+```basil
+TERM.END;
+```
+
+### TERM.FLUSH
+*Feature:* obj-term  
+Flushes any buffered terminal output.
+```basil
+PRINT "Ready"; TERM.FLUSH;
+```
+
+### TERM.INIT
+*Feature:* obj-term  
+Initializes terminal session state; idempotent.
+```basil
+TERM.INIT;
+```
+
+### TERM.POLLKEY$
+*Feature:* obj-term  
+Non-blocking key read. Returns "" if none; otherwise names like "Enter", "Esc", or "Char:a".
+```basil
+LET k$ = TERM.POLLKEY$(); IF k$ <> "" THEN PRINTLN k$;
+```
+
+### TERM.RAW
+*Feature:* obj-term  
+Enables/disables raw mode (TRUE/FALSE, 1/0, or "ON"/"OFF").
+```basil
+TERM.RAW(TRUE);  ' later…  TERM.RAW(FALSE);
+```
+
+### TERM_COLS%
+*Feature:* obj-term  
+Returns current terminal width (columns).
+```basil
+PRINTLN TERM_COLS%();
+```
+
+### TERM_ERR$
+*Feature:* obj-term  
+Returns and clears last terminal error string (or "").
+```basil
+LET e$ = TERM_ERR$(); IF e$ <> "" THEN PRINTLN e$;
+```
+
+### TERM_ROWS%
+*Feature:* obj-term  
+Returns current terminal height (rows).
+```basil
+PRINTLN TERM_ROWS%();
 ```

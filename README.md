@@ -121,12 +121,17 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
 
 ### Known limitations
 
-- Interactive console input (INPUT\$, INPUTC\$, INKEY\$, INKEY%): On Windows, these functions require a real console/TTY. When running basilc via an IDE’s Run/Debug console (e.g., RustRover Run menu), the IDE’s pseudo-terminal may not support raw-mode keyboard polling and can cause hangs or repeated key echo. Run interactive examples from a regular terminal or the Terminal window in your IDE (PowerShell, cmd.exe) for correct behavior. Non-interactive scripts and normal terminal usage are unaffected.
-- If you must run from an IDE, configure the run target to use an external console or disable input features in your script.
-- Alternative there is a "test" option to run non-interactively, mock input, and output comments
+- Interactive console input (INPUT\$, INPUTC\$, INKEY\$, INKEY%): On Windows, these functions require a real
+  console/TTY. When running basilc via an IDE’s Run/Debug console (e.g., RustRover Run menu), the IDE’s pseudo-terminal
+  may not support raw-mode keyboard polling and can cause hangs or repeated key echo. Run interactive examples from a
+  regular terminal (PowerShell, cmd.exe ("DOS" lol), Putty, terminal window, etc) for correct behavior. Non-interactive
+  scripts and normal terminal usage are unaffected.
+- If you must run from an IDE, configure the run target to use an external console or disable input features in your
+  script.
+- lythere is a "test" option to run non-interactively, mock input, and output comments
 - There is no maximum number of lines of code in a script.
-- There is no maximum number of variables, functions, or arrays.
-- There are no limits to the size of strings, arrays, or objects.
+- There is no maximum number of variables, functions, objects, or arrays.
+- There are no limits to the size of strings variables, arrays, or objects.
 - ^ in theory
 
 # TODO next
@@ -137,11 +142,21 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
 
 # 🌱 WHAT'S NEW 🌱
 
+### 🌿 STATUS UPDATE _AI support_ !!!
+
+* AI support added
+* See examples/ai for several examples
+* See AI.md and other AI docs in here for more info and guides
+* This is different from the "AI ONBOARDING" support which lets you train AI on how to make Basil mods and write Basil code
+* This is actual AI stuff you can put in your BASIC programs
+
 ### 🌿 STATUS UPDATE _Midi support_ !!!
 
 * Midi support added
 * See examples/midi.basil for an example
 * See MIDI.md for more info
+
+### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
 ### 🌿 STATUS UPDATE _CLASSES_ !!!
 

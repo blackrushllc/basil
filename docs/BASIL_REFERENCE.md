@@ -2,6 +2,8 @@
 
 This document lists all Basil keywords, built-in functions, flow-control words, and supported directives in strict A–Z order. Each entry includes a short description and a minimal example.
 
+Availability: Entries are part of the Core interpreter unless a Feature tag is shown (for example, "Feature: obj-term").
+
 Note: Items marked as reserved are recognized but not currently active syntax; they are included for forward compatibility.
 
 ## #BASIL_DEBUG
@@ -77,11 +79,43 @@ Specifies a type name for DIM of object variables or arrays.
 DIM r1@ AS BMX_RIDER
 ```
 
+## ALTSCREEN_OFF
+*Type:* Statement  
+*Feature:* obj-term  
+Leaves the terminal's alternate screen buffer and returns to the main screen buffer. Safe to call multiple times.
+```basil
+TERM.INIT; ALTSCREEN_ON; PRINTLN "Alt screen"; ALTSCREEN_OFF; TERM.END;
+```
+
+## ALTSCREEN_ON
+*Type:* Statement  
+*Feature:* obj-term  
+Enters the terminal's alternate screen buffer (typically a blank screen separate from the main buffer).
+```basil
+TERM.INIT; ALTSCREEN_ON; PRINTLN "Hello (alt)"; TERM.FLUSH;
+```
+
 ## ASC%
 *Type:* Function (returns Integer)  
 Returns the ASCII/Unicode code point of the first character of a string, or 0 if empty.
 ```basil
 LET code% = ASC%("A");
+```
+
+## ATTR
+*Type:* Statement  
+*Feature:* obj-term  
+Sets text attributes: bold%, underline%, reverse% (each 0=OFF, 1=ON). Use ATTR_RESET to clear.
+```basil
+ATTR(1,0,0); PRINTLN "Bold"; ATTR_RESET;
+```
+
+## ATTR_RESET
+*Type:* Statement  
+*Feature:* obj-term  
+Clears all text attributes (bold, underline, reverse) to defaults.
+```basil
+ATTR_RESET;
 ```
 
 ## AUTHOR
@@ -122,6 +156,38 @@ Constructs a class instance from a filename that defines a class.
 LET x@ = CLASS("my_widget.cls");
 ```
 
+## CLEAR
+*Type:* Statement  
+*Feature:* obj-term  
+Clears the screen and moves the cursor to the home position (0,0). Alias of CLS and HOME.
+```basil
+CLEAR;
+```
+
+## CLS
+*Type:* Statement  
+*Feature:* obj-term  
+Clears the screen and moves the cursor to the home position (0,0). Alias of CLEAR and HOME.
+```basil
+CLS;
+```
+
+## COLOR
+*Type:* Statement  
+*Feature:* obj-term  
+Sets foreground and/or background colors. Accepts numeric codes 0..15, -1 to keep unchanged, or color names like "yellow".
+```basil
+COLOR("yellow", -1);
+```
+
+## COLOR_RESET
+*Type:* Statement  
+*Feature:* obj-term  
+Resets the terminal colors to defaults.
+```basil
+COLOR_RESET;
+```
+
 ## COPY
 *Type:* Statement  
 Copies a file from src$ to dst$; raises a runtime error on failure.
@@ -134,6 +200,38 @@ COPY "a.txt", "b.txt";
 Skips to the next iteration of the nearest enclosing loop.
 ```basil
 FOR I = 1 TO 5 BEGIN IF I = 3 THEN CONTINUE; PRINT I; END NEXT
+```
+
+## CURSOR_HIDE
+*Type:* Statement  
+*Feature:* obj-term  
+Hides the text cursor.
+```basil
+CURSOR_HIDE;
+```
+
+## CURSOR_RESTORE
+*Type:* Statement  
+*Feature:* obj-term  
+Restores the most recently saved cursor position; no-op if none saved.
+```basil
+CURSOR_RESTORE;
+```
+
+## CURSOR_SAVE
+*Type:* Statement  
+*Feature:* obj-term  
+Saves the current cursor position (a small stack of positions is kept).
+```basil
+CURSOR_SAVE;
+```
+
+## CURSOR_SHOW
+*Type:* Statement  
+*Feature:* obj-term  
+Shows the text cursor.
+```basil
+CURSOR_SHOW;
 ```
 
 ## DESCRIBE
@@ -365,6 +463,14 @@ Escapes special HTML characters of its argument.
 PRINTLN HTML$("<b>& ok</b>");
 ```
 
+## HOME
+*Type:* Statement  
+*Feature:* obj-term  
+Clears the screen and moves the cursor to the home position (0,0). Alias of CLEAR and CLS.
+```basil
+HOME;
+```
+
 ## IF
 *Type:* Flow Control  
 Begins a conditional; supports single-statement form or block form with THEN BEGIN … [ELSE …] END.
@@ -442,6 +548,14 @@ PRINTLN LCASE$("MiXeD");
 Returns the leftmost N characters of a string.
 ```basil
 PRINTLN LEFT$("basil", 2);
+```
+
+## LOCATE
+*Type:* Statement  
+*Feature:* obj-term  
+Moves the cursor to column x% and row y% (1-based), clamped to the terminal size.
+```basil
+LOCATE(1, 1);
 ```
 
 ## LEN
@@ -603,6 +717,72 @@ FOR I = 1 TO 5 PRINT I; NEXT
 Returns the input string with leading and trailing whitespace removed.
 ```basil
 PRINTLN TRIM$("  hi  ");
+```
+
+## TERM.COLs%
+
+## TERM_COLS%
+*Type:* Function (returns Integer)  
+*Feature:* obj-term  
+Returns the current terminal width (columns).
+```basil
+PRINTLN TERM_COLS%();
+```
+
+## TERM.END
+*Type:* Statement  
+*Feature:* obj-term  
+Restores the console to a sane state (show cursor, disable raw mode, leave alt-screen). Safe to call multiple times.
+```basil
+TERM.END;
+```
+
+## TERM_ERR$
+*Type:* Function (returns String)  
+*Feature:* obj-term  
+Returns and clears the last terminal-error message (or "" if none).
+```basil
+LET err$ = TERM_ERR$(); IF err$ <> "" THEN PRINTLN err$;
+```
+
+## TERM.FLUSH
+*Type:* Statement  
+*Feature:* obj-term  
+Flushes any buffered terminal output to reduce flicker during redraws.
+```basil
+PRINT "Ready"; TERM.FLUSH;
+```
+
+## TERM.INIT
+*Type:* Statement  
+*Feature:* obj-term  
+Initializes terminal session state; idempotent and safe to call more than once.
+```basil
+TERM.INIT;
+```
+
+## TERM.POLLKEY$
+*Type:* Function (returns String)  
+*Feature:* obj-term  
+Non-blocking key read. Returns "" if no key is available; otherwise returns normalized names like "Enter", "Esc", or "Char:a".
+```basil
+LET k$ = TERM.POLLKEY$(); IF k$ <> "" THEN PRINTLN k$;
+```
+
+## TERM.RAW
+*Type:* Statement  
+*Feature:* obj-term  
+Enables or disables raw mode (no line buffering). Accepts TRUE/FALSE, 1/0, or "ON"/"OFF".
+```basil
+TERM.RAW(TRUE);  ' later…  TERM.RAW(FALSE);
+```
+
+## TERM_ROWS%
+*Type:* Function (returns Integer)  
+*Feature:* obj-term  
+Returns the current terminal height (rows).
+```basil
+PRINTLN TERM_ROWS%();
 ```
 
 ## TRUE
