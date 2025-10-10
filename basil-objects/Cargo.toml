@@ -21,7 +21,7 @@ obj-csv = ["csv", "serde_json"]
 obj-sqlite = ["rusqlite"]
 # New audio/MIDI/DAW feature objects
 obj-audio = ["hound", "cpal"]
-obj-midi  = []
+obj-midi  = ["midir"]
 obj-daw   = ["obj-audio", "obj-midi"]
 obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw"]
 
@@ -37,3 +37,4 @@ csv = { version = "1.3", optional = true }
 rusqlite = { version = "0.31", features = ["bundled"], optional = true }
 hound = { version = "3", optional = true }
 cpal = { version = "0.15", optional = true }
+midir = { version = "0.10", optional = true }

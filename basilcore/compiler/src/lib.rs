@@ -967,6 +967,7 @@ impl C {
                         #[cfg(feature = "obj-daw")] "AUDIO_MONITOR%" => Some(184u8),
                         #[cfg(feature = "obj-daw")] "MIDI_CAPTURE%" => Some(185u8),
                         #[cfg(feature = "obj-daw")] "SYNTH_LIVE%" => Some(186u8),
+                        #[cfg(feature = "obj-daw")] "DAW_RESET" => Some(187u8),
                         #[cfg(feature = "obj-audio")] "AUDIO_OUTPUTS$" => Some(190u8),
                         #[cfg(feature = "obj-audio")] "AUDIO_INPUTS$" => Some(191u8),
                         #[cfg(feature = "obj-audio")] "AUDIO_DEFAULT_RATE%" => Some(192u8),

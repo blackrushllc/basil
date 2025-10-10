@@ -13,11 +13,61 @@ pub fn stop() { crate::audio::daw_stop(); }
 pub fn stop_clear() { crate::audio::daw_stop_clear(); }
 pub fn should_stop() -> bool { crate::audio::daw_should_stop() }
 
-// High-level stubs (return non-zero and set error when device I/O not available)
+/// Reset/cleanup all DAW-related resources: stop flag, audio streams, rings, WAV writers, MIDI connections.
+pub fn reset() {
+    stop_clear();
+    #[cfg(feature = "obj-audio")]
+    { let _ = crate::audio::daw_cleanup_all(); }
+    #[cfg(feature = "obj-midi")]
+    { crate::midi::midi_cleanup_all(); }
+}
+
+// High-level helpers
+#[cfg(feature = "obj-audio")]
+pub fn audio_record(input_sub: &str, out_path: &str, seconds: i64) -> i64 {
+    stop_clear();
+    if seconds <= 0 { set_err("AUDIO_RECORD%: seconds must be > 0"); return 1; }
+    // Open input
+    let in_h = match crate::audio::audio_open_in(input_sub) {
+        Ok(h) => h,
+        Err(e) => { set_err(format!("AUDIO_RECORD%: {}", e)); return 1; }
+    };
+    // Determine input params
+    let (rate, chans) = match crate::audio::audio_in_params(in_h) {
+        Ok(rc) => rc,
+        Err(_) => (crate::audio::audio_default_rate() as u32, crate::audio::audio_default_chans() as u16),
+    };
+    // Ring to bridge RT -> writer
+    let cap_samples = (rate as usize).saturating_mul(chans as usize).saturating_mul(seconds as usize).saturating_mul(2);
+    let ring_h = match crate::audio::ring_create(cap_samples as i64) { Ok(h)=>h, Err(e)=> { set_err(format!("AUDIO_RECORD%: {}", e)); let _=crate::audio::audio_close(in_h); return 1; } };
+    if let Err(e) = crate::audio::audio_connect_in_to_ring(in_h, ring_h) { set_err(format!("AUDIO_RECORD%: {}", e)); let _=crate::audio::audio_close(in_h); return 1; }
+    if let Err(e) = crate::audio::audio_start(in_h) { set_err(format!("AUDIO_RECORD%: {}", e)); let _=crate::audio::audio_close(in_h); return 1; }
+    // WAV writer
+    let wr_h = match crate::audio::wav_writer_open(out_path, rate as i64, chans as i64) { Ok(h)=>h, Err(e)=> { set_err(format!("AUDIO_RECORD%: {}", e)); let _=crate::audio::audio_stop(in_h); let _=crate::audio::audio_close(in_h); return 1; } };
+    let mut written: usize = 0;
+    let target: usize = (rate as usize) * (chans as usize) * (seconds as usize);
+    let mut buf: Vec<f32> = vec![0.0; 4096 * (chans as usize).max(1)];
+    while written < target {
+        if should_stop() { break; }
+        let n = match crate::audio::ring_pop(ring_h, &mut buf) { Ok(n)=> n as usize, Err(_)=> 0 };
+        if n > 0 {
+            if let Err(e) = crate::audio::wav_writer_write(wr_h, &buf[..n]) { set_err(format!("AUDIO_RECORD%: {}", e)); let _=crate::audio::wav_writer_close(wr_h); let _=crate::audio::audio_stop(in_h); let _=crate::audio::audio_close(in_h); return 1; }
+            written += n;
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    let _ = crate::audio::wav_writer_close(wr_h);
+    let _ = crate::audio::audio_stop(in_h);
+    let _ = crate::audio::audio_close(in_h);
+    0
+}
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_record(_input_sub: &str, _out_path: &str, _seconds: i64) -> i64 {
     set_err("AUDIO_RECORD%: device I/O not available in this build");
     1
 }
+
 #[cfg(feature = "obj-audio")]
 pub fn audio_play(output_sub: &str, file_path: &str) -> i64 {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -180,14 +230,132 @@ pub fn audio_play(_output_sub: &str, _file_path: &str) -> i64 {
     set_err("AUDIO_PLAY%: device I/O not available in this build");
     1
 }
+
+#[cfg(feature = "obj-audio")]
+pub fn audio_monitor(input_sub: &str, output_sub: &str) -> i64 {
+    stop_clear();
+    // Open devices
+    let in_h = match crate::audio::audio_open_in(input_sub) { Ok(h)=>h, Err(e)=> { set_err(format!("AUDIO_MONITOR%: {}", e)); return 1; } };
+    let out_h = match crate::audio::audio_open_out(output_sub) { Ok(h)=>h, Err(e)=> { set_err(format!("AUDIO_MONITOR%: {}", e)); let _=crate::audio::audio_close(in_h); return 1; } };
+    // Use output params for ring sizing
+    let (rate, chans) = match crate::audio::audio_out_params(out_h) { Ok(rc)=>rc, Err(_)=> (crate::audio::audio_default_rate() as u32, crate::audio::audio_default_chans() as u16) };
+    // ~100ms ring to reduce latency
+    let mut cap_samples = (rate as usize).saturating_mul(chans as usize) / 10;
+    if cap_samples < 128 * (chans as usize).max(1) { cap_samples = 128 * (chans as usize).max(1); }
+    let ring_h = match crate::audio::ring_create(cap_samples as i64) { Ok(h)=>h, Err(e)=> { set_err(format!("AUDIO_MONITOR%: {}", e)); let _=crate::audio::audio_close(in_h); let _=crate::audio::audio_close(out_h); return 1; } };
+    if let Err(e) = crate::audio::audio_connect_in_to_ring(in_h, ring_h) { set_err(format!("AUDIO_MONITOR%: {}", e)); let _=crate::audio::audio_close(in_h); let _=crate::audio::audio_close(out_h); return 1; }
+    if let Err(e) = crate::audio::audio_connect_ring_to_out(ring_h, out_h) { set_err(format!("AUDIO_MONITOR%: {}", e)); let _=crate::audio::audio_close(in_h); let _=crate::audio::audio_close(out_h); return 1; }
+    if let Err(e) = crate::audio::audio_start(in_h) { set_err(format!("AUDIO_MONITOR%: {}", e)); let _=crate::audio::audio_close(in_h); let _=crate::audio::audio_close(out_h); return 1; }
+    if let Err(e) = crate::audio::audio_start(out_h) { set_err(format!("AUDIO_MONITOR%: {}", e)); let _=crate::audio::audio_stop(in_h); let _=crate::audio::audio_close(in_h); let _=crate::audio::audio_close(out_h); return 1; }
+    // Block until stopped
+    while !should_stop() { std::thread::sleep(std::time::Duration::from_millis(20)); }
+    let _ = crate::audio::audio_stop(out_h);
+    let _ = crate::audio::audio_stop(in_h);
+    let _ = crate::audio::audio_close(out_h);
+    let _ = crate::audio::audio_close(in_h);
+    0
+}
+#[cfg(not(feature = "obj-audio"))]
 pub fn audio_monitor(_input_sub: &str, _output_sub: &str) -> i64 {
     set_err("AUDIO_MONITOR%: device I/O not available in this build");
     1
 }
+
+#[cfg(feature = "obj-midi")]
+pub fn midi_capture(port_sub: &str, out_jsonl: &str) -> i64 {
+    stop_clear();
+    // Open MIDI input
+    let in_h = match crate::midi::midi_open_in(port_sub) { Ok(h)=>h, Err(e)=> { set_err(format!("MIDI_CAPTURE%: {}", e)); return 1; } };
+    // Open log file
+    let mut file = match std::fs::OpenOptions::new().create(true).truncate(true).write(true).open(out_jsonl) {
+        Ok(f)=>f, Err(e)=> { set_err(format!("MIDI_CAPTURE%: cannot open file: {e}")); let _=crate::midi::midi_close(in_h); return 1; }
+    };
+    let t0 = std::time::Instant::now();
+    loop {
+        if should_stop() { break; }
+        let n = match crate::midi::midi_poll(in_h) { Ok(n)=> n, Err(e)=> { set_err(format!("MIDI_CAPTURE%: {}", e)); let _=crate::midi::midi_close(in_h); return 1; } };
+        if n > 0 {
+            for _ in 0..n {
+                match crate::midi::midi_get_event(in_h) {
+                    Ok((s,d1,d2)) => {
+                        let ms = t0.elapsed().as_millis();
+                        let line = format!("{{\"ts\":{ms},\"status\":{s},\"data1\":{d1},\"data2\":{d2}}}\n");
+                        if let Err(e) = std::io::Write::write_all(&mut file, line.as_bytes()) { set_err(format!("MIDI_CAPTURE%: write failed: {e}")); let _=crate::midi::midi_close(in_h); return 1; }
+                    }
+                    Err(_) => {}
+                }
+            }
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+    let _ = crate::midi::midi_close(in_h);
+    0
+}
+#[cfg(not(feature = "obj-midi"))]
 pub fn midi_capture(_port_sub: &str, _out_jsonl: &str) -> i64 {
     set_err("MIDI_CAPTURE%: MIDI I/O not available in this build");
     1
 }
+
+#[cfg(all(feature = "obj-audio", feature = "obj-midi"))]
+pub fn synth_live(midi_port_sub: &str, output_sub: &str, poly: i64) -> i64 {
+    stop_clear();
+    let poly = if poly <= 0 { 8 } else { poly as usize };
+    // Open audio out
+    let out_h = match crate::audio::audio_open_out(output_sub) { Ok(h)=>h, Err(e)=> { set_err(format!("SYNTH_LIVE%: {}", e)); return 1; } };
+    let (rate, chans) = match crate::audio::audio_out_params(out_h) { Ok(rc)=>rc, Err(_)=> (crate::audio::audio_default_rate() as u32, crate::audio::audio_default_chans() as u16) };
+    // ~100ms ring to reduce latency
+    let mut cap_samples = (rate as usize).saturating_mul(chans as usize) / 10;
+    if cap_samples < 128 * (chans as usize).max(1) { cap_samples = 128 * (chans as usize).max(1); }
+    let ring_h = match crate::audio::ring_create(cap_samples as i64) { Ok(h)=>h, Err(e)=> { set_err(format!("SYNTH_LIVE%: {}", e)); let _=crate::audio::audio_close(out_h); return 1; } };
+    if let Err(e) = crate::audio::audio_connect_ring_to_out(ring_h, out_h) { set_err(format!("SYNTH_LIVE%: {}", e)); let _=crate::audio::audio_close(out_h); return 1; }
+    if let Err(e) = crate::audio::audio_start(out_h) { set_err(format!("SYNTH_LIVE%: {}", e)); let _=crate::audio::audio_close(out_h); return 1; }
+    // Open MIDI in
+    let in_h = match crate::midi::midi_open_in(midi_port_sub) { Ok(h)=>h, Err(e)=> { set_err(format!("SYNTH_LIVE%: {}", e)); let _=crate::audio::audio_stop(out_h); let _=crate::audio::audio_close(out_h); return 1; } };
+
+    // Worker thread: poll MIDI and render synth blocks into ring
+    let worker = std::thread::spawn(move || {
+        let mut synth = crate::audio::Synth::new(rate, poly);
+        let block: usize = 256;
+        let mut mono: Vec<f32> = vec![0.0; block];
+        let mut inter: Vec<f32> = vec![0.0; block * (chans as usize).max(1)];
+        let master_gain: f32 = 0.2; // headroom to avoid clipping with multiple voices
+        loop {
+            if crate::daw::should_stop() { break; }
+            // Drain MIDI events
+            match crate::midi::midi_poll(in_h) { Ok(n)=>{
+                for _ in 0..n {
+                    if let Ok((status,d1,d2)) = crate::midi::midi_get_event(in_h) {
+                        let st = status & 0xF0;
+                        if st == 0x90 && d2 > 0 { synth.note_on(d1, d2); }
+                        else if st == 0x80 || (st == 0x90 && d2 == 0) { synth.note_off(d1); }
+                    }
+                }
+            }, Err(_)=>{} }
+            // Render block
+            synth.render(&mut mono);
+            // Mono -> N channels interleave with master gain
+            let chn = (chans as usize).max(1);
+            for i in 0..block {
+                let s = mono[i] * master_gain;
+                for c in 0..chn { inter[i*chn + c] = s; }
+            }
+            let _ = crate::audio::ring_push(ring_h, &inter);
+            // Let scheduler breathe without adding sizeable latency
+            std::thread::yield_now();
+        }
+    });
+
+    // Wait until stopped
+    while !should_stop() { std::thread::sleep(std::time::Duration::from_millis(20)); }
+    let _ = worker.join();
+    let _ = crate::midi::midi_close(in_h);
+    let _ = crate::audio::audio_stop(out_h);
+    let _ = crate::audio::audio_close(out_h);
+    0
+}
+#[cfg(not(all(feature = "obj-audio", feature = "obj-midi")))]
 pub fn synth_live(_midi_port_sub: &str, _output_sub: &str, _poly: i64) -> i64 {
     set_err("SYNTH_LIVE%: audio/MIDI I/O not available in this build");
     1
