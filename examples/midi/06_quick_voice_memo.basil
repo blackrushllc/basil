@@ -1,0 +1,11 @@
+REM One-key voice memo: record N seconds and auto-play back;
+DUR% = 8;
+PRINT "Recording "; PRINT DUR%; PRINTLN "s to memo.wav…";
+rc% = AUDIO_RECORD%("usb", "memo.wav", DUR%);
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;
+
+PRINTLN "Playback memo.wav…";
+rc% = AUDIO_PLAY%("usb", "memo.wav");
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$();
+
+PRINTLN "Done.";

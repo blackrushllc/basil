@@ -1,0 +1,60 @@
+REM Manual low-level synth rendering example
+REM Build: cargo run -p basilc --features obj-daw -- run examples\synth_manual.basil
+
+REM Open output (use default device)
+LET out@ = AUDIO_OPEN_OUT@("")
+IF out@ < 0 THEN PRINT "open_out failed: ", DAW_ERR$()
+
+LET rate% = AUDIO_DEFAULT_RATE%()
+LET chans% = AUDIO_DEFAULT_CHANS%()
+IF chans% < 1 THEN LET chans% = 1
+
+REM Create a ~100ms ring (interleaved frames)
+LET cap% = rate% * chans% / 10
+IF cap% < 256 * chans% THEN LET cap% = 256 * chans%
+LET rb@ = AUDIO_RING_CREATE@(cap%)
+LET rc% = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@)
+IF rc% <> 0 THEN PRINT "connect failed: ", DAW_ERR$()
+LET rc% = AUDIO_START%(out@)
+IF rc% <> 0 THEN PRINT "start failed: ", DAW_ERR$()
+
+REM New synth (mono)
+LET s@ = SYNTH_NEW@(rate%, 8)
+IF s@ < 0 THEN PRINT "synth failed"
+
+REM Play a simple C major chord for 2 seconds
+REM C4=60, E4=64, G4=67
+LET rc% = SYNTH_NOTE_ON%(s@, 60, 100)
+LET rc% = SYNTH_NOTE_ON%(s@, 64, 100)
+LET rc% = SYNTH_NOTE_ON%(s@, 67, 100)
+
+LET block% = 256
+DIM mono(block%)
+DIM inter(block% * chans%)
+
+LET t0% = TIME%()
+WHILE TIME%() - t0% < 2000
+  LET n% = SYNTH_RENDER%(s@, mono)
+  IF n% > 0 THEN
+    LET i% = 0
+    WHILE i% < n%
+      LET s = mono(i%) * 0.2
+      LET c% = 0
+      WHILE c% < chans%
+        LET inter(i%*chans% + c%) = s
+        LET c% = c% + 1
+      WEND
+      LET i% = i% + 1
+    WEND
+    LET rc% = AUDIO_RING_PUSH%(rb@, inter)
+  ENDIF
+WEND
+
+LET rc% = SYNTH_NOTE_OFF%(s@, 60)
+LET rc% = SYNTH_NOTE_OFF%(s@, 64)
+LET rc% = SYNTH_NOTE_OFF%(s@, 67)
+LET rc% = SYNTH_DELETE%(s@)
+
+LET rc% = AUDIO_STOP%(out@)
+LET rc% = AUDIO_CLOSE%(out@)
+PRINT "Done."

@@ -1,0 +1,4 @@
+REM Log incoming MIDI to JSON Lines until stopped by DAW_STOP from another console;
+PRINTLN "Capturing MIDI from 'launchkey' to midilog.jsonl…";
+rc% = MIDI_CAPTURE%("launchkey", "midilog.jsonl");
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;

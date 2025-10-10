@@ -1,0 +1,49 @@
+REM Live poly synth driven by MIDI, rendered in Basil loop to output ring;
+rate% = AUDIO_DEFAULT_RATE%();
+poly% = 16;
+
+m@   = MIDI_OPEN_IN@("launchkey");
+out@ = AUDIO_OPEN_OUT@("usb");
+rb@  = AUDIO_RING_CREATE@(rate% * AUDIO_DEFAULT_CHANS%() * 2);
+ok%  = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@);
+ok%  = AUDIO_START%(out@);
+
+s@ = SYNTH_NEW@(rate%, poly%);
+
+blockFrames% = rate% / 50; REM 20ms
+ch%          = AUDIO_DEFAULT_CHANS%();
+DIM mono%[](blockFrames%);
+DIM inter%[](blockFrames% * ch%);
+
+PRINTLN "Synth: play your keys (press any key to quit).";
+DO
+  WHILE MIDI_POLL%(m@) > 0 BEGIN
+    ev$[] = MIDI_GET_EVENT$[](m@);
+    status% = VAL(ev$[](0));
+    d1% = VAL(ev$[](1)); d2% = VAL(ev$[](2));
+    IF (status% AND &HF0) == &H90 THEN
+      IF d2% == 0 THEN SYNTH_NOTE_OFF%(s@, d1%); ELSE SYNTH_NOTE_ON%(s@, d1%, d2%);
+    ELSEIF (status% AND &HF0) == &H80 THEN
+      SYNTH_NOTE_OFF%(s@, d1%);
+    ENDIF
+  END
+
+  REM Render mono block and fan out to all channels;
+  SYNTH_RENDER%(s@, mono%[]);
+  idx% = 0;
+  FOR i% = 0 TO blockFrames% - 1 BEGIN
+    FOR c% = 0 TO ch% - 1 BEGIN
+      inter%[](idx%) = mono%[](i%);
+      idx% = idx% + 1;
+    END
+  END
+
+  ok% = AUDIO_RING_PUSH%(rb@, inter%[]);
+  k$ = INKEY$();
+LOOP UNTIL k$ <> "";
+
+SYNTH_DELETE%(s@);
+ok% = AUDIO_STOP%(out@);
+MIDI_CLOSE%(m@);
+AUDIO_CLOSE%(out@);
+PRINTLN "Stopped.";

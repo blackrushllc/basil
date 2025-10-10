@@ -1,0 +1,11 @@
+REM Record three quick samples in a row (kick/snare/hat style), then play the pack;
+PRINTLN "Sample Pack: kick.wav / snare.wav / hat.wav (each ~2s).";
+rc% = AUDIO_RECORD%("usb", "kick.wav", 2);  IF rc% <> 0 THEN PRINTLN DAW_ERR$(); RETURN;
+rc% = AUDIO_RECORD%("usb", "snare.wav", 2); IF rc% <> 0 THEN PRINTLN DAW_ERR$(); RETURN;
+rc% = AUDIO_RECORD%("usb", "hat.wav", 1);   IF rc% <> 0 THEN PRINTLN DAW_ERR$(); RETURN;
+
+PRINTLN "Audition pack:";
+rc% = AUDIO_PLAY%("usb", "kick.wav");  IF rc% <> 0 THEN PRINTLN DAW_ERR$();
+rc% = AUDIO_PLAY%("usb", "snare.wav"); IF rc% <> 0 THEN PRINTLN DAW_ERR$();
+rc% = AUDIO_PLAY%("usb", "hat.wav");   IF rc% <> 0 THEN PRINTLN DAW_ERR$();
+PRINTLN "Pack done.";

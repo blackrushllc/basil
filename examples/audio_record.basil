@@ -1,0 +1,3 @@
+REM Record 10 seconds from first input matching substring to take1.wav
+LET rc% = AUDIO_RECORD%("usb", "take1.wav", 10)
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()

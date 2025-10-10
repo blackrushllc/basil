@@ -1,0 +1,24 @@
+REM Record N seconds using ring + WAV writer (non-blocking main loop);
+DUR_S% = 5;
+rate%  = AUDIO_DEFAULT_RATE%();
+ch%    = AUDIO_DEFAULT_CHANS%();
+in@    = AUDIO_OPEN_IN@("usb");
+wr@    = WAV_WRITER_OPEN@("take_low.wav", rate%, ch%);
+rb@    = AUDIO_RING_CREATE@(rate% * ch% * 4); REM ~2s headroom;
+
+ok% = AUDIO_CONNECT_IN_TO_RING%(in@, rb@);
+ok% = AUDIO_START%(in@);
+
+blockSamples% = rate% * ch% / 10; REM ~100ms;
+DIM buf%[](blockSamples%);
+
+t0% = TIME%();
+WHILE TIME%() - t0% < DUR_S% BEGIN
+  n% = AUDIO_RING_POP%(rb@, buf%[]);
+  IF n% > 0 THEN ok% = WAV_WRITER_WRITE%(wr@, buf%[]);
+END
+
+ok% = AUDIO_STOP%(in@);
+ok% = WAV_WRITER_CLOSE%(wr@);
+ok% = AUDIO_CLOSE%(in@);
+PRINTLN "Saved take_low.wav";

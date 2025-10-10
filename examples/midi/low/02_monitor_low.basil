@@ -1,0 +1,18 @@
+REM Low-level live monitor with local key exit;
+in@  = AUDIO_OPEN_IN@("usb");
+out@ = AUDIO_OPEN_OUT@("usb");
+rb@  = AUDIO_RING_CREATE@(AUDIO_DEFAULT_RATE%() * AUDIO_DEFAULT_CHANS%() * 2); REM ~1s;
+
+ok% = AUDIO_CONNECT_IN_TO_RING%(in@, rb@);
+ok% = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@);
+ok% = AUDIO_START%(in@);
+ok% = AUDIO_START%(out@);
+
+PRINTLN "Monitoring (usb -> usb). Press any key to stop.";
+DO
+  k$ = INKEY$();
+LOOP UNTIL k$ <> "";
+
+ok% = AUDIO_STOP%(out@); ok% = AUDIO_STOP%(in@);
+ok% = AUDIO_CLOSE%(out@); ok% = AUDIO_CLOSE%(in@);
+PRINTLN "Stopped.";

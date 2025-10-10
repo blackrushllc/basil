@@ -1,0 +1,3 @@
+REM Live monitor input to output. Stop with DAW_STOP from another Basil instance or Ctrl+C.
+LET rc% = AUDIO_MONITOR%("scarlett", "scarlett")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()

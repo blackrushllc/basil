@@ -1,0 +1,3 @@
+REM Capture MIDI to JSON Lines. Stop with DAW_STOP from another Basil instance or Ctrl+C.
+LET rc% = MIDI_CAPTURE%("keystation", "midilog.jsonl")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
