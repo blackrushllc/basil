@@ -1,0 +1,132 @@
+#CGI_NO_HEADER
+<?basil
+  LET SITE_TITLE$ = "Basil Website Skeleton";
+  FUNC send_header_ok_html() BEGIN
+    PRINT "Status: 200 OK\r\n";
+    PRINT "Content-Type: text/html; charset=utf-8\r\n";
+    PRINT "Cache-Control: no-store\r\n\r\n";
+    RETURN 0;
+  END
+
+  FUNC layout_start(title$) BEGIN
+    PRINT "<!doctype html>\n";
+    PRINT "<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>" + HTML$(title$) + "</title>\n";
+    PRINT "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
+    PRINT "<link rel=\"stylesheet\" href=\"css/site.css\">\n";
+    PRINT "</head>\n<body>\n<header class=\"top\"><div class=\"wrap\"><h1>" + HTML$(SITE_TITLE$) + "</h1></div></header>\n";
+    PRINT "<main class=\"wrap\">\n";
+    RETURN 0;
+  END
+
+  FUNC layout_end() BEGIN
+    PRINT "</main>\n<footer class=\"foot\"><div class=\"wrap\">\n";
+    PRINT "<small>Example Basil CGI skeleton • <a href=\"index.basil\">Home</a></small>\n";
+    PRINT "</div></footer>\n<script src=\"js/site.js\"></script>\n</body></html>\n";
+    RETURN 0;
+  END
+
+  FUNC param$(name$) BEGIN
+    DIM arr$(0);
+    LET arr$() = REQUEST$();
+    FOR EACH kv$ IN arr$()
+    BEGIN
+        LET eq% = INSTR(kv$, "=");
+        IF eq% > 0 THEN
+        BEGIN
+            LET k$ = LEFT$(kv$, eq%);
+            LET v$ = MID$(kv$, eq%+2);
+            IF k$ == name$ THEN RETURN v$;
+        END
+    END
+    NEXT kv$;
+    RETURN "";
+  END
+
+  FUNC cookie$(name$) BEGIN
+    LET raw$ = ENV$("HTTP_COOKIE");
+    IF LEN(raw$) == 0 THEN RETURN "";
+    LET s$ = raw$;
+    LET i% = 1;
+    WHILE i% <= LEN(s$) BEGIN
+      LET semi% = INSTR(s$, ";", i%-1);
+      IF semi% == 0 THEN LET semi% = LEN(s$);
+      LET part$ = TRIM$(MID$(s$, i%, semi% - i% + 1));
+      LET eq% = INSTR(part$, "=");
+      IF eq% > 0 THEN BEGIN
+        LET ck$ = LEFT$(part$, eq%);
+        LET cv$ = MID$(part$, eq%+2);
+        IF ck$ == name$ THEN RETURN cv$;
+      END
+      LET i% = semi% + 2;
+    END
+    RETURN "";
+  END
+
+  LET user$ = cookie$("user");
+  LET dummy% =  send_header_ok_html();
+  LET dummy% = layout_start("Welcome");
+
+  FUNC send_header_redirect(loc$) BEGIN
+    PRINT "Status: 302 Found\r\n";
+    PRINT "Location: " + loc$ + "\r\n\r\n";
+    RETURN 0;
+  END
+
+  // Render a table of users from the database (function context avoids top-level array quirks)
+  FUNC render_users() BEGIN
+    LET db% = SQLITE_OPEN%("website.db");
+    IF db% == 0 THEN BEGIN
+      LET tmp$ = ENV$("TMPDIR");
+      IF LEN(tmp$) == 0 THEN LET tmp$ = ENV$("TEMP");
+      IF LEN(tmp$) == 0 THEN LET tmp$ = ENV$("TMP");
+      IF LEN(tmp$) == 0 THEN LET tmp$ = "/tmp";
+      IF RIGHT$(tmp$, 1) == "/" OR RIGHT$(tmp$, 1) == "\\" THEN BEGIN
+        LET path$ = tmp$ + "website.db";
+      ELSE
+        LET path$ = tmp$ + "/" + "website.db";
+      END
+      LET db% = SQLITE_OPEN%(path$);
+    END
+
+    IF db% == 0 THEN BEGIN
+      PRINT "<p class=\"error\">Could not open database to list users.</p>";
+      RETURN 0;
+    END
+
+    LET _ = SQLITE_EXEC%(db%, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)");
+
+    DIM rows$(0,0);
+    LET rows$() = SQLITE_QUERY2D$(db%, "SELECT username, password FROM users ORDER BY id");
+    LET rc% = ARRAY_ROWS%(rows$);
+
+    PRINT "<section class=\"card\" style=\"margin-top:1rem\">";
+    PRINT "<h3>Users in DB (" + rc% + ")</h3>";
+    PRINT "<div style=\"overflow:auto\"><table border=\"1\" cellspacing=\"0\" cellpadding=\"6\"><thead><tr><th>#</th><th>Username</th><th>Password</th></tr></thead><tbody>";
+
+    FOR r% = 0 TO rc% - 1
+      PRINT "<tr><td>" + (r%+1) + "</td><td>" + HTML$(rows$(r%, 0)) + "</td><td>" + HTML$(rows$(r%, 1)) + "</td></tr>";
+    NEXT r%
+
+    PRINT "</tbody></table></div></section>";
+    SQLITE_CLOSE(db%);
+    RETURN 0;
+  END
+?>
+<?basil
+
+PRINT READFILE$("views/home.html");
+
+?>
+<?basil
+  // After the view HTML, show current users table from the database
+  LET __d% = render_users();
+
+  IF LEN(user$) > 0 THEN BEGIN
+    PRINT "<section class=\"notice\">You appear to be logged in as <strong>" + HTML$(user$) + "</strong>.\n";
+    PRINT " Visit your <a href=\"user_home.basil\">dashboard</a>.";
+    PRINT "</section>\n";
+  ELSE
+    PRINT "<p><a class=\"btn\" href=\"login.basil\">Log in</a> or <a class=\"btn secondary\" href=\"register.basil\">Create an account</a></p>\n";
+  END
+  LET dummy% = layout_end();
+?>

@@ -1,0 +1,52 @@
+﻿rem Objects demo: BMX_RIDER and BMX_TEAM
+rem This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+rem #USE BMX_RIDER, BMX_TEAM
+
+rem --- Create riders ---
+dim r1@ as BMX_RIDER("", 17, "", 12, 3);
+dim r2@ as BMX_RIDER("", 21, "", 5, 10);
+dim r3@ as BMX_RIDER("", 19, "", 30, 4);
+
+rem Change a few properties after construction
+r2@.SkillLevel$ = "";
+r2@.Wins% = 8;
+r2@.Losses% = 9;
+
+rem --- Create a team (PRO flag available when BMX_TEAM is compiled) ---
+dim t@ as BMX_TEAM("", 2015, PRO);
+
+rem Set some team stats
+t@.TeamWins% = 12;
+t@.TeamLosses% = 3;
+
+rem Add riders to the team
+t@.AddRider(r1@);
+t@.AddRider(r2@);
+t@.AddRider(r3@);
+
+rem --- Show team summary and rider list ---
+print "", t@.Info$();
+print "", t@.WinPct();
+
+let names$ = t@.RiderNames$();
+print "", LEN(names$), "";
+for i% = 0 to LEN(names$)-1
+  print "", names$(i%);
+next i%
+
+rem Also print descriptions from the riders for variety
+let descs$ = t@.RiderDescriptions$();
+print "";
+for i% = 0 to LEN(descs$)-1
+  print "", descs$(i%);
+next i%
+
+rem --- Optionally show full object descriptors ---
+let ans$ = input$("");
+if ans$ == "" then begin
+  print "";
+  print DESCRIBE$(r1@);
+  print "";
+  DESCRIBE t@;
+end

@@ -1,0 +1,18 @@
+﻿let a = 2 + 3 * 4;
+print a; // 14
+let b = (2 + 3) * 4;
+print b; // 20
+
+let A$ = "";
+print A$;
+
+let A% = 10.1;
+print "",A%, "";
+
+let B = 10.1;
+print B;
+
+print A% + 20;
+
+print B + 20;
+

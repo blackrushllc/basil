@@ -1,0 +1,13 @@
+for i = 1 to 5
+    println i;
+next i;
+
+for j = 5 to 1 step -1
+    begin
+        print j;
+        for i = 1 to 5
+            println i;
+        next i;
+    end
+next j;
+
