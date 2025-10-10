@@ -120,6 +120,12 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
 
 # 🌱 WHAT'S NEW 🌱
 
+### 🌿 STATUS UPDATE _Midi support_ !!!
+
+* Midi support added
+* See examples/midi.basil for an example
+* See MIDI.md for more info
+
 ### 🌿 STATUS UPDATE _CLASSES_ !!!
 
 + Classes are now supported
