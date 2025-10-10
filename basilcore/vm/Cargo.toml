@@ -34,3 +34,4 @@ obj-daw   = [
     "basil-objects/obj-daw", "basil-objects/obj-audio", "basil-objects/obj-midi",
     "basil-compiler/obj-daw", "basil-compiler/obj-audio", "basil-compiler/obj-midi"
 ]
+obj-ai = ["basil-objects/obj-ai"]

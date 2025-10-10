@@ -23,7 +23,9 @@ obj-sqlite = ["rusqlite"]
 obj-audio = ["hound", "cpal"]
 obj-midi  = ["midir"]
 obj-daw   = ["obj-audio", "obj-midi"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw"]
+# New AI feature object (Phase 1 minimal)
+obj-ai = ["serde_json", "sha1", "sha2", "dirs", "once_cell"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai"]
 
 [dependencies]
 basil-common = { workspace = true }
@@ -39,3 +41,8 @@ hound = { version = "3", optional = true }
 cpal = { version = "0.15", optional = true }
 midir = { version = "0.10", optional = true }
 rtrb = "0.3"
+# AI extras
+sha1 = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true }
+dirs = { version = "5", optional = true }
+once_cell = { version = "1", optional = true }

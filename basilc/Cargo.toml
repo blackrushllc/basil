@@ -29,6 +29,7 @@ obj-sqlite = ["basil-vm/obj-sqlite", "basil-compiler/obj-sqlite"]
 obj-audio = ["basil-vm/obj-audio", "basil-compiler/obj-audio", "basil-vm/obj-daw", "basil-compiler/obj-daw"]
 obj-midi  = ["basil-vm/obj-midi",  "basil-compiler/obj-midi"]
 obj-daw   = ["basil-vm/obj-daw", "basil-compiler/obj-daw", "obj-audio", "obj-midi"]
+obj-ai    = ["basil-vm/obj-ai", "basil-compiler/obj-ai"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-ai"]
