@@ -1,8 +1,0 @@
-﻿rem Simple Hello World
-println "";
-    for I% = 1 to 5
-        begin
-        println "", I%;
-        end
-    next
-print "";

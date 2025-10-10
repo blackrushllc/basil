@@ -1,8 +1,0 @@
-﻿println ""
-
-let csv$ = ""
-let rows$ = CSV_PARSE$(csv$)
-println "", rows$
-
-let out$ = CSV_WRITE$(rows$)
-println "", out$
