@@ -1,0 +1,6 @@
+CLS; COLOR(15, 4);  REM bright white on blue;
+LOCATE(10, 3); PRINT "Title";
+CURSOR_SAVE;
+LOCATE(5, 6);  PRINT "Menu item A";
+LOCATE(5, 7);  PRINT "Menu item B";
+CURSOR_RESTORE; PRINTLN "  (cursor restored next to Title)";

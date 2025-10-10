@@ -1373,6 +1373,13 @@ impl VM {
                             let out = self.url_decode_form(s);
                             self.stack.push(Value::Str(out));
                         }
+                        24 => { // SLEEP(ms)
+                            if argc != 1 { return Err(BasilError("SLEEP expects 1 argument".into())); }
+                            let ms = self.to_i64(&args[0])?;
+                            let msu = if ms < 0 { 0 } else { ms as u64 };
+                            std::thread::sleep(std::time::Duration::from_millis(msu));
+                            self.stack.push(Value::Int(0));
+                        }
                         40 => { // FOPEN(path$, mode$) -> fh%
                             if argc != 2 { return Err(BasilError("FOPEN expects 2 arguments".into())); }
                             let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
@@ -2118,6 +2125,84 @@ impl VM {
                                 }
                                 _ => return Err(BasilError("ARRAY_COLS%: expected array".into())),
                             }
+                        }
+                        #[cfg(feature = "obj-term")]
+                        230 => { // CLS / CLEAR / HOME
+                            if argc != 0 { return Err(BasilError("CLS expects 0 arguments".into())); }
+                            let rc = basil_objects::term::cls();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        231 => { // LOCATE(x%, y%)
+                            if argc != 2 { return Err(BasilError("LOCATE expects 2 arguments".into())); }
+                            let rc = basil_objects::term::locate(&args[0], &args[1]);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        232 => { // COLOR(fg, bg)
+                            if argc != 2 { return Err(BasilError("COLOR expects 2 arguments".into())); }
+                            let rc = basil_objects::term::color(&args[0], &args[1]);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        233 => { // COLOR_RESET
+                            if argc != 0 { return Err(BasilError("COLOR_RESET expects 0 arguments".into())); }
+                            let rc = basil_objects::term::color_reset();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        234 => { // ATTR(bold%, underline%, reverse%)
+                            if argc != 3 { return Err(BasilError("ATTR expects 3 arguments".into())); }
+                            let rc = basil_objects::term::attr(&args[0], &args[1], &args[2]);
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        235 => { // ATTR_RESET
+                            if argc != 0 { return Err(BasilError("ATTR_RESET expects 0 arguments".into())); }
+                            let rc = basil_objects::term::attr_reset();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        236 => { // CURSOR_SAVE
+                            if argc != 0 { return Err(BasilError("CURSOR_SAVE expects 0 arguments".into())); }
+                            let rc = basil_objects::term::cursor_save();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        237 => { // CURSOR_RESTORE
+                            if argc != 0 { return Err(BasilError("CURSOR_RESTORE expects 0 arguments".into())); }
+                            let rc = basil_objects::term::cursor_restore();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        238 => { // TERM_COLS%()
+                            if argc != 0 { return Err(BasilError("TERM_COLS% expects 0 arguments".into())); }
+                            let n = basil_objects::term::term_cols();
+                            self.stack.push(Value::Int(n));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        239 => { // TERM_ROWS%()
+                            if argc != 0 { return Err(BasilError("TERM_ROWS% expects 0 arguments".into())); }
+                            let n = basil_objects::term::term_rows();
+                            self.stack.push(Value::Int(n));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        241 => { // CURSOR_HIDE
+                            if argc != 0 { return Err(BasilError("CURSOR_HIDE expects 0 arguments".into())); }
+                            let rc = basil_objects::term::cursor_hide();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        242 => { // CURSOR_SHOW
+                            if argc != 0 { return Err(BasilError("CURSOR_SHOW expects 0 arguments".into())); }
+                            let rc = basil_objects::term::cursor_show();
+                            self.stack.push(Value::Int(rc));
+                        }
+                        #[cfg(feature = "obj-term")]
+                        243 => { // TERM_ERR$()
+                            if argc != 0 { return Err(BasilError("TERM_ERR$ expects 0 arguments".into())); }
+                            let s = basil_objects::term::term_err();
+                            self.stack.push(Value::Str(s));
                         }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }

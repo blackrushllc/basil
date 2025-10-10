@@ -105,6 +105,7 @@ dependencies = [
  "basil-bytecode",
  "basil-common",
  "cpal",
+ "crossterm",
  "csv",
  "dirs",
  "hound",

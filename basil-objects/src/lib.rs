@@ -101,6 +101,10 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::ai::register(_reg);
     }
+    #[cfg(feature = "obj-term")]
+    {
+        crate::term::register(_reg);
+    }
 }
 
 #[cfg(feature = "obj-base64")]
@@ -127,3 +131,5 @@ pub mod midi;
 pub mod daw;
 #[cfg(feature = "obj-ai")]
 pub mod ai;
+#[cfg(feature = "obj-term")]
+pub mod term;
