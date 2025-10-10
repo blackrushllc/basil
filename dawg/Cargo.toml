@@ -1,0 +1,18 @@
+[package]
+name = "cli-daw"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+cpal = "0.15"
+hound = "3"
+symphonia = { version = "0.5", features = ["wav", "pcm"] }
+midir = "0.9"
+ringbuf = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+crossbeam-channel = "0.5"
+thiserror = "1"
+ctrlc = "3"

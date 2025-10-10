@@ -1,7 +1,0 @@
-﻿rem DIR$ demo: list Basil examples in this folder
-
-let files$@ = DIR$("");
-println "", LEN(files$@), "";
-for i% = 0 to UBOUND(files$@)
-  println "", files$@(i%);
-next
