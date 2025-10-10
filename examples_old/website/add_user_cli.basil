@@ -1,0 +1,74 @@
+﻿println "";
+
+let DB_PATH$ = "";
+
+func db_open%() begin
+  // Try DB in script directory first
+  let db% = SQLITE_OPEN%(DB_PATH$);
+  if db% == 0 then begin
+    // Fallback to a writable temp dir
+    let tmp$ = ENV$("");
+    if LEN(tmp$) == 0 then let tmp$ = ENV$("");
+    if LEN(tmp$) == 0 then let tmp$ = ENV$("");
+    if LEN(tmp$) == 0 then let tmp$ = "";
+    // Join path safely
+    if RIGHT$(tmp$, 1) == "" or RIGHT$(tmp$, 1) == "" then begin
+      let DB_PATH$ = tmp$ + "";
+    else
+      let DB_PATH$ = tmp$ + "" + "";
+    end
+    let db% = SQLITE_OPEN%(DB_PATH$);
+  end
+  if db% == 0 then return 0;
+  let _ = SQLITE_EXEC%(db%, "");
+  return db%;
+end
+
+// Escape single quotes for naive SQL concatenation
+func esc_sql$(s$) begin
+rem  LET out$ = "";
+rem  FOR i% = 1 TO LEN(s$)
+rem    LET ch$ = MID$(s$, i%, 1);
+rem    IF ch$ == "" then begin
+rem      LET out$ = out$ + "";
+rem    ELSE
+rem      LET out$ = out$ + ch$;
+rem    END
+rem  NEXT i%
+rem  RETURN out$;
+return s$;
+end
+
+// Open DB
+let db% = db_open%();
+if db% == 0 then begin
+  println "";
+  exit 1;
+end
+println "", DB_PATH$;
+
+// Prompt for credentials
+let u$ = input$("");
+let p$ = input$("");
+
+if LEN(u$) == 0 or LEN(p$) == 0 then begin
+  println "";
+  SQLITE_CLOSE(db%);
+  exit 1;
+end
+
+let u2$ = esc_sql$(u$);
+let p2$ = esc_sql$(p$);
+
+// Attempt insert
+let aff% = SQLITE_EXEC%(db%, "" + u2$ + "" + p2$ + "");
+let id% = SQLITE_LAST_INSERT_ID%(db%);
+
+if id% > 0 then begin
+  println "", id%, "", u$, "";
+else
+  println "", id%, "", aff%, "";
+end
+
+SQLITE_CLOSE(db%);
+println "";

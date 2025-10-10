@@ -1,0 +1,7 @@
+﻿let ans$="";
+
+if ans$ == "" then begin
+  print "";
+else
+    print "";
+end

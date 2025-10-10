@@ -1,0 +1,18 @@
+﻿rem CLASS Logger — demonstrates a public class file handle field
+
+let fh% = 0;  ' public field that persists with the instance
+
+func Init(path$)
+  if fh% <> 0 then FCLOSE(fh%);
+  let fh% = FOPEN(path$, "");
+end
+
+func Log(msg$)
+  if fh% == 0 then return;
+  FWRITELN(fh%, msg$);
+end
+
+func Close()
+  if fh% <> 0 then FCLOSE(fh%);
+  let fh% = 0;
+end

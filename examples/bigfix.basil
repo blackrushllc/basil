@@ -1,0 +1,423 @@
+REM Big combined test of most examples (excludes my_class.basil and bad/CGI templates)
+
+#USE BMX_RIDER, BMX_TEAM
+
+PRINTLN "--------------------";
+PRINTLN "and_or.basil";
+PRINTLN "--------------------";
+
+PRINT "AND/OR demo";
+
+LET a = 1;
+LET b = 0;
+
+IF a AND b THEN PRINT "a AND b is TRUE"; ELSE PRINT "a AND b is FALSE";
+IF a OR b THEN PRINT "a OR b is TRUE"; ELSE PRINT "a OR b is FALSE";
+
+IF (a == 1 AND b == 0) OR (a + b == 2) THEN PRINT "complex condition is TRUE"; ELSE PRINT "complex condition is FALSE";
+
+IF (a + 1) AND (b + 3) THEN BEGIN
+  PRINT "truthy arithmetic works: (a+1) AND (b+3) are both nonzero";
+ELSE
+  PRINT "this should not print";
+END
+
+IF TRUE AND NOT FALSE THEN PRINT "booleans and NOT work";
+
+' AND has higher precedence than OR
+IF TRUE OR FALSE AND FALSE THEN PRINT "precedence: TRUE OR (FALSE AND FALSE) = TRUE"; ELSE PRINT "precedence error";
+IF (TRUE OR FALSE) AND FALSE THEN PRINT "precedence error"; ELSE PRINT "with parens: (TRUE OR FALSE) AND FALSE = FALSE";
+
+IF (1-1) OR (2-2) THEN PRINT "0 OR 0 is TRUE? (should be FALSE)"; ELSE PRINT "0 OR 0 is FALSE";
+
+PRINTLN "\n--------------------";
+PRINTLN "arrays.basil";
+PRINTLN "--------------------";
+
+REM Arrays example for BASIL
+REM Demonstrates DIM for string ($), integer (%), and float arrays, with up to 2 dimensions
+
+PRINTLN "Arrays demo";
+PRINTLN "Arrays demo";
+PRINTLN "Arrays demo";
+
+REM --- 1D integer array (0..5 inclusive => length 6) ---
+PRINTLN "41";
+DIM xN%(5);
+PRINTLN "43";
+PRINTLN "LEN(xN%)=", LEN(xN%);
+PRINTLN "45";
+LET xN%(0) = 10;
+PRINTLN "47";
+LET xN%(5) = 99;
+PRINTLN "49";
+PRINTLN "xN%(0)=", xN%(0), ", xN%(5)=", xN%(5);
+
+
+
+REM --- 1D float array (0..3 inclusive => length 4) ---
+
+
+PRINTLN "57";
+DIM xX(3);
+PRINTLN "59";
+PRINTLN "LEN(X)=", LEN(xX);
+LET xX(0) = 1.5;
+LET xX(3) = 2.5;
+PRINTLN "xX(0)=", xX(0), ", xX(3)=", xX(3);
+PRINTLN "64";
+
+REM --- 2D string array (0..2 by 0..1 => 3 x 2 = 6 elements) ---
+DIM xS$(2,1);
+LET xS$(0,0) = "Hello";
+LET xS$(2,1) = "World";
+PRINTLN "xS$(0,0)=", xS$(0,0), ", xS$(2,1)=", xS$(2,1);
+PRINTLN "LEN(xS$)=", LEN(xS$);
+
+REM Show that re-DIM resets the array
+DIM xS$(1,0); REM now capacity is 2 x 1 = 2 elements, previous contents cleared
+LET xS$(1,0) = "Reset";
+PRINTLN "After re-DIM, LEN(xS$)=", LEN(xS$), "; xS$(1,0)=", xS$(1,0);
+
+PRINTLN "\n--------------------";
+PRINTLN "classes.basil";
+PRINTLN "--------------------";
+
+REM Demo: Using CLASS to instantiate and interact with a class instance
+
+DIM user@ AS CLASS("my_class.basil");
+
+REM Access and modify a public variable
+PRINTLN "Initial description:", user@.Description$;
+LET user@.Description$ = "These are my favorite users.";
+PRINTLN "Updated description:", user@.Description$;
+
+REM Call public functions
+user@.AddUser("Erik");
+user@.AddUser("Junie");
+user@.AddUser("ChatGPT");
+
+PRINTLN "User count:", user@.CountMyUsers%();
+
+PRINTLN "\n--------------------";
+PRINTLN "else.basil";
+PRINTLN "--------------------";
+
+LET ans$="Y";
+
+IF ans$ == "Y" THEN BEGIN
+  PRINT "\n--- YES ---";
+ELSE
+    PRINT "\n--- NO ---";
+END
+
+PRINTLN "\n--------------------";
+PRINTLN "expr.basil";
+PRINTLN "--------------------";
+
+LET a = 2 + 3 * 4;
+PRINT a; // 14
+LET b = (2 + 3) * 4;
+PRINT b; // 20
+
+LET A$ = "Hello\nWorld\n";
+PRINT A$;
+
+LET A% = 10.1;
+PRINT "A% IS ",A%, "\n";
+
+LET B = 10.1;
+PRINT B;
+
+PRINT A% + 20;
+
+PRINT B + 20;
+
+PRINTLN "\n--------------------";
+PRINTLN "fib.basil";
+PRINTLN "--------------------";
+
+FUNC fib(n)
+BEGIN
+IF n < 2 THEN RETURN n;
+RETURN fib(n - 1) + fib(n - 2);
+END
+
+PRINT fib(10); // 55
+
+PRINTLN "\n--------------------";
+PRINTLN "for.basil";
+PRINTLN "--------------------";
+
+FOR i = 1 TO 5
+    PRINTLN i;
+NEXT i;
+
+FOR j = 5 TO 1 STEP -1
+    BEGIN
+        PRINT j;
+        FOR i = 1 TO 5
+            PRINTLN i;
+        NEXT i;
+    END
+NEXT j;
+
+PRINTLN "\n--------------------";
+PRINTLN "hello.basil";
+PRINTLN "--------------------";
+
+REM Simple Hello World
+PRINTLN "Hello World!";
+    FOR I% = 1 TO 5
+        BEGIN
+        PRINTLN "This is loop number ", I%;
+        END
+    NEXT
+PRINT "Goodbye!";
+
+PRINTLN "\n--------------------";
+PRINTLN "input.basil";
+PRINTLN "--------------------";
+
+// Demo of INPUT$ and IF statements.
+LET A$ = INPUT$("\nEnter your name:");
+
+PRINT "\nHello, "+A$+"!";
+
+LET ans$ = UCASE$(INPUTC$("\nDo you want to do something else? (Y/N): "));
+
+// Block IF:
+
+IF ans$ == "Y" THEN
+    BEGIN
+      PRINT "\nWinken";
+      PRINT "\nBLinken";
+      PRINT "\nNod";
+    ELSE
+        PRINT "\nOkay, I'll skip that.";
+    END
+
+// Immediate IF:
+IF ans$ == "Y" THEN PRINT "You said yes"; ELSE PRINT "You did not say Yes";
+PRINT "\nGoodbye!";
+
+PRINTLN "\n--------------------";
+PRINTLN "objects.basil";
+PRINTLN "--------------------";
+
+REM Objects demo: BMX_RIDER and BMX_TEAM
+REM This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+
+
+REM --- Create riders ---
+DIM r1@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+DIM r2@ AS BMX_RIDER("Bob", 21, "Intermediate", 5, 10);
+DIM r3@ AS BMX_RIDER("Carol", 19, "Pro", 30, 4);
+
+REM Change a few properties after construction
+r2@.SkillLevel$ = "Expert";
+r2@.Wins% = 8;
+r2@.Losses% = 9;
+
+REM --- Create a team (PRO flag available when BMX_TEAM is compiled) ---
+DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+
+REM Set some team stats
+t@.TeamWins% = 12;
+t@.TeamLosses% = 3;
+
+REM Add riders to the team
+t@.AddRider(r1@);
+t@.AddRider(r2@);
+t@.AddRider(r3@);
+
+REM --- Show team summary and rider list ---
+PRINTLN "Team:", t@.Info$();
+PRINTLN "WinPct:", t@.WinPct();
+
+LET names$ = t@.RiderNames$();
+PRINTLN "Riders (", LEN(names$), "):";
+FOR i% = 0 TO LEN(names$)-1
+  PRINTLN "  - ", names$(i%);
+NEXT i%
+
+REM Also PRINTLN descriptions from the riders for variety
+LET descs$ = t@.RiderDescriptions$();
+PRINTLN "Descriptions:";
+FOR i% = 0 TO LEN(descs$)-1
+  PRINTLN "  ", descs$(i%);
+NEXT i%
+
+REM --- Optionally show full object descriptors ---
+REM LET ans$ = INPUT$("Show object DESCRIBE info for BMX_RIDER and BMX_TEAM? (Y/N): ");
+LET ans$2 = "Y"; REM auto-answer yes for automated testing
+IF ans$2 == "Y" THEN
+BEGIN
+  PRINTLN "\n--- DESCRIBE$(r1@) ---";
+  PRINTLN DESCRIBE$(r1@);
+  PRINTLN "\n--- DESCRIBE t@ ---";
+  DESCRIBE t@;
+END
+
+PRINTLN "\n--------------------";
+PRINTLN "objects_arrays.basil";
+PRINTLN "--------------------";
+
+REM Objects demo: BMX_RIDER and BMX_TEAM
+REM This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+
+
+DIM riders@(2) AS BMX_RIDER;
+LET riders@(0) = NEW BMX_RIDER("Alice", 17, "Expert", 12, 3);
+LET riders@(1) = NEW BMX_RIDER("Bob",   21, "Expert",  8, 9);
+LET riders@(2) = NEW BMX_RIDER("Carol", 19, "Pro",    30, 4);
+
+FOR EACH r@ IN riders@
+  PRINT "Rider - ",r@.Describe$();
+NEXT
+
+DIM nums%(4);
+FOR EACH n% IN nums%
+  LET nums%(n%) = n% * n%;
+NEXT
+
+DIM t2@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+t2@.AddRider(riders@(0)); t2@.AddRider(riders@(1)); t2@.AddRider(riders@(2));
+
+FOR EACH name$ IN t2@.RiderNames$()
+  PRINTLN name$;
+NEXT
+
+FOR EACH desc$ IN t2@.RiderDescriptions$()
+  PRINTLN desc$;
+NEXT
+
+PRINTLN "\n--------------------";
+PRINTLN "objects_no_use.basil";
+PRINTLN "--------------------";
+
+REM Objects demo: BMX_RIDER and BMX_TEAM
+REM This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+
+
+REM --- Create riders ---
+DIM r1b@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+DIM r2b@ AS BMX_RIDER("Bob", 21, "Intermediate", 5, 10);
+DIM r3b@ AS BMX_RIDER("Carol", 19, "Pro", 30, 4);
+
+REM Change a few properties after construction
+r2b@.SkillLevel$ = "Expert";
+r2b@.Wins% = 8;
+r2b@.Losses% = 9;
+
+REM --- Create a team (PRO flag available when BMX_TEAM is compiled) ---
+DIM t3@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+
+REM Set some team stats
+t3@.TeamWins% = 12;
+t3@.TeamLosses% = 3;
+
+REM Add riders to the team
+t3@.AddRider(r1b@);
+t3@.AddRider(r2b@);
+t3@.AddRider(r3b@);
+
+REM --- Show team summary and rider list ---
+PRINT "Team:", t3@.Info$();
+PRINT "WinPct:", t3@.WinPct();
+
+LET names2$ = t3@.RiderNames$();
+PRINT "Riders (", LEN(names2$), "):";
+FOR i% = 0 TO LEN(names2$)-1
+  PRINT "  - ", names2$(i%);
+NEXT i%
+
+REM Also print descriptions from the riders for variety
+LET descs2$ = t3@.RiderDescriptions$();
+PRINT "Descriptions:";
+FOR i% = 0 TO LEN(descs2$)-1
+  PRINT "  ", descs2$(i%);
+NEXT i%
+
+REM --- Optionally show full object descriptors ---
+LET ans$3 = "N"; REM keep non-interactive here
+IF ans$3 == "Y" THEN BEGIN
+  PRINT "\n--- DESCRIBE$(r1b@) ---";
+  PRINT DESCRIBE$(r1b@);
+  PRINT "\n--- DESCRIBE t3@ ---";
+  DESCRIBE t3@;
+END
+
+PRINTLN "\n--------------------";
+PRINTLN "strings.basil";
+PRINTLN "--------------------";
+
+LET A1$ = "Hi";
+LET B1$ = "There";
+LET C1$ = A1$ + B1$;
+PRINTLN C1$; // expected HiThere
+PRINTLN A1$, B1$; // expected Hi	There
+
+PRINTLN LEN(C1$); // expected 7
+PRINTLN MID$(C1$, 3, 4); // expected Ther
+PRINTLN MID$(C1$, 3); // expected There
+PRINTLN LEFT$(C1$, 2); // expected Hi
+PRINTLN RIGHT$(C1$, 5); // expected There
+PRINTLN INSTR(C1$, "e"); // expected 4
+PRINTLN INSTR(C1$, "e", 5); // expected 6
+PRINTLN INSTR(C1$, "x"); // expected 0
+
+PRINTLN "\n--------------------";
+PRINTLN "while.basil";
+PRINTLN "--------------------";
+
+LET x = 0;
+WHILE x < 3 BEGIN
+    PRINT x;
+    LET x = x + 1;
+END
+
+' Infinite loop with BREAK (will break at 3)
+LET i = 0;
+WHILE TRUE BEGIN
+    LET i = i + 1;
+    IF i == 3 THEN BEGIN // Block IF
+        BREAK;
+    END
+    PRINT i;
+END
+
+' Using CONTINUE (skip 3)
+LET j = 0;
+WHILE j < 5 BEGIN
+    LET j = j + 1;
+    IF j == 3 THEN BEGIN
+        CONTINUE;
+    END
+    PRINT j;
+END
+
+' Infinite loop with BREAK (will break at 3)
+LET i = 0;
+WHILE TRUE BEGIN
+    LET i = i + 1;
+    IF i == 3 THEN BREAK; // Immediate IF
+    PRINT i;
+END
+
+' Using CONTINUE (skip 3)
+LET j = 0;
+WHILE j < 5 BEGIN
+    LET j = j + 1;
+    IF j == 3 THEN  CONTINUE;
+    PRINT j;
+END
+
+
+' FALSE as never-enter condition
+WHILE FALSE BEGIN
+    PRINT "You should never see this";
+END

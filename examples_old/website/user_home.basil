@@ -1,0 +1,58 @@
+﻿#CGI_NO_HEADER
+<?basil
+  let SITE_TITLE$ = ""
+  func send_header_ok_html() begin
+    print "";
+    print "";
+    return 0;
+  end
+  func layout_start(title$) begin
+    print ""en\""utf-8\"" + HTML$(title$) + "";
+    print ""viewport\""width=device-width, initial-scale=1\"";
+    print ""stylesheet\""css/site.css\""top\""wrap\"" + HTML$(SITE_TITLE$) + ""wrap\"";
+    return 0;
+  end
+  func layout_end() begin
+    print ""foot\""wrap\""index.basil\""js/site.js\"";
+    return 0;
+  end
+  func cookie$(name$) begin
+    let raw$ = ENV$("")
+    if LEN(raw$) == 0 then return ""
+    let s$ = raw$
+    let i% = 1
+    while i% <= LEN(s$) begin
+      let semi% = INSTR(s$, "", i%-1)
+      if semi% == 0 then let semi% = LEN(s$)
+      let part$ = TRIM$(MID$(s$, i%, semi% - i% + 1))
+      let eq% = INSTR(part$, "")
+      if eq% > 0 then begin
+        let ck$ = LEFT$(part$, eq%)
+        let cv$ = MID$(part$, eq%+2)
+        if ck$ == name$ then return cv$
+      end
+      let i% = semi% + 2
+    end
+    return ""
+  end
+  func send_header_redirect(loc$) begin
+    print "";
+    print "" + loc$ + "";
+    return 0;
+  end
+
+  let user$ = cookie$("")
+  if LEN(user$) == 0 then begin
+    let __d% = send_header_redirect("");
+    exit 0;
+  end
+
+  let __d% = send_header_ok_html()
+  let __d% = layout_start("")
+?>
+<?basil print READFILE$(""); ?>
+<?basil
+  print ""greet\"" + HTML$(user$) + "";
+  print ""post\""logout.basil\""btn\"";
+  let __d% = layout_end()
+?>

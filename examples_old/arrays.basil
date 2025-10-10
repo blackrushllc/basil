@@ -1,0 +1,28 @@
+﻿rem Arrays example for BASIL
+rem Demonstrates DIM for string ($), integer (%), and float arrays, with up to 2 dimensions
+
+rem --- 1D integer array (0..5 inclusive => length 6) ---
+dim N%(5);
+let N%(0) = 10;
+let N%(5) = 99;
+println "", N%(0), "", N%(5);
+println "", LEN(N%);
+
+rem --- 1D float array (0..3 inclusive => length 4) ---
+dim X(3);
+let X(0) = 1.5;
+let X(3) = 2.5;
+println "", X(0), "", X(3);
+println "", LEN(X);
+
+rem --- 2D string array (0..2 by 0..1 => 3 x 2 = 6 elements) ---
+dim S$(2,1);
+let S$(0,0) = "";
+let S$(2,1) = "";
+println "", S$(0,0), "", S$(2,1);
+println "", LEN(S$);
+
+rem Show that re-DIM resets the array
+dim S$(1,0); rem now capacity is 2 x 1 = 2 elements, previous contents cleared
+let S$(1,0) = "";
+println "", LEN(S$), "", S$(1,0);

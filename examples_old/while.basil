@@ -1,0 +1,47 @@
+﻿let x = 0;
+while x < 3 begin
+    print x;
+    let x = x + 1;
+end
+
+' Infinite loop with BREAK (will break at 3)
+let i = 0;
+while true begin
+    let i = i + 1;
+    if i == 3 then begin // Block if
+        break;
+    end
+    print i;
+end
+
+' Using CONTINUE (skip 3)
+let j = 0;
+while j < 5 begin
+    let j = j + 1;
+    if j == 3 then begin
+        continue;
+    end
+    print j;
+end
+
+' Infinite loop with BREAK (will break at 3)
+let i = 0;
+while true begin
+    let i = i + 1;
+    if i == 3 then break; // Immediate if
+    print i;
+end
+
+' Using CONTINUE (skip 3)
+let j = 0;
+while j < 5 begin
+    let j = j + 1;
+    if j == 3 then  continue;
+    print j;
+end
+
+
+' FALSE as never-enter condition
+while false begin
+    print "";
+end
