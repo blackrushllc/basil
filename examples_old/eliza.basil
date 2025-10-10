@@ -1,0 +1,271 @@
+﻿rem ELIZA in Basil (no line numbers). Uses INSTR-based rules and reflection.
+rem Port guided by ELIZA.md. Prioritized keyword patterns, pronoun reflection, defaults.
+
+rem --- Globals ---
+let RP% = 12;            rem reflection pair count
+dim RF_IN$(RP%-1);       rem 0..RP%-1 (arrays are 0-based; LEN reports total elements)
+dim RF_OUT$(RP%-1);
+
+rem Fill reflection pairs (normalized uppercase). Include IM->YOU ARE per ELIZA.md
+let RF_IN$(0) = "";        let RF_OUT$(0) = "";
+let RF_IN$(1) = "";       let RF_OUT$(1) = "";
+let RF_IN$(2) = "";       let RF_OUT$(2) = "";
+let RF_IN$(3) = "";     let RF_OUT$(3) = "";
+let RF_IN$(4) = "";       let RF_OUT$(4) = "";
+let RF_IN$(5) = "";       let RF_OUT$(5) = "";
+let RF_IN$(6) = "";      let RF_OUT$(6) = "";
+let RF_IN$(7) = "";     let RF_OUT$(7) = "";
+let RF_IN$(8) = "";    let RF_OUT$(8) = "";
+let RF_IN$(9) = "";      let RF_OUT$(9) = "";
+let RF_IN$(10) = "";  let RF_OUT$(10) = "";
+let RF_IN$(11) = "";let RF_OUT$(11) = "";
+
+dim DEF$(11);            rem 12 default replies
+let DEF$(0) = "";
+let DEF$(1) = "";
+let DEF$(2) = "";
+let DEF$(3) = "";
+let DEF$(4) = "";
+let DEF$(5) = "";
+let DEF$(6) = "";
+let DEF$(7) = "";
+let DEF$(8) = "";
+let DEF$(9) = "";
+let DEF$(10) = "";
+let DEF$(11) = "";
+
+let next_i% = 0;        rem rotating index used for pseudo-random choices (1..N)
+
+func next%(n%)
+  let next_i% = next_i% + 1;
+  if next_i% > n% then let next_i% = 1;
+  return next_i%;
+end func
+
+func DEFAULT_REPLY()
+  let n% = LEN(DEF$);
+  let i% = next%(n%);
+  let idx% = i% - 1;
+  print "", DEF$(idx%);
+  return 0;
+end func
+
+func NORMALIZE$(s$)
+  rem Uppercase, non-alnum -> space, collapse spaces, trim
+  let t$ = "";
+  for i% = 1 to LEN(s$) begin
+    let c$ = MID$(s$, i%, 1);
+    let a% = ASC%(c$);
+    if a% >= 97 and a% <= 122 then let c$ = CHR$(a% - 32);
+    let a% = ASC%(c$);
+    if (a% >= 65 and a% <= 90) or (a% >= 48 and a% <= 57) or a% == 32 then begin
+      let t$ = t$ + c$;
+    else
+      let t$ = t$ + "";
+    end
+  end
+  next i%
+  rem collapse spaces
+  let u$ = "";
+  let prv% = 1;
+  for j% = 1 to LEN(t$) begin
+    let c$ = MID$(t$, j%, 1);
+    if c$ == "" then begin
+      if prv% == 0 then begin let u$ = u$ + ""; end
+      let prv% = 1;
+    else begin
+      let u$ = u$ + c$;
+      let prv% = 0;
+    end
+  end
+  next j%
+  rem trim
+  while LEN(u$) > 0 and LEFT$(u$, 1) == "" begin let u$ = MID$(u$, 2); end
+  while LEN(u$) > 0 and RIGHT$(u$, 1) == "" begin let u$ = LEFT$(u$, LEN(u$)-1); end
+  return u$;
+end func
+
+func REFLECT$(x$)
+  rem Trim leading/trailing spaces first
+  let xs$ = x$;
+  while LEN(xs$) > 0 and LEFT$(xs$, 1) == "" begin let xs$ = MID$(xs$, 2); end
+  while LEN(xs$) > 0 and RIGHT$(xs$, 1) == "" begin let xs$ = LEFT$(xs$, LEN(xs$)-1); end
+  if LEN(xs$) == 0 then return "";
+
+  let rx$ = "";
+  let w$ = "";
+  let xs2$ = xs$ + "";
+  for i% = 1 to LEN(xs2$) begin
+    let c$ = MID$(xs2$, i%, 1);
+    if c$ != "" then begin
+      let w$ = w$ + c$;
+    else begin
+      if LEN(w$) > 0 then begin
+        let found% = 0;
+        for j% = 0 to RP%-1 begin
+          if w$ == RF_IN$(j%) then begin
+            let rx$ = rx$ + RF_OUT$(j%) + "";
+            let found% = 1;
+            let j% = RP%-1;  rem break
+          end
+        end
+        next j%
+        if found% == 0 then let rx$ = rx$ + w$ + "";
+      end
+      let w$ = "";
+    end
+  end
+  next i%
+  if LEN(rx$) > 0 and RIGHT$(rx$, 1) == "" then let rx$ = LEFT$(rx$, LEN(rx$)-1);
+  return rx$;
+end func
+
+print "";
+
+while true begin
+  print "";
+  let raw$ = input$();
+  if LEN(raw$) == 0 then continue;
+  let norm$ = NORMALIZE$(raw$);
+  if norm$ == "" or norm$ == "" or norm$ == "" then begin
+    print "";
+    break;
+  end
+  if LEN(norm$) == 0 then begin
+    DEFAULT_REPLY();
+    continue;
+  end
+
+  rem Surround with padding to simplify word-boundary matches; two leading spaces avoid INSTR ambiguity at index 0
+  let s$ = "" + norm$ + "";
+
+  let responded% = 0;
+
+  rem 1) * I FEEL *
+  let k$ = "";
+  let p% = INSTR(s$, k$);
+  if p% > 0 and responded% == 0 then begin
+    let x$ = MID$(s$, p% + LEN(k$) + 1);
+    let rx$ = REFLECT$(x$);
+    let i% = next%(3);
+    if i% == 1 then print "", rx$, "";
+    if i% == 2 then print "", rx$, "";
+    if i% == 3 then print "", rx$, "";
+    let responded% = 1;
+  end
+
+  rem 2) * I AM *
+  let k$ = "";
+  let p% = INSTR(s$, k$);
+  if p% > 0 and responded% == 0 then begin
+    let x$ = MID$(s$, p% + LEN(k$) + 1);
+    let rx$ = REFLECT$(x$);
+    let i% = next%(2);
+    if i% == 1 then print "", rx$, "";
+    if i% == 2 then print "", rx$, "";
+    let responded% = 1;
+  end
+
+  rem 3) * I * YOU *
+  let k1% = INSTR(s$, "");
+  let k2% = INSTR(s$, "");
+  if k1% > 0 and k2% > k1% and responded% == 0 then begin
+    let midlen% = k2% - (k1% + 3);
+    if midlen% < 0 then let midlen% = 0;
+    let mid$ = MID$(s$, k1% + 3 + 1, midlen%);
+    let rmid$ = REFLECT$(mid$);
+    let i% = next%(2);
+    if i% == 1 then print "", rmid$, "";
+    if i% == 2 then print "", rmid$, "";
+    let responded% = 1;
+  end
+
+  rem 4) * YOU * ME *
+  let k1% = INSTR(s$, "");
+  let k2% = INSTR(s$, "");
+  if k1% > 0 and k2% > k1% and responded% == 0 then begin
+    let midlen% = k2% - (k1% + 5);
+    if midlen% < 0 then let midlen% = 0;
+    let mid$ = MID$(s$, k1% + 5 + 1, midlen%);
+    let rmid$ = REFLECT$(mid$);
+    let i% = next%(2);
+    if i% == 1 then print "", rmid$, "";
+    if i% == 2 then print "", rmid$, "";
+    let responded% = 1;
+  end
+
+  rem 5) * MY *
+  let k$ = "";
+  let p% = INSTR(s$, k$);
+  if p% > 0 and responded% == 0 then begin
+    let x$ = MID$(s$, p% + LEN(k$) + 1);
+    let rx$ = REFLECT$(x$);
+    let i% = next%(2);
+    if i% == 1 then print "", rx$, "";
+    if i% == 2 then print "";
+    let responded% = 1;
+  end
+
+  rem 6) * BECAUSE *
+  if INSTR(s$, "") > 0 and responded% == 0 then begin
+    let i% = next%(2);
+    if i% == 1 then print "";
+    if i% == 2 then print "";
+    let responded% = 1;
+  end
+
+  rem 7) * FAMILY * or specific family members
+  if responded% == 0 then begin
+    if INSTR(s$, "") > 0 then print ""; else
+    if INSTR(s$, "") > 0 then begin
+      let i% = next%(2);
+      if i% == 1 then print ""; else print "";
+      let responded% = 1;
+    end else if INSTR(s$, "") > 0 then begin
+      let i% = next%(2);
+      if i% == 1 then print ""; else print "";
+      let responded% = 1;
+    end
+  end
+
+  rem 8) * DREAM *
+  let p% = INSTR(s$, "");
+  if p% > 0 and responded% == 0 then begin
+    let x$ = MID$(s$, p% + LEN("") + 1);
+    let rx$ = REFLECT$(x$);
+    let i% = next%(2);
+    if i% == 1 then print "", rx$, ""; else print "";
+    let responded% = 1;
+  end
+
+  rem 9) * FRIEND *
+  if INSTR(s$, "") > 0 and responded% == 0 then begin
+    let i% = next%(2);
+    if i% == 1 then print ""; else print "";
+    let responded% = 1;
+  end
+
+  rem 10) * YES *
+  if INSTR(s$, "") > 0 and responded% == 0 then begin
+    let i% = next%(2);
+    if i% == 1 then print ""; else print "";
+    let responded% = 1;
+  end
+
+  rem 11) * NO *
+  if INSTR(s$, "") > 0 and responded% == 0 then begin
+    let i% = next%(2);
+    if i% == 1 then print ""; else print "";
+    let responded% = 1;
+  end
+
+  rem 12) * COMPUTER *
+  if INSTR(s$, "") > 0 and responded% == 0 then begin
+    let i% = next%(2);
+    if i% == 1 then print ""; else print "";
+    let responded% = 1;
+  end
+
+  if responded% == 0 then DEFAULT_REPLY();
+end
+

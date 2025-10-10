@@ -146,7 +146,7 @@ fn cmd_lex(path: Option<String>) {
 
 fn cmd_run(path: Option<String>) {
     // Require a path
-    let path = match path {
+    let input_path = match path {
         Some(p) => p,
         None => {
             eprintln!("usage: basilc run <file.basil>");
@@ -155,20 +155,30 @@ fn cmd_run(path: Option<String>) {
     };
 
     // Optional: refuse obvious non-source invocations (helps catch /usr/lib/cgi-bin/basil.cgi)
-    if !(path.ends_with(".basil") || path.ends_with(".basi")) {
-        eprintln!("Refusing to run a non-.basil/.basi file: {}", path);
+    if !(input_path.ends_with(".basil") || input_path.ends_with(".basi")) {
+        eprintln!("Refusing to run a non-.basil/.basi file: {}", input_path);
         std::process::exit(2);
     }
 
-    // Read the source once, with good error messages
-    let src = match std::fs::read_to_string(&path) {
+    // Resolve absolute path and set process CWD to the script directory so relative I/O works like PHP/Python.
+    let abs_path: PathBuf = match fs::canonicalize(&input_path) {
+        Ok(p) => p,
+        Err(_) => PathBuf::from(&input_path),
+    };
+    let script_dir = abs_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+    if let Err(e) = env::set_current_dir(&script_dir) {
+        eprintln!("warning: failed to set current dir to script dir ({}): {}", script_dir.display(), e);
+    }
+
+    // Read the source once, with good error messages (use absolute path to avoid cwd side-effects)
+    let src = match std::fs::read_to_string(&abs_path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-            eprintln!("File is not UTF-8 text: {}", path);
+            eprintln!("File is not UTF-8 text: {}", abs_path.display());
             std::process::exit(3);
         }
         Err(e) => {
-            eprintln!("Failed to read {}: {}", path, e);
+            eprintln!("Failed to read {}: {}", abs_path.display(), e);
             std::process::exit(1);
         }
     };
@@ -192,7 +202,7 @@ fn cmd_run(path: Option<String>) {
     };
 
     // Prepare cache fingerprint
-    let meta = match fs::metadata(&path) { Ok(m)=>m, Err(e)=>{ eprintln!("stat {}: {}", path, e); std::process::exit(1);} };
+    let meta = match fs::metadata(&abs_path) { Ok(m)=>m, Err(e)=>{ eprintln!("stat {}: {}", abs_path.display(), e); std::process::exit(1);} };
     let source_size = meta.len();
     let source_mtime_ns: u64 = meta.modified().ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -203,8 +213,8 @@ fn cmd_run(path: Option<String>) {
     let flags: u32 = (if pre.directives.short_tags_on { 1u32 } else { 0u32 })
                    | (if templating_used { 2u32 } else { 0u32 });
 
-    // Cache path
-    let mut cache_path = PathBuf::from(&path);
+    // Cache path (next to the script)
+    let mut cache_path = abs_path.clone();
     cache_path.set_extension("basilx");
 
     // Try cache load
@@ -249,7 +259,7 @@ fn cmd_run(path: Option<String>) {
     // Run VM
     let mut vm = VM::new(program);
     // Provide script path so CLASS() can resolve relative class files
-    vm.set_script_path(path.clone());
+    vm.set_script_path(abs_path.to_string_lossy().to_string());
     if let Err(e) = vm.run() {
         let line = vm.current_line();
         if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }

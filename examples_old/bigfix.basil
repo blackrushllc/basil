@@ -1,0 +1,423 @@
+﻿rem big combined test of most examples (excludes my_class.basil and bad/cgi templates)
+
+#use bmx_rider, bmx_team
+
+println "";
+println "";
+println "";
+
+print "";
+
+let a = 1;
+let b = 0;
+
+if a and b then print ""; else print "";
+if a or b then print ""; else print "";
+
+if (a == 1 and b == 0) or (a + b == 2) then print ""; else print "";
+
+if (a + 1) and (b + 3) then begin
+  print "";
+else
+  print "";
+end
+
+if true and not false then print "";
+
+' and has higher precedence than or
+if true or false and false then print ""; else print "";
+if (true or false) and false then print ""; else print "";
+
+if (1-1) or (2-2) then print ""; else print "";
+
+println "";
+println "";
+println "";
+
+rem arrays example for basil
+rem demonstrates dim for string ($), integer (%), and float arrays, with up to 2 dimensions
+
+println "";
+println "";
+println "";
+
+rem --- 1d integer array (0..5 inclusive => length 6) ---
+println "";
+dim xn%(5);
+println "";
+println "", len(xn%);
+println "";
+let xn%(0) = 10;
+println "";
+let xn%(5) = 99;
+println "";
+println "", xn%(0), "", xn%(5);
+
+
+
+rem --- 1d float array (0..3 inclusive => length 4) ---
+
+
+println "";
+dim xx(3);
+println "";
+println "", len(xx);
+let xx(0) = 1.5;
+let xx(3) = 2.5;
+println "", xx(0), "", xx(3);
+println "";
+
+rem --- 2d string array (0..2 by 0..1 => 3 x 2 = 6 elements) ---
+dim xs$(2,1);
+let xs$(0,0) = "";
+let xs$(2,1) = "";
+println "", xs$(0,0), "", xs$(2,1);
+println "", len(xs$);
+
+rem show that re-dim resets the array
+dim xs$(1,0); rem now capacity is 2 x 1 = 2 elements, previous contents cleared
+let xs$(1,0) = "";
+println "", len(xs$), "", xs$(1,0);
+
+println "";
+println "";
+println "";
+
+rem demo: using class to instantiate and interact with a class instance
+
+dim user@ as class("");
+
+rem access and modify a public variable
+println "", user@.description$;
+let user@.description$ = "";
+println "", user@.description$;
+
+rem call public functions
+user@.adduser("");
+user@.adduser("");
+user@.adduser("");
+
+println "", user@.countmyusers%();
+
+println "";
+println "";
+println "";
+
+let ans$="";
+
+if ans$ == "" then begin
+  print "";
+else
+    print "";
+end
+
+println "";
+println "";
+println "";
+
+let a = 2 + 3 * 4;
+print a; // 14
+let b = (2 + 3) * 4;
+print b; // 20
+
+let a$ = "";
+print a$;
+
+let a% = 10.1;
+print "",a%, "";
+
+let b = 10.1;
+print b;
+
+print a% + 20;
+
+print b + 20;
+
+println "";
+println "";
+println "";
+
+func fib(n)
+begin
+if n < 2 then return n;
+return fib(n - 1) + fib(n - 2);
+end
+
+print fib(10); // 55
+
+println "";
+println "";
+println "";
+
+for i = 1 to 5
+    println i;
+next i;
+
+for j = 5 to 1 step -1
+    begin
+        print j;
+        for i = 1 to 5
+            println i;
+        next i;
+    end
+next j;
+
+println "";
+println "";
+println "";
+
+rem simple hello world
+println "";
+    for i% = 1 to 5
+        begin
+        println "", i%;
+        end
+    next
+print "";
+
+println "";
+println "";
+println "";
+
+// demo of input$ and if statements.
+let a$ = input$("");
+
+print ""+a$+"";
+
+let ans$ = ucase$(inputc$(""));
+
+// block if:
+
+if ans$ == "" then
+    begin
+      print "";
+      print "";
+      print "";
+    else
+        print "";
+    end
+
+// immediate if:
+if ans$ == "" then print ""; else print "";
+print "";
+
+println "";
+println "";
+println "";
+
+rem objects demo: bmx_rider and bmx_team
+rem this example assumes object support is compiled in with features enabling bmx_rider and bmx_team.
+
+
+
+rem --- create riders ---
+dim r1@ as bmx_rider("", 17, "", 12, 3);
+dim r2@ as bmx_rider("", 21, "", 5, 10);
+dim r3@ as bmx_rider("", 19, "", 30, 4);
+
+rem change a few properties after construction
+r2@.skilllevel$ = "";
+r2@.wins% = 8;
+r2@.losses% = 9;
+
+rem --- create a team (pro flag available when bmx_team is compiled) ---
+dim t@ as bmx_team("", 2015, pro);
+
+rem set some team stats
+t@.teamwins% = 12;
+t@.teamlosses% = 3;
+
+rem add riders to the team
+t@.addrider(r1@);
+t@.addrider(r2@);
+t@.addrider(r3@);
+
+rem --- show team summary and rider list ---
+println "", t@.info$();
+println "", t@.winpct();
+
+let names$ = t@.ridernames$();
+println "", len(names$), "";
+for i% = 0 to len(names$)-1
+  println "", names$(i%);
+next i%
+
+rem also println descriptions from the riders for variety
+let descs$ = t@.riderdescriptions$();
+println "";
+for i% = 0 to len(descs$)-1
+  println "", descs$(i%);
+next i%
+
+rem --- optionally show full object descriptors ---
+rem let ans$ = input$("");
+let ans$2 = ""; rem auto-answer yes for automated testing
+if ans$2 == "" then
+begin
+  println "";
+  println describe$(r1@);
+  println "";
+  describe t@;
+end
+
+println "";
+println "";
+println "";
+
+rem objects demo: bmx_rider and bmx_team
+rem this example assumes object support is compiled in with features enabling bmx_rider and bmx_team.
+
+
+
+dim riders@(2) as bmx_rider;
+let riders@(0) = new bmx_rider("", 17, "", 12, 3);
+let riders@(1) = new bmx_rider("",   21, "",  8, 9);
+let riders@(2) = new bmx_rider("", 19, "",    30, 4);
+
+for each r@ in riders@
+  print "",r@.describe$();
+next
+
+dim nums%(4);
+for each n% in nums%
+  let nums%(n%) = n% * n%;
+next
+
+dim t2@ as bmx_team("", 2015, pro);
+t2@.addrider(riders@(0)); t2@.addrider(riders@(1)); t2@.addrider(riders@(2));
+
+for each name$ in t2@.ridernames$()
+  println name$;
+next
+
+for each desc$ in t2@.riderdescriptions$()
+  println desc$;
+next
+
+println "";
+println "";
+println "";
+
+rem objects demo: bmx_rider and bmx_team
+rem this example assumes object support is compiled in with features enabling bmx_rider and bmx_team.
+
+
+
+rem --- create riders ---
+dim r1b@ as bmx_rider("", 17, "", 12, 3);
+dim r2b@ as bmx_rider("", 21, "", 5, 10);
+dim r3b@ as bmx_rider("", 19, "", 30, 4);
+
+rem change a few properties after construction
+r2b@.skilllevel$ = "";
+r2b@.wins% = 8;
+r2b@.losses% = 9;
+
+rem --- create a team (pro flag available when bmx_team is compiled) ---
+dim t3@ as bmx_team("", 2015, pro);
+
+rem set some team stats
+t3@.teamwins% = 12;
+t3@.teamlosses% = 3;
+
+rem add riders to the team
+t3@.addrider(r1b@);
+t3@.addrider(r2b@);
+t3@.addrider(r3b@);
+
+rem --- show team summary and rider list ---
+print "", t3@.info$();
+print "", t3@.winpct();
+
+let names2$ = t3@.ridernames$();
+print "", len(names2$), "";
+for i% = 0 to len(names2$)-1
+  print "", names2$(i%);
+next i%
+
+rem also print descriptions from the riders for variety
+let descs2$ = t3@.riderdescriptions$();
+print "";
+for i% = 0 to len(descs2$)-1
+  print "", descs2$(i%);
+next i%
+
+rem --- optionally show full object descriptors ---
+let ans$3 = ""; rem keep non-interactive here
+if ans$3 == "" then begin
+  print "";
+  print describe$(r1b@);
+  print "";
+  describe t3@;
+end
+
+println "";
+println "";
+println "";
+
+let a1$ = "";
+let b1$ = "";
+let c1$ = a1$ + b1$;
+println c1$; // expected hithere
+println a1$, b1$; // expected hi	there
+
+println len(c1$); // expected 7
+println mid$(c1$, 3, 4); // expected ther
+println mid$(c1$, 3); // expected there
+println left$(c1$, 2); // expected hi
+println right$(c1$, 5); // expected there
+println instr(c1$, ""); // expected 4
+println instr(c1$, "", 5); // expected 6
+println instr(c1$, ""); // expected 0
+
+println "";
+println "";
+println "";
+
+let x = 0;
+while x < 3 begin
+    print x;
+    let x = x + 1;
+end
+
+' infinite loop with break (will break at 3)
+let i = 0;
+while true begin
+    let i = i + 1;
+    if i == 3 then begin // block if
+        break;
+    end
+    print i;
+end
+
+' using continue (skip 3)
+let j = 0;
+while j < 5 begin
+    let j = j + 1;
+    if j == 3 then begin
+        continue;
+    end
+    print j;
+end
+
+' infinite loop with break (will break at 3)
+let i = 0;
+while true begin
+    let i = i + 1;
+    if i == 3 then break; // immediate if
+    print i;
+end
+
+' using continue (skip 3)
+let j = 0;
+while j < 5 begin
+    let j = j + 1;
+    if j == 3 then  continue;
+    print j;
+end
+
+
+' false as never-enter condition
+while false begin
+    print "";
+end
