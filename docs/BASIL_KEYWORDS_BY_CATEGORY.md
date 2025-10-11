@@ -12,6 +12,21 @@ Specifies a type name for DIM of object variables or arrays.
 DIM r1@ AS BMX_RIDER
 ```
 
+### DAW_RESET
+Releases DAW resources (audio streams, MIDI connections, rings, WAV writers) for the current process.  
+Feature: obj-daw
+```basil
+DAW_RESET
+PRINT "DAW resources reset."
+```
+
+### DAW_STOP
+Requests long‑running DAW helpers to stop; they return shortly after.  
+Feature: obj-daw
+```basil
+DAW_STOP
+```
+
 ### DESCRIBE
 Prints a formatted description of an object instance or an array value.
 ```basil
@@ -73,6 +88,30 @@ Constant function-like keyword that yields the Basil author name; accepts option
 PRINTLN AUTHOR;
 ```
 
+### AUDIO_MONITOR%
+Routes the first audio input device matching a substring to the first output device matching a substring until DAW_STOP() is called. Returns 0 on success.  
+Feature: obj-daw
+```basil
+LET rc% = AUDIO_MONITOR%("scarlett", "scarlett")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
+```
+
+### AUDIO_PLAY%
+Plays a WAV file to the first output device whose name contains the given substring (case-insensitive). Returns 0 on success.  
+Feature: obj-daw
+```basil
+LET rc% = AUDIO_PLAY%("LC27T55 (NVIDIA High Definition Audio)", "alarm.wav")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
+```
+
+### AUDIO_RECORD%
+Records audio from the first input device matching a substring to a WAV file for the given duration (seconds). Returns 0 on success.  
+Feature: obj-daw
+```basil
+LET rc% = AUDIO_RECORD%("usb", "take1.wav", 10)
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
+```
+
 ### CHR$
 Returns a one-character string for the given numeric code point (out of range yields "").
 ```basil
@@ -83,6 +122,14 @@ PRINTLN CHR$(65);
 Constructs a class instance from a filename that defines a class.
 ```basil
 LET x@ = CLASS("my_widget.cls");
+```
+
+### DAW_ERR$
+Returns the last error message set by a DAW helper (or "" if none).  
+Feature: obj-daw
+```basil
+LET rc% = AUDIO_PLAY%("usb", "take1.wav")
+IF rc% <> 0 THEN PRINTLN DAW_ERR$()
 ```
 
 ### DESCRIBE$
@@ -175,6 +222,14 @@ Returns a substring starting at 1-based index, with optional length.
 PRINTLN MID$("banana", 2, 3);
 ```
 
+### MIDI_CAPTURE%
+Captures incoming MIDI events from a selected input port and writes JSON Lines to a file until DAW_STOP() is called. Returns 0 on success.  
+Feature: obj-daw
+```basil
+LET rc% = MIDI_CAPTURE%("LKMK3 MIDI", "midilog.jsonl")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
+```
+
 ### NEW
 Constructs a new object instance of a registered type with constructor arguments.
 ```basil
@@ -197,6 +252,15 @@ FOR EACH p$ IN REQUEST$() PRINTLN p$; NEXT
 Returns the rightmost N characters of a string.
 ```basil
 PRINTLN RIGHT$("basil", 3);
+```
+
+### SYNTH_LIVE%
+Runs a simple live polyphonic synth driven by a MIDI input port and plays to the selected audio output device. Blocks until DAW_STOP() is called. Returns 0 on success.  
+Feature: obj-daw
+```basil
+DAW_RESET
+LET rc% = SYNTH_LIVE%("LKMK3 MIDI", "LC27T55 (NVIDIA High Definition Audio)", 8)
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
 ```
 
 ### TRIM$
@@ -758,4 +822,51 @@ LET e$ = TERM_ERR$(); IF e$ <> "" THEN PRINTLN e$;
 Returns current terminal height (rows).
 ```basil
 PRINTLN TERM_ROWS%();
+```
+
+
+## AI (obj-ai)
+
+All of the following are part of the obj-ai feature module.
+
+### AI.CHAT$
+*Feature:* obj-ai  
+Sends a synchronous chat request and returns the response text.
+```basil
+PRINT AI.CHAT$("Explain bubble sort in 3 bullets");
+```
+
+### AI.EMBED
+*Feature:* obj-ai  
+Returns a 1-D float vector (embedding) for the given text.
+```basil
+LET vec = AI.EMBED("hello world");  ' vec is a numeric array of floats
+```
+
+### AI.LAST_ERROR$
+*Feature:* obj-ai  
+Returns the last AI error string (or "").
+```basil
+LET r$ = AI.CHAT$("Hi", "{ max_tokens:30 }");
+IF r$ = "" THEN PRINTLN AI.LAST_ERROR$();
+```
+
+### AI.MODERATE%
+*Feature:* obj-ai  
+Moderation check: 0 = OK, 1 = flagged.
+```basil
+IF AI.MODERATE%("Write a polite meeting request") = 0 THEN
+  PRINTLN AI.CHAT$("Write a 3-sentence meeting request.");
+ELSE
+  PRINTLN "Request blocked by moderation.";
+END IF
+```
+
+### AI.STREAM
+*Feature:* obj-ai  
+Streams tokens to the console and returns the full concatenated text.
+```basil
+PRINT "AI says: ";
+DIM full$ = AI.STREAM("Tell a one-liner about BASIC", "{ temperature:0.2 }");
+PRINT "\n---\n"; PRINT full$;
 ```

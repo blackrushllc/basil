@@ -58,6 +58,54 @@ Declares opt-in modules/types for the program or template; used by tools/front-e
 PRINTLN "Modules hinted.";
 ```
 
+## AI.CHAT$
+*Type:* Function (returns String)  
+*Feature:* obj-ai  
+Sends a synchronous chat request to the configured AI model and returns the response text. In test mode, returns a deterministic string like "[[TEST]] abcd1234".
+```basil
+PRINT AI.CHAT$("Explain bubble sort in 3 bullets");
+```
+
+## AI.EMBED
+*Type:* Function (returns Float[])  
+*Feature:* obj-ai  
+Computes a vector embedding for the given text. In test mode, returns a deterministic length-16 vector.
+```basil
+' Simple usage: obtain an embedding vector
+LET vec = AI.EMBED("hello world");  ' vec is a numeric array of floats
+```
+
+## AI.LAST_ERROR$
+*Type:* Function (returns String)  
+*Feature:* obj-ai  
+Returns the last error message from an AI operation (or "" if none). Cleared at the start of each AI call.
+```basil
+LET reply$ = AI.CHAT$("Hi", "{ max_tokens: 30 }");
+IF reply$ = "" THEN PRINTLN AI.LAST_ERROR$();
+```
+
+## AI.MODERATE%
+*Type:* Function (returns Integer)  
+*Feature:* obj-ai  
+Runs a simple moderation check on the input. Returns 0 if OK, 1 if flagged. In test mode, inputs containing "FLAG_ME" are flagged.
+```basil
+IF AI.MODERATE%("Write a polite meeting request") = 0 THEN
+  PRINTLN AI.CHAT$("Write a 3-sentence meeting request.");
+ELSE
+  PRINTLN "Request blocked by moderation.";
+END IF
+```
+
+## AI.STREAM
+*Type:* Function (returns String)  
+*Feature:* obj-ai  
+Streams tokens to the console as they arrive and returns the full text at the end. In test mode, prints the deterministic reply in 3 chunks.
+```basil
+PRINT "AI says: ";
+DIM full$ = AI.STREAM("Tell a one-liner about BASIC", "{ temperature:0.2 }");
+PRINT "\n---\n"; PRINT full$;
+```
+
 ## AND
 *Type:* Logical Operator  
 Boolean conjunction with short-circuit evaluation.
@@ -123,6 +171,33 @@ ATTR_RESET;
 Constant function-like keyword that yields the Basil author name; accepts optional empty parentheses.
 ```basil
 PRINTLN AUTHOR;
+```
+
+## AUDIO_MONITOR%
+*Type:* Function (returns Integer)  
+*Feature:* obj-daw  
+Routes the first audio input device matching a substring to the first output device matching a substring. Blocks until DAW_STOP() is called. Returns 0 on success.
+```basil
+LET rc% = AUDIO_MONITOR%("scarlett", "scarlett")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
+```
+
+## AUDIO_PLAY%
+*Type:* Function (returns Integer)  
+*Feature:* obj-daw  
+Plays a WAV file to the first output device whose name contains the given substring (case-insensitive). Returns 0 on success.
+```basil
+LET rc% = AUDIO_PLAY%("LC27T55 (NVIDIA High Definition Audio)", "alarm.wav")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
+```
+
+## AUDIO_RECORD%
+*Type:* Function (returns Integer)  
+*Feature:* obj-daw  
+Records audio from the first input device matching a substring to a WAV file for the given duration (seconds). Returns 0 on success.
+```basil
+LET rc% = AUDIO_RECORD%("usb", "take1.wav", 10)
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
 ```
 
 ## BEGIN
@@ -232,6 +307,35 @@ CURSOR_SAVE;
 Shows the text cursor.
 ```basil
 CURSOR_SHOW;
+```
+
+## DAW_ERR$
+*Type:* Function (returns String)  
+*Feature:* obj-daw  
+Returns the last error message set by a DAW helper on this thread (or "" if none).
+```basil
+LET rc% = AUDIO_PLAY%("usb", "take1.wav")
+IF rc% <> 0 THEN PRINTLN DAW_ERR$()
+```
+
+## DAW_RESET
+*Type:* Statement  
+*Feature:* obj-daw  
+Releases DAW resources (audio streams, MIDI connections, rings, WAV writers) held by the current process. Idempotent and safe to call.
+```basil
+DAW_RESET
+PRINT "DAW resources reset."
+```
+
+## DAW_STOP
+*Type:* Statement  
+*Feature:* obj-daw  
+Requests long‑running DAW helpers to stop; they typically return within ~50–250ms.
+```basil
+REM In one console, start a helper:
+REM   LET rc% = AUDIO_MONITOR%("usb", "usb")
+REM In another console/script, signal stop:
+DAW_STOP
 ```
 
 ## DESCRIBE
@@ -577,6 +681,15 @@ LET A = 42;  LET arr(1,2) = 7;  obj.Prop = 10;
 Returns a substring starting at 1-based index, with optional length.
 ```basil
 PRINTLN MID$("banana", 2, 3);
+```
+
+## MIDI_CAPTURE%
+*Type:* Function (returns Integer)  
+*Feature:* obj-daw  
+Captures incoming MIDI events from the first input port matching a substring and appends JSON Lines to the given file until DAW_STOP() is called. Returns 0 on success.
+```basil
+LET rc% = MIDI_CAPTURE%("LKMK3 MIDI", "midilog.jsonl")
+IF rc% <> 0 THEN PRINT "Error: ", DAW_ERR$()
 ```
 
 ## MOVE
