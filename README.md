@@ -8,7 +8,7 @@ such as Zip, Base64, JSON, SQL, MIDI, AI, and more.
 
 🌱 Basil programs can be compiled
 to native binaries for Windows, Linux, and MacOS. Basil can also run as a CGI script templating engine
-using <?basil .. ?> tags like Php.  
+using \<?basil .. ?> tags like Php.  
 
 🌱 Basil is easier to use, and much faster than Python or Php.
 
