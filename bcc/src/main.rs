@@ -151,8 +151,10 @@ fn main() {
     // Build with cargo
     let mut cmd = Command::new("cargo");
     cmd.arg("build").arg("--release").current_dir(&emitted.root);
-    // Use --locked only if Cargo.lock already exists
-    if emitted.root.join("Cargo.lock").exists() { cmd.arg("--locked"); }
+    // Use --locked only when appropriate: for crates-io/vendor sources if lock exists; never for local path
+    let have_lock = emitted.root.join("Cargo.lock").exists();
+    let use_locked = have_lock && !matches!(opts.dep_source, DepSource::LocalPath(_));
+    if use_locked { cmd.arg("--locked"); }
     if let Some(t) = target { cmd.arg("--target").arg(t); }
     // Offline when using vendor
     let is_vendor = matches!(opts.dep_source, DepSource::Vendor(_));

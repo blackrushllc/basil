@@ -53,10 +53,9 @@ pub fn input_line(prompt: &Str) -> Str {
 }
 
 pub mod features {
-    // Modules are gated by Cargo features; keep empty shims for now.
-    // In a real published crate, these would expose thin, monomorphic APIs.
-    #[cfg(feature = "audio")] pub mod audio {}
-    #[cfg(feature = "midi")]  pub mod midi {}
-    #[cfg(feature = "daw")]   pub mod daw {}
-    #[cfg(feature = "term")]  pub mod term {}
+    // Re-export thin, monomorphic APIs from basil-objects when enabled.
+    #[cfg(feature = "audio")] pub mod audio { pub use basil_objects::audio::*; }
+    #[cfg(feature = "midi")]  pub mod midi  { pub use basil_objects::midi::*; }
+    #[cfg(feature = "daw")]   pub mod daw   { pub use basil_objects::daw::{audio_play, audio_record, stop, stop_clear, should_stop, get_err, reset}; }
+    #[cfg(feature = "term")]  pub mod term  { pub use basil_objects::term::*; }
 }
