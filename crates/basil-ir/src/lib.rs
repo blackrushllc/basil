@@ -10,7 +10,9 @@ pub enum Ty { Int, Bool, Str, ObjHandle }
 pub enum Instr {
     Print(Box<Expr>),
     For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Vec<Instr> },
-    // In future: Call { target: String, args: Vec<Expr> }, Return(Option<Expr>), etc.
+    Assign { var: String, expr: Expr },
+    If { cond: Expr, then_body: Vec<Instr>, else_body: Vec<Instr> },
+    ExprStmt(Expr),
 }
 
 #[derive(Debug, Clone)]
@@ -20,7 +22,8 @@ pub enum Expr {
     Str(String),
     Var(String),
     Add(Box<Expr>, Box<Expr>),
-    // Future: Temp(u32), BinOp, Cmp, Concat, etc.
+    Ne(Box<Expr>, Box<Expr>),
+    Call(String, Vec<Expr>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -41,7 +44,16 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             use ast::BinOp::*;
             match op {
                 Add => Expr::Add(Box::new(lower_expr(lhs)), Box::new(lower_expr(rhs))),
+                Ne  => Expr::Ne(Box::new(lower_expr(lhs)), Box::new(lower_expr(rhs))),
                 _ => Expr::Str(format!("{:?}", e)),
+            }
+        }
+        ast::Expr::Call { callee, args } => {
+            if let ast::Expr::Var(name) = &**callee {
+                let args2: Vec<Expr> = args.iter().map(|a| lower_expr(a)).collect();
+                Expr::Call(name.clone(), args2)
+            } else {
+                Expr::Str(format!("{:?}", e))
             }
         }
         _ => Expr::Str(format!("{:?}", e)),
@@ -52,6 +64,31 @@ fn lower_stmt(stmt: &ast::Stmt, out: &mut Vec<Instr>) {
     match stmt {
         ast::Stmt::Print { expr } => {
             out.push(Instr::Print(Box::new(lower_expr(expr))));
+        }
+        ast::Stmt::Let { name, indices, init } => {
+            if indices.is_none() {
+                out.push(Instr::Assign { var: name.clone(), expr: lower_expr(init) });
+            }
+        }
+        ast::Stmt::If { cond, then_branch, else_branch } => {
+            // Lower then branch
+            let mut then_vec = Vec::new();
+            match &**then_branch {
+                ast::Stmt::Block(stmts) => { for s in stmts { lower_stmt(s, &mut then_vec); } }
+                other => { lower_stmt(other, &mut then_vec); }
+            }
+            // Lower else branch (optional)
+            let mut else_vec = Vec::new();
+            if let Some(eb) = else_branch {
+                match &**eb {
+                    ast::Stmt::Block(stmts) => { for s in stmts { lower_stmt(s, &mut else_vec); } }
+                    other => { lower_stmt(other, &mut else_vec); }
+                }
+            }
+            out.push(Instr::If { cond: lower_expr(cond), then_body: then_vec, else_body: else_vec });
+        }
+        ast::Stmt::ExprStmt(e) => {
+            out.push(Instr::ExprStmt(lower_expr(e)));
         }
         ast::Stmt::For { var, start, end, step, body } => {
             // Lower body

@@ -11,10 +11,17 @@ if "%~1"=="" (
 )
 
 REM --- Build with bcc
+
+ echo Please run the following command:
+ echo ---
+ echo .\target\release\bcc.exe aot ".\examples\%~1.basil" --dep-source local --local-runtime "%RUNTIME%"
+ echo ---
+
 .\target\release\bcc.exe aot ".\examples\%~1.basil" --dep-source local --local-runtime "%RUNTIME%"
 REM If build failed (non-zero exit code), say so and stop
 if errorlevel 1 (
-  echo bcc did not work
+  echo The Build Failed with errorlevel %errorlevel%.  Please examine the output above and rectify any issues. This program runs okay under the basilc interpreter
+
   exit /b 1
 )
 

@@ -874,6 +874,9 @@ dependencies = [
 [[package]]
 name = "libbasilrt"
 version = "0.1.0"
+dependencies = [
+ "basil-objects",
+]
 
 [[package]]
 name = "libc"

@@ -9,6 +9,8 @@
 ```
 
 cargo build -q -p bcc --release
+cargo build -q -p basilc --features obj-all --release
+Copy-Item -Path ".\target\release\bcc.exe", ".\target\release\basilc.exe", ".\examples\hello.basil" -Destination "\projects\basil"
 
 ```
 
@@ -17,7 +19,7 @@ cargo build -q -p bcc --release
 
 ```powershell
 
-Copy-Item -Path ".\target\release\bcc.exe", ".\examples\hello.basil" -Destination "\projects\basil" 
+Copy-Item -Path ".\target\release\bcc.exe", ".\target\release\basilc.exe", ".\examples\hello.basil" -Destination "\projects\basil" 
 
 ```
 
