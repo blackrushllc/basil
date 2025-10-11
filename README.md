@@ -86,10 +86,19 @@ See:
 🌿 https://yobasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
 
 Interesting files to read in this repo:
-
++ docs/compiler/AOT_COMPILER.md - needs desciption
++ docs/compiler/CHANGELOG_AOT.md - needs desciption
++ docs/compiler/COMPILER.md - needs desciption
++ docs/compiler/COMPILER_DIST.md - needs desciption
++ docs/compiler/COMPILER_HMM.md - needs desciption
++ docs/compiler/COMPILER_NEXT_STEPS.md - needs desciption
++ docs/compiler/CRATES.IO.md - needs desciption
++ docs/compiler/HOWTO.md - needs desciption
 + docs/BASIL_KEYWORDS_BY_CATEGORY.md
 + docs/BASIL_REFERENCE.md
++ docs/daw.md
 + docs/FILE_ID.md
++ docs/midi.md
 + AI_FEATURE_REQUEST.md - Paste this whole thing into ChatGPT FIRST, so it knows what Basil Objects are, and then you can ask it generate a Junie Ultimate prompt for a new feature object !!!
 + ASTERISK.md - Using Basil with Asterisk
 + BASIL.md - 15‑Minute Presentation Handout
@@ -105,6 +114,7 @@ Interesting files to read in this repo:
 + IDE.md - How to configure Geany or VS-Code for Basil (and others soon)
 + JETBRAINS.md - Work in progress on a Jetbrains IDE Plugin for Basil (And Yore) ([What is Yore?](https://github.com/blackrushllc/yore))
 + LIBRARY_OBJECTS.md - A reference for the add-on function libraries
++ MIDI_CODERS_GUIDE.md - A doc for using the new obj-daw / MIDI stuff
 + OBJECTS.md - Object Library Support for Basil (the original proposal) (this has been implemented)
 + PRESENTATION.md - 15‑Minute Stand‑Up Demo Notes (for Teachers) also here: [presentation.pdf](https://github.com/blackrushllc/basil/blob/main/presentation.pdf)
 + PUNS.md - ChatGPT said "Basil" is a "Pun Volcano" and this doc proves it
@@ -128,7 +138,7 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
   scripts and normal terminal usage are unaffected.
 - If you must run from an IDE, configure the run target to use an external console or disable input features in your
   script.
-- lythere is a "test" option to run non-interactively, mock input, and output comments
+- alternatively there is a "test" option to run non-interactively, mock input, and output comments
 - There is no maximum number of lines of code in a script.
 - There is no maximum number of variables, functions, objects, or arrays.
 - There are no limits to the size of strings variables, arrays, or objects.
@@ -136,11 +146,20 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
 
 # TODO next
 
-🌿 Add packages like ~~Zip~~, ~~Base64~~, JSON, XML, HTTP, SQLite, MySQL, PostgreSQL, Redis, LDAP, SMTP, IMAP, FTP, SFTP, SSH, TLS/SSL, WebSockets, JWT, OAuth2, AWS SDK, Azure SDK, GCP SDK
+🌿 Add packages like ~~Zip~~, ~~Base64~~, ~~JSON~~, XML, HTTP, ~~SQLite~~, MySQL, PostgreSQL, Redis, LDAP, SMTP, IMAP, FTP, SFTP, SSH, TLS/SSL, WebSockets, JWT, OAuth2, AWS SDK, Azure SDK, GCP SDK
 
 🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
 
 # 🌱 WHAT'S NEW 🌱
+
+### 🌿 STATUS UPDATE _COMPILER_ !!!
+
+* Adds a new compiler that compiles Basil code to Rust code, which is then compiled to a native binary (Windows EXE, Linux ELF, MacOS Mach-O, etc)
+* See compiler folder for a bunch of docs (documentation is ongoing)
+* See c.bat for a Windoes batch file to compile a BASIC file from the examples folder, run it if the build succeeds, or output a report to paste into AI to fix whatever the issue is
+* ^ example: ./c.bat bigtest - Compiles examples/bigtest.basil to bigtest.exe or generates output for you to give AI to fix
+* You can now run programs with the Basil Byte-code interpreter or compile them to stand-alone native binaries
+
 
 ### 🌿 STATUS UPDATE _AI support_ !!!
 
