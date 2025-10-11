@@ -127,6 +127,9 @@ Interesting files to read in this repo:
 + PRESENTATION.md - 15‑Minute Stand‑Up Demo Notes (for Teachers) also here: [presentation.pdf](https://github.com/blackrushllc/basil/blob/main/presentation.pdf)
 + PUNS.md - ChatGPT said "Basil" is a "Pun Volcano" and this doc proves it
 + README.md - This file here
++ SETUP_AI.md - How to setup AI for Basil, get a ChatGPT API key, and train AI on how to make Basil mods
++ SETUP_MIDI.md - How to setup MIDI for Basil, get a MIDI API key, and train AI on how to make Basil mods
++ SETUP_WEB.md - How to setup Web for Basil, get a Web API key, and use AI in your Basil programs
 + STUDENTS.md - How the Basil BASIC Interpreter Works (for students) also here: [basil_in_a_nutshell.pdf](https://github.com/blackrushllc/basil/blob/main/basil_in_a_nutshell.pdf)
 + TECHNICAL.md - Basil Technical Architecture and Execution Model (for rocket scientists)
 + TODO.md - A laughably old Todo list
