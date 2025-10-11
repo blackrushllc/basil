@@ -1,4 +1,5 @@
 .idea
+.basil
 *.basilx
 /target/
 *.iml
@@ -22,6 +23,7 @@
 *.pyc
 *.pyo
 *.pyd
+*.exe
 __pycache__/
 env/
 venv/

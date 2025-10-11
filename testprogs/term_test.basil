@@ -1,0 +1,376 @@
+REM term_selftest.basil — Crossterm/obj-term feature harness
+REM Tests: lifecycle, raw mode, size, colors, CLS, CLEAR_LINE, cursor ops, locate, alt screen, key input, flush.
+
+REM --- Small helpers/state ----------------------------------------------------
+DIM failures$(64);
+LET failCount% = 0;
+
+REM Waits for Y / Enter / N / Q/Esc, returns "Y","N","Q"
+LET choice$ = "";
+LET lastKey$ = "";
+
+REM Reads one of Y/Enter/N/Q (Esc counts as Q)
+// what's this for? // WHILE FALSE BEGIN END  REM (placeholder; no DO..LOOP in Basil)
+
+REM Ask/confirm prompt:
+REM Shows "Test N - ..." then waits; returns choice in choice$
+REM Usage pattern:
+REM   CALL_PROMPT: sets choice$, then branch on it
+REM (We inline the loop since Basil doesn’t have user subs here.)
+REM ---------------------------------------------------------------------------
+
+REM --- Begin test program -----------------------------------------------------
+TERM.INIT;
+TERM.RAW ON;
+COLOR_RESET;
+CLS;
+
+PRINTLN "Basil obj-term Self-Test";
+PRINT "Terminal size (cols x rows): ";
+PRINT TERM_COLS%(); PRINT " x "; PRINTLN TERM_ROWS%();
+
+LET testNo% = 1;
+
+REM ---------------------- Test 1: LOCATE + PRINT ------------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - LOCATE + PRINT to corners and center. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+LET cols% = TERM_COLS%(); LET rows% = TERM_ROWS%();
+
+CLS;
+LOCATE(1,1);           PRINT "TL"; TERM.FLUSH;
+LOCATE(cols%-1,1);     PRINT "TR"; TERM.FLUSH;
+LOCATE(1,rows%);       PRINT "BL"; TERM.FLUSH;
+LOCATE(cols%-1,rows%); PRINT "BR"; TERM.FLUSH;
+LOCATE((cols%/2)-5,(rows%/2)); PRINT "Center OK"; TERM.FLUSH;
+
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " result: Was this successful (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 1 failed: LOCATE + PRINT"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 2: CURSOR_HIDE/SHOW ----------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - Hide cursor 1s, then show. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+CURSOR_HIDE; SLEEP 1000; CURSOR_SHOW;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 2 failed: CURSOR_HIDE/SHOW"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 3: CURSOR_SAVE/RESTORE -------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - Save, move, restore cursor. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+LOCATE(5,5); CURSOR_SAVE;
+LOCATE(10,10); PRINT "[temp]"; TERM.FLUSH;
+SLEEP 500;
+CURSOR_RESTORE; PRINT " [restored here]"; TERM.FLUSH;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 3 failed: CURSOR_SAVE/RESTORE"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 4: COLOR + COLOR_RESET -------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - Set color to brightwhite on blue, then reset. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+COLOR(15, 4); PRINTLN "BrightWhite on Blue"; TERM.FLUSH;
+SLEEP 500;
+COLOR_RESET; PRINTLN "Back to defaults"; TERM.FLUSH;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 4 failed: COLOR + RESET"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 5: CLEAR_LINE ---------------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - CLEAR_LINE should wipe current line. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+PRINT "This line will vanish in 800ms...";
+TERM.FLUSH; SLEEP 800;
+CLEAR_LINE; TERM.FLUSH;
+PRINTLN "Cleared."; TERM.FLUSH;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 5 failed: CLEAR_LINE"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 6: TERM.FLUSH buffering hint -------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - Buffered writes + TERM.FLUSH demo. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+LOCATE(1, TERM_ROWS%()); PRINT "Count: 0"; TERM.FLUSH;
+LET i% = 1;
+WHILE i% <= 10 BEGIN
+  LOCATE(8, TERM_ROWS%()); PRINT i%;
+  TERM.FLUSH; SLEEP 100;
+  LET i% = i% + 1;
+END
+PRINTLN ""; TERM.FLUSH;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 6 failed: TERM.FLUSH"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 7: CLS with color (as requested) ---------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - Clearing the screen with color. I'm about to clear the screen with WHITE text / RED background. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+COLOR(15, 1); CLS; TERM.FLUSH;  REM white on red
+PRINTLN "Screen cleared with WHITE/RED (press Y/Enter if this looks correct).";
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 7 failed: CLS with COLOR"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+COLOR_RESET;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 8: ALTSCREEN enter/leave -----------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - ALTSCREEN_ON, write, then ALTSCREEN_OFF. Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+ALTSCREEN_ON; CLS;
+PRINTLN "This is the alternate screen. You should NOT see previous content here.";
+PRINTLN "Returning in 1.0 second..."; TERM.FLUSH;
+SLEEP 1000;
+ALTSCREEN_OFF;
+PRINTLN "Back to the main screen (previous content should reappear)."; TERM.FLUSH;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 8 failed: ALTSCREEN ON/OFF"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 9: Key echo (POLLKEY$) -------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - KEY ECHO for 3 keys (press any 3 keys, Esc to cancel). Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+LET seen% = 0;
+PRINTLN "Press 3 keys (Esc to skip):";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Esc" THEN BREAK;
+  PRINT "Key: "; PRINT lastKey$; PRINT "   "; TERM.FLUSH;
+  LET seen% = seen% + 1;
+  IF seen% >= 3 THEN BREAK;
+END
+PRINTLN ""; TERM.FLUSH;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 9 failed: POLLKEY$ echo"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Test 10: Simple color grid --------------------------
+PRINTLN "";
+PRINT "Test "; PRINT testNo%; PRINT " - 16-color grid (foreground on background). Continue (Y/q).";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "Q" THEN GOTO _END_ALL;
+
+CLS;
+LET fg% = 0;
+WHILE fg% <= 15 BEGIN
+  LET bg% = 0;
+  WHILE bg% <= 7 BEGIN
+    COLOR(fg%, bg%);
+    PRINT " "; PRINT fg%; PRINT "/"; PRINT bg%; PRINT " "; TERM.FLUSH;
+    LET bg% = bg% + 1;
+  END
+  COLOR_RESET; PRINTLN ""; TERM.FLUSH;
+  LET fg% = fg% + 1;
+END
+COLOR_RESET;
+
+PRINT "Test "; PRINT testNo%; PRINT " result (Y/n/q)? ";
+LET choice$ = "";
+WHILE TRUE BEGIN
+  LET lastKey$ = TERM.POLLKEY$();
+  IF lastKey$ = "" THEN SLEEP 20; CONTINUE;
+  IF lastKey$ = "Enter" OR lastKey$ = "Char:y" OR lastKey$ = "Char:Y" THEN LET choice$ = "Y"; BREAK;
+  IF lastKey$ = "Char:n" OR lastKey$ = "Char:N" THEN LET choice$ = "N"; BREAK;
+  IF lastKey$ = "Char:q" OR lastKey$ = "Char:Q" OR lastKey$ = "Esc" THEN LET choice$ = "Q"; BREAK;
+END
+IF choice$ = "N" THEN LET failures$(failCount%) = "Test 10 failed: Color grid"; LET failCount% = failCount% + 1;
+IF choice$ = "Q" THEN GOTO _END_ALL;
+LET testNo% = testNo% + 1;
+
+REM ---------------------- Summary & teardown ----------------------------------
+_END_ALL:
+COLOR_RESET;
+CURSOR_SHOW;
+TERM.RAW OFF;
+
+PRINTLN "";
+PRINTLN "--------------------";
+PRINTLN "Test Summary";
+PRINT   "Failures: "; PRINTLN failCount%;
+IF failCount% > 0 THEN
+  LET i% = 0;
+  WHILE i% < failCount% BEGIN
+    PRINTLN failures$(i%);
+    LET i% = i% + 1;
+  END
+ELSE
+  PRINTLN "All tests reported OK.";
+ENDIF
+
+PRINTLN "Cleaning up terminal…";
+TERM.END;

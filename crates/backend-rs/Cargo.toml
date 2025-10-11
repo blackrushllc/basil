@@ -1,0 +1,10 @@
+[package]
+name = "backend-rs"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+basil-ir = { path = "../basil-ir" }
+sha2 = "0.10"
+hex = "0.4"

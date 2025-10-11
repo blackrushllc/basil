@@ -336,6 +336,7 @@ impl VM {
         let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
+        #[allow(unused_mut)]
         let mut s = Self {
             frames: vec![frame],
             stack: Vec::new(),

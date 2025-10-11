@@ -1,0 +1,10 @@
+[package]
+name = "bcc"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+basil-frontend = { path = "../crates/basil-frontend" }
+basil-ir       = { path = "../crates/basil-ir" }
+backend-rs     = { path = "../crates/backend-rs" }
+sha2 = "0.10"
