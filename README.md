@@ -86,6 +86,14 @@ See:
 🌿 https://yobasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
 
 Interesting files to read in this repo:
+
++ dawg/* - A coll stand-alone DAWG command line utility for Midi/DAW stuff (not part of the Basil interpreter)
++ examples/* - lots of Basil program examples
++ examples/ai - several examples of using the AI support
++ examples/obj-ai/* - a bunch of AI examples
++ examples/midi - several examples of using the MIDI support and a work-in progress huge DAW program in Basil
++ examples/term - several examples of using the terminal support
++ ai/AI.md - all about the built-in AI support and ongoing plans
 + docs/compiler/AOT_COMPILER.md - needs desciption
 + docs/compiler/CHANGELOG_AOT.md - needs desciption
 + docs/compiler/COMPILER.md - needs desciption
@@ -165,7 +173,7 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
 
 * AI support added
 * See examples/ai for several examples
-* See AI.md and other AI docs in here for more info and guides
+* See ai/AI.md and other AI docs in here for more info and guides
 * This is different from the "AI ONBOARDING" support which lets you train AI on how to make Basil mods and write Basil code
 * This is actual AI stuff you can put in your BASIC programs
 
