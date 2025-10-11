@@ -1,0 +1,15 @@
+[package]
+name = "libbasilrt"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[features]
+# Map runtime features to basil-objects optional dependency + its feature flags
+audio = ["dep:basil-objects", "basil-objects/obj-audio"]
+midi  = ["dep:basil-objects", "basil-objects/obj-midi"]
+daw   = ["dep:basil-objects", "basil-objects/obj-daw"]
+term  = ["dep:basil-objects", "basil-objects/obj-term"]
+
+[dependencies]
+basil-objects = { path = "../../basil-objects", optional = true }

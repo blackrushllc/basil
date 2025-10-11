@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "basilc",
+    "bcc",
     "basilcore/common",
     "basilcore/lexer",
     "basilcore/ast",
@@ -9,6 +10,10 @@ members = [
     "basilcore/compiler",
     "basilcore/vm",
     "basil-objects",
+    "crates/basil-frontend",
+    "crates/basil-ir",
+    "crates/backend-rs",
+    "crates/libbasilrt",
 ]
 resolver = "2"
 

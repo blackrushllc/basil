@@ -1,0 +1,25 @@
+REM party.basil — zero-dep confetti
+DIM confetti$(6);
+
+LET confetti$(0) = "*"; LET confetti$(1) = "•"; LET confetti$(2) = "+"; LET confetti$(3) = "×";
+LET confetti$(4) = "☆"; LET confetti$(5) = ".";
+
+
+PRINTLN "B C C   I S   A L I V E !  (Ctrl+C to stop)";
+PRINTLN "--------------------------------------------------";
+
+LET t% = 0;
+WHILE TRUE BEGIN
+  REM sprinkle a row
+  LET r$ = "";
+  FOR i% = 0 TO 79
+    BEGIN
+    LET idx% = (t% + i%) MOD 6;
+    LET r$ = r$ + confetti$(idx%);
+    END
+  NEXT i%;
+  PRINTLN r$;
+  SLEEP 60;
+  LET t% = t% + 1;
+  IF t% > 200 THEN LET t% = 0;
+END

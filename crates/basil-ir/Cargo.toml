@@ -1,0 +1,8 @@
+[package]
+name = "basil-ir"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+basil-frontend = { path = "../basil-frontend" }
