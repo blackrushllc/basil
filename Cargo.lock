@@ -58,6 +58,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "backend-rs"
+version = "0.0.1"
+dependencies = [
+ "basil-ir",
+ "hex",
+ "sha2",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -88,6 +97,23 @@ dependencies = [
  "basil-ast",
  "basil-bytecode",
  "basil-common",
+]
+
+[[package]]
+name = "basil-frontend"
+version = "0.0.1"
+dependencies = [
+ "basil-ast",
+ "basil-common",
+ "basil-lexer",
+ "basil-parser",
+]
+
+[[package]]
+name = "basil-ir"
+version = "0.0.1"
+dependencies = [
+ "basil-frontend",
 ]
 
 [[package]]
@@ -159,6 +185,16 @@ dependencies = [
  "basil-parser",
  "basil-vm",
  "rustyline",
+]
+
+[[package]]
+name = "bcc"
+version = "0.0.1"
+dependencies = [
+ "backend-rs",
+ "basil-frontend",
+ "basil-ir",
+ "sha2",
 ]
 
 [[package]]
@@ -641,6 +677,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "home"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -828,6 +870,10 @@ dependencies = [
  "once_cell",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "libbasilrt"
+version = "0.1.0"
 
 [[package]]
 name = "libc"

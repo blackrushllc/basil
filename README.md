@@ -1186,3 +1186,19 @@ PRINT fib(10); // 55
  
 
 🐖🐷🌿💻🎉🚀
+
+
+# AOT compiler (bcc)
+
+A new AOT compiler is available as a separate binary: `bcc`.
+It transpiles Basil source to a tiny Rust crate and invokes Cargo to build a native executable.
+
+Quickstart:
+
+```
+bcc aot examples/hello.basil --emit-project generated/hello
+# or build directly (requires Rust toolchain):
+bcc aot examples/hello.basil
+```
+
+See docs/compiler/AOT_COMPILER.md for full details, CLI flags, feature handling and templates.

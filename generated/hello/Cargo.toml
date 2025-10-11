@@ -1,0 +1,19 @@
+
+[package]
+name = "basil_prog"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libbasilrt = { path = "../../../crates/libbasilrt", features = [ "audio", "daw", "midi", "term" ] }
+# basil-obj-audio = "=0.1.0"
+# basil-obj-daw = "=0.1.0"
+# basil-obj-midi = "=0.1.0"
+# basil-obj-term = "=0.1.0"
+
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"

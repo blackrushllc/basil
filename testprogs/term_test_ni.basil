@@ -1,0 +1,93 @@
+REM term_selftest_noninteractive.basil — sequential obj-term checks (no prompts/logging)
+
+TERM.INIT;
+TERM.RAW ON;
+COLOR_RESET;
+CLS;
+
+LET cols% = TERM_COLS%();
+LET rows% = TERM_ROWS%();
+
+REM --- 1) LOCATE + PRINT at corners and center --------------------------------
+CLS;
+LOCATE(1,1);           PRINT "TL"; TERM.FLUSH;
+LOCATE(cols%-1,1);     PRINT "TR"; TERM.FLUSH;
+LOCATE(1,rows%);       PRINT "BL"; TERM.FLUSH;
+LOCATE(cols%-1,rows%); PRINT "BR"; TERM.FLUSH;
+LOCATE((cols%/2)-5,(rows%/2)); PRINT "Center"; TERM.FLUSH;
+SLEEP 200;
+
+REM --- 2) CURSOR_HIDE / SHOW ---------------------------------------------------
+CURSOR_HIDE; SLEEP 200; CURSOR_SHOW;
+
+REM --- 3) CURSOR_SAVE / RESTORE ------------------------------------------------
+LOCATE(5,5); CURSOR_SAVE;
+LOCATE(10,10); PRINT "[temp]"; TERM.FLUSH;
+SLEEP 200;
+CURSOR_RESTORE; PRINT "[restored]"; TERM.FLUSH;
+SLEEP 200;
+
+REM --- 4) COLOR set + reset ----------------------------------------------------
+COLOR(15, 4); PRINTLN "BrightWhite on Blue"; TERM.FLUSH;
+SLEEP 200;
+COLOR_RESET;
+
+REM --- 5) CLEAR_LINE (requires a line to clear) --------------------------------
+PRINT "This line will be cleared..."; TERM.FLUSH;
+SLEEP 200;
+CLEAR_LINE; TERM.FLUSH;
+SLEEP 100;
+
+REM --- 6) Buffered counter + TERM.FLUSH ---------------------------------------
+LOCATE(1, rows%); PRINT "Count: 0"; TERM.FLUSH;
+LET i% = 1;
+WHILE i% <= 10 BEGIN
+  LOCATE(8, rows%); PRINT i%;
+  TERM.FLUSH; SLEEP 60;
+  LET i% = i% + 1;
+END
+PRINTLN ""; TERM.FLUSH;
+
+REM --- 7) CLS with color background -------------------------------------------
+COLOR(15, 1); CLS; TERM.FLUSH;  REM white on red
+SLEEP 300;
+COLOR_RESET;
+
+REM --- 8) ALTSCREEN ON/OFF round-trip -----------------------------------------
+ALTSCREEN_ON; CLS;
+PRINTLN "Alt screen"; PRINTLN "Returning shortly..."; TERM.FLUSH;
+SLEEP 400;
+ALTSCREEN_OFF; TERM.FLUSH;
+SLEEP 200;
+
+REM --- 9) POLLKEY$ smoke: poll briefly without interaction ---------------------
+LET seenKeys% = 0;
+LET t% = 0;
+WHILE t% < 200 BEGIN
+  LET k$ = TERM.POLLKEY$();
+  IF k$ <> "" THEN LET seenKeys% = seenKeys% + 1;
+  SLEEP 5;
+  LET t% = t% + 5;
+END
+REM (no output; purpose is to touch POLLKEY$ without blocking)
+
+REM --- 10) Simple 16-color sweep ----------------------------------------------
+CLS;
+LET fg% = 0;
+WHILE fg% <= 15 BEGIN
+  LET bg% = 0;
+  WHILE bg% <= 7 BEGIN
+    COLOR(fg%, bg%);
+    PRINT " "; PRINT fg%; PRINT "/"; PRINT bg%; PRINT " ";
+    TERM.FLUSH;
+    LET bg% = bg% + 1;
+  END
+  COLOR_RESET; PRINTLN ""; TERM.FLUSH;
+  LET fg% = fg% + 1;
+END
+COLOR_RESET;
+
+REM --- Teardown ----------------------------------------------------------------
+CURSOR_SHOW;
+TERM.RAW OFF;
+TERM.END;
