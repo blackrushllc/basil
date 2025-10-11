@@ -1,7 +1,7 @@
 REM Objects demo: BMX_RIDER and BMX_TEAM
 REM This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
 
-REM #USE BMX_RIDER, BMX_TEAM
+#USE BMX_RIDER, BMX_TEAM
 
 REM --- Create riders ---
 DIM r1@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
