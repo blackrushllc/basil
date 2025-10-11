@@ -39,12 +39,6 @@ target/release/basilc run examples/hello.basil
 target/debug/basilc run examples/hello.basil
 ```
 
-🌿 Running a basil program with the BMX example objects enabled:
-```terminal
-cargo run -q -p basilc --features obj-bmx -- run examples/hello.basil
-# or
-cargo run -q -p basilc --features "obj-bmx-rider obj-bmx-ream" -- run examples/hello.basil
-```
 
 Building and deploying Basil to run CGI scripts on Linux:
 
@@ -174,7 +168,6 @@ See the examples folder for lots of cool example Basil scripts. These were mostl
 
 🌿 Add packages like ~~Zip~~, ~~Base64~~, ~~JSON~~, XML, HTTP, ~~SQLite~~, MySQL, PostgreSQL, Redis, LDAP, SMTP, IMAP, FTP, SFTP, SSH, TLS/SSL, WebSockets, JWT, OAuth2, AWS SDK, Azure SDK, GCP SDK
 
-🌿 Need to Add STR, VAL, SGN, INT, SQR, RND, RNDM, SIN, COS, TAN, ATN, EXP, LOG, SINH, COSH, TANH, ASIN, ACOS, ATAN, SQRT, RINT, FIX, EXPONENTIAL, REPLACE, STRTOK, OCT, HEX, INSTR, FIND, STR$
 
 # 🌱 WHAT'S NEW 🌱
 
