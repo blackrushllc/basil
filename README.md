@@ -1,7 +1,22 @@
 # Basil 🌿
-A modern BASIC‑flavored language focused on web/back‑end with the 
-ability to compile binaries, transpile to C, NodeJS and WebAssembly, 
-and leverages a lot of existing libraries from other environments.
+
+🌱 A modern BASIC‑flavored language focused on web/back‑end with the 
+ability to compile to bytecode or binaries and includes lots of library modules
+such as Zip, Base64, JSON, SQL, MIDI, AI, and more.
+
+🌱 Basil is the first high level interpreted and compiled language designed with AI in mind, from code generation, module building, and even adding features or fixing bugs in itself!
+
+🌱 Basil programs can be compiled
+to native binaries for Windows, Linux, and MacOS. Basil can also run as a CGI script templating engine
+using <?basil .. ?> tags like Php.  
+
+🌱 Basil is easier to use, and much faster than Python or Php.
+
+🌱 Basil includes lots of sample programs including a complete Website Framework and MIDI DAW application.
+
+🌱 Basil puts the power of AI in the hands of the student, hobbyist, and professional programmer.
+
+🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library mods and write Basil code.
 
 🌱 Basil is inspired by Bob Zale's PowerBASIC and the warmth and simplicity of BASIC, 
 but reimagined for today's developer needs with modern features, a robust standard library, 
