@@ -1,7 +1,7 @@
 # Basil 🌿
 
 🌱 A modern BASIC‑flavored language focused on web/back‑end with the 
-ability to compile to bytecode or binaries and includes lots of library modules
+ability to compile to bytecode or binaries, across all platforms, and includes lots of library modules
 such as Zip, Base64, JSON, SQL, MIDI, AI, and more.
 
 🌱 Basil is the first high level interpreted and compiled language designed with AI in mind, from code generation, module building, and even adding features or fixing bugs in itself!
