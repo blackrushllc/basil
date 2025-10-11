@@ -28,7 +28,7 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Basil is a project by Blackrush LLC (https://blackrush.us).
 
-🌱 Run a Basil script as CGI like: https://yobasic.com/basil/hello.basil
+🌱 Basil is pronounced like "basil" the herb, and is a pun volcano.
 
 ### Quick Try:
 
