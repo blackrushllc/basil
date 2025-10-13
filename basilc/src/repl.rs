@@ -18,9 +18,11 @@ pub struct SessionSettings {
 }
 
 pub struct Session {
-    // name → value (case-insensitive names per BASIC tradition; we store canonical as compiled)
+    // name  value (case-insensitive names per BASIC tradition; we store canonical as compiled)
     globals: HashMap<String, Value>,
     order: Vec<String>,
+    // track origin file(s) for each symbol
+    origins: HashMap<String, Vec<String>>,
     pub history: Vec<String>,
     #[allow(dead_code)]
     pub next_snippet_id: usize,
@@ -30,7 +32,7 @@ pub struct Session {
 
 impl Session {
     pub fn new(settings: SessionSettings) -> Self {
-        Self { globals: HashMap::new(), order: Vec::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None }
+        Self { globals: HashMap::new(), order: Vec::new(), origins: HashMap::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None }
     }
 
     pub fn run_program(&mut self, path: &str) -> Result<(), String> {
@@ -102,15 +104,19 @@ impl Session {
             else { format!("runtime error: {}", e) }
         })?;
         let (names, values) = vm.globals_snapshot();
-        self.merge_globals(&names, &values);
+        self.merge_globals(&names, &values, Some(path));
         Ok(())
     }
 
-    fn merge_globals(&mut self, names: &[String], values: &[Value]) {
+    fn merge_globals(&mut self, names: &[String], values: &[Value], origin: Option<&str>) {
         for (i, name) in names.iter().enumerate() {
             let val = values.get(i).cloned().unwrap_or(Value::Null);
             if !self.globals.contains_key(name) { self.order.push(name.clone()); }
             self.globals.insert(name.clone(), val);
+            if let Some(src) = origin {
+                let e = self.origins.entry(name.clone()).or_default();
+                if !e.iter().any(|s| s.eq_ignore_ascii_case(src)) { e.push(src.to_string()); }
+            }
         }
     }
 
@@ -154,7 +160,7 @@ impl Session {
             return Err(msg);
         }
         let (names, values) = vm.globals_snapshot();
-        self.merge_globals(&names, &values);
+        self.merge_globals(&names, &values, Some("<repl>"));
         Ok(())
     }
 }
@@ -278,6 +284,35 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                     for i in 1..=max_ln { if let Some(t) = program_buf.get(&i) { out.push_str(t); out.push('\n'); } else { out.push('\n'); } }
                 }
                 if let Err(e) = fs::write(&path, out) { eprintln!("save error: {}", e); }
+                continue;
+            } else if upper == "STATUS" {
+                // Program listing (like LIST)
+                for (ln, txt) in &program_buf {
+                    println!("{} {}", ln, txt);
+                }
+                // Then symbol table with types, values, and origins
+                println!("-- SYMBOLS --");
+                for name in &sess.order {
+                    if let Some(v) = sess.globals.get(name) {
+                        let ty = match v {
+                            Value::Null => "NULL",
+                            Value::Bool(_) => "BOOL",
+                            Value::Num(_) => "FLOAT",
+                            Value::Int(_) => "INTEGER",
+                            Value::Str(_) => "STRING",
+                            Value::Func(f) => { let _ = f; "FUNCTION" },
+                            Value::Array(_) => "ARRAY",
+                            Value::Object(obj) => { let _ = obj; "OBJECT" },
+                            Value::StrArray2D { .. } => "STRARRAY2D",
+                        };
+                        let origins = sess.origins.get(name).cloned().unwrap_or_default();
+                        if origins.is_empty() {
+                            println!("{} : {} = {}", name, ty, v);
+                        } else {
+                            println!("{} : {} = {}    from: {}", name, ty, v, origins.join(", "));
+                        }
+                    }
+                }
                 continue;
             }
         }
