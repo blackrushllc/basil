@@ -40,6 +40,7 @@ SOFTWARE.
 
 //! Frame-based VM with calls, locals, jumps, comparisons
 use std::rc::Rc;
+use std::sync::Arc;
 use std::io::{self, Write, Read, Seek, SeekFrom};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 use std::env;
@@ -49,6 +50,8 @@ use crossterm::event::poll;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+
+pub mod debug;
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj, ObjectDescriptor, PropDesc, MethodDesc};
@@ -223,6 +226,8 @@ pub struct VM {
     next_fh: i64,
     // Control whether to auto-close handles on function return (used for class methods)
     close_handles_on_ret: bool,
+    // Optional debugger
+    pub debugger: Option<Arc<debug::Debugger>>,
 }
 
 // --- Lightweight Class Instance object ---
@@ -358,6 +363,7 @@ impl VM {
             file_table: HashMap::new(),
             next_fh: 1,
             close_handles_on_ret: true,
+            debugger: None,
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -542,6 +548,7 @@ impl VM {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Started); }
         loop {
             let op = self.read_op()?;
             match op {
@@ -650,6 +657,17 @@ impl VM {
                             }
                         }
                     }
+                    if let Some(dbg) = &self.debugger {
+                        let file = self.script_path.clone().unwrap_or_else(|| "<unknown>".into());
+                        let cur_depth = self.frames.len();
+                        if dbg.check_pause_point(&file, line as usize, cur_depth) {
+                            // Wait until resumed
+                            loop {
+                                if let Ok(st) = dbg.state.lock() { if !st.paused { break; } }
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                        }
+                    }
                 }
 
                 Op::Ret => {
@@ -665,7 +683,7 @@ impl VM {
                     if self.frames.is_empty() { break; }
                 }
 
-                Op::Print => { let v = self.pop()?; print!("{}", v); }
+                Op::Print => { let v = self.pop()?; if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Output(format!("{}", v))); } print!("{}", v); let _ = io::stdout().flush(); }
                 Op::Pop   => { let _ = self.pop()?; }
                 Op::ToInt => {
                     let v = self.pop()?;
@@ -2274,7 +2292,37 @@ impl VM {
                // other => { return Err(BasilError(format!("unhandled opcode {:?}", other))); }
             }
         }
+        if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Exited); }
         Ok(())
+    }
+
+    // Debugger integration API
+    pub fn set_debugger(&mut self, dbg: Arc<debug::Debugger>) { self.debugger = Some(dbg); }
+    pub fn with_debugger(mut self, dbg: Arc<debug::Debugger>) -> Self { self.debugger = Some(dbg); self }
+    pub fn get_call_stack(&self) -> Vec<debug::FrameInfo> {
+        let file = self.script_path.clone().unwrap_or_else(|| "<unknown>".into());
+        let line = self.current_line as usize;
+        vec![debug::FrameInfo { function: "<top>".into(), file, line }]
+    }
+    pub fn get_scopes(&self) -> Vec<debug::Scope> {
+        let mut globals: Vec<debug::Variable> = Vec::new();
+        for (i, name) in self.global_names.iter().enumerate() {
+            let v = self.globals.get(i).cloned().unwrap_or(Value::Null);
+            let tn = match &v {
+                Value::Null => "NULL".to_string(),
+                Value::Bool(_) => "BOOL".to_string(),
+                Value::Num(_) => "FLOAT".to_string(),
+                Value::Int(_) => "INTEGER".to_string(),
+                Value::Str(_) => "STRING".to_string(),
+                Value::Func(_) => "FUNCTION".to_string(),
+                Value::Array(_) => "ARRAY".to_string(),
+                Value::Object(_) => "OBJECT".to_string(),
+                Value::StrArray2D { .. } => "STRARRAY2D".to_string(),
+            };
+            globals.push(debug::Variable { name: name.clone(), value: format!("{}", v), type_name: tn });
+        }
+        let scopes = vec![debug::Scope { name: "Globals".into(), vars: globals }];
+        scopes
     }
 
     // --- helpers ---
