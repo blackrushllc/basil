@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -90,6 +90,12 @@ impl Session {
         let mut vm = VM::new(program);
         vm.set_script_path(path.to_string());
         self.script_path = Some(path.to_string());
+        // Seed known globals into this VM so the program can reference preloaded names
+        for name in vm.globals_snapshot().0.iter() {
+            if let Some(v) = self.globals.get(name) {
+                let _ = vm.set_global_by_name(name, v.clone());
+            }
+        }
         vm.run().map_err(|e| {
             let line = vm.current_line();
             if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
@@ -164,14 +170,27 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
     // Try rustyline; fallback to stdio
     let mut rl: Option<rustyline::DefaultEditor> = rustyline::DefaultEditor::new().ok();
 
+    // Old-school banner
+    println!("BASIL - A BASIC Bytecode Interpreter and Compiler");
+    println!("Copyright (C) Blackrush LLC - All Rights Reserved.");
+    println!("Open Source Software under MIT License");
+
+    // Line-numbered program buffer and last-used filename
+    let mut program_buf: BTreeMap<usize, String> = BTreeMap::new();
+    let mut last_file: String = "_.basil".to_string();
+
     let mut buffer = String::new();
 
     loop {
-        let prompt = if buffer.is_empty() { "basil> " } else { "...> " };
+        // Old-school prompt: print an OK banner before each new input when not buffering a snippet
+        if buffer.is_empty() {
+            print!("\nOK\n\n");
+            let _ = io::stdout().flush();
+        }
         let line = if let Some(editor) = rl.as_mut() {
-            match editor.readline(prompt) { Ok(l)=>{ if !l.trim().is_empty() { let _=editor.add_history_entry(l.as_str()); } l }, Err(_)=> break }
+            match editor.readline("") { Ok(l)=>{ if !l.trim().is_empty() { let _=editor.add_history_entry(l.as_str()); } l }, Err(_)=> break }
         } else {
-            print!("{}", prompt); let _ = io::stdout().flush();
+            // No prompt in stdio mode; just read a line
             let mut l = String::new(); if io::stdin().read_line(&mut l).is_err() { break; } l
         };
         let line_trim = line.trim_end_matches(['\r','\n']);
@@ -180,6 +199,88 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
 
         // Aliases
         if trimmed.eq_ignore_ascii_case("quit") || trimmed.eq_ignore_ascii_case("system") { break; }
+
+        // Line-numbered program entry (only when not buffering a snippet)
+        if buffer.is_empty() {
+            // Detect leading integer line number followed by optional code
+            let mut di = 0usize;
+            for ch in trimmed.chars() { if ch.is_ascii_digit() { di += ch.len_utf8(); } else { break; } }
+            if di > 0 && (di == trimmed.len() || trimmed[di..].chars().next().map(|c| c.is_whitespace()).unwrap_or(true)) {
+                if let Ok(ln) = trimmed[..di].parse::<usize>() {
+                    let code = trimmed[di..].trim_start();
+                    if code.is_empty() { program_buf.remove(&ln); } else { program_buf.insert(ln, code.to_string()); }
+                    continue;
+                }
+            }
+            // CLI-only commands: LIST, CLEAR, RUN, LOAD, SAVE
+            let upper = trimmed.to_ascii_uppercase();
+            if upper == "LIST" {
+                for (ln, txt) in &program_buf {
+                    println!("{} {}", ln, txt);
+                }
+                continue;
+            } else if upper == "CLEAR" {
+                program_buf.clear();
+                continue;
+            } else if upper.starts_with("RUN") {
+                // Extract optional filename (no spaces supported inside path)
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let file = parts[1];
+                    // Clear buffer and load file (but also run it)
+                    program_buf.clear();
+                    match fs::read_to_string(file) {
+                        Ok(s) => {
+                            for (i, line) in s.lines().enumerate() {
+                                let ln = i + 1;
+                                if !line.trim_end().is_empty() { program_buf.insert(ln, line.to_string()); }
+                            }
+                            last_file = file.to_string();
+                        }
+                        Err(e) => { eprintln!("load error: {}", e); continue; }
+                    }
+                    if let Err(e) = sess.run_program(file) { eprintln!("Error running program: {}", e); }
+                } else {
+                    // Save program_buf to last_file (default _.basil) with blank-line gaps, then run
+                    let path = last_file.clone();
+                    let max_ln = program_buf.keys().copied().max().unwrap_or(0);
+                    let mut out = String::new();
+                    if max_ln > 0 {
+                        for i in 1..=max_ln { if let Some(t) = program_buf.get(&i) { out.push_str(t); out.push('\n'); } else { out.push('\n'); } }
+                    }
+                    if let Err(e) = fs::write(&path, out) { eprintln!("save error: {}", e); continue; }
+                    if let Err(e) = sess.run_program(&path) { eprintln!("Error running program: {}", e); }
+                }
+                continue;
+            } else if upper.starts_with("LOAD ") || upper == "LOAD" {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() < 2 { println!("usage: LOAD <filename>"); continue; }
+                let file = parts[1];
+                program_buf.clear();
+                match fs::read_to_string(file) {
+                    Ok(s) => {
+                        for (i, line) in s.lines().enumerate() {
+                            let ln = i + 1;
+                            if !line.trim_end().is_empty() { program_buf.insert(ln, line.to_string()); }
+                        }
+                        last_file = file.to_string();
+                    }
+                    Err(e) => { eprintln!("load error: {}", e); }
+                }
+                continue;
+            } else if upper.starts_with("SAVE") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2 { last_file = parts[1].to_string(); }
+                let path = last_file.clone();
+                let max_ln = program_buf.keys().copied().max().unwrap_or(0);
+                let mut out = String::new();
+                if max_ln > 0 {
+                    for i in 1..=max_ln { if let Some(t) = program_buf.get(&i) { out.push_str(t); out.push('\n'); } else { out.push('\n'); } }
+                }
+                if let Err(e) = fs::write(&path, out) { eprintln!("save error: {}", e); }
+                continue;
+            }
+        }
 
         // Meta cmds
         if trimmed.starts_with(":") {
