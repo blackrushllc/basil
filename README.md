@@ -96,6 +96,7 @@ See:
 
 Interesting files to read in this repo:
 
++ README.md - This file here
 + dawg/* - A coll stand-alone DAWG command line utility for Midi/DAW stuff (not part of the Basil interpreter)
 + examples/* - lots of Basil program examples
 + examples/ai - several examples of using the AI support
@@ -116,13 +117,15 @@ Interesting files to read in this repo:
 + docs/daw.md
 + docs/FILE_ID.md
 + docs/midi.md
-+ AI_FEATURE_REQUEST.md - Paste this whole thing into ChatGPT FIRST, so it knows what Basil Objects are, and then you can ask it generate a Junie Ultimate prompt for a new feature object !!!
++ AI_FEATURE_REQUEST.md - Paste this whole thing into ChatGPT so it knows what Basil Feature Objects ("Mods") are, and then you can ask it generate a Junie Ultimate prompt for a new Mod
++ AI_BASIL_CODE_REQUESTS.md - Paste this whole thing into ChatGPT FIRST, so it knows what Basil is, and then you can ask it generate Basil code for you
 + ASTERISK.md - Using Basil with Asterisk
 + BASIL.md - 15‑Minute Presentation Handout
 + BASIL_CGI.md - CGI Support for Basil (the original proposal) (this has been implemented)
 + BEGIN_END.md - All about using BEGIN..END and why and stuff
 + CLASSES.md - CLASS Support for Basil (the original proposal) (this has been implemented)
 + CLASSES_JUNIE.md - Prompt for Junie — Implement CLASS Feature in Basil (She does the hard work!)
++ COMPILER.md - Basil Compiler Architecture and Execution Model (for rocket scientists)
 + CONTRIBUTING.md - How to Contribute
 + ELIZA.md - How the original 1966 ELIZA works (science yeah!)
 + FILE_IO.md - FILE IO Support for Basil (the original proposal) (this has been implemented)
@@ -135,14 +138,11 @@ Interesting files to read in this repo:
 + OBJECTS.md - Object Library Support for Basil (the original proposal) (this has been implemented)
 + PRESENTATION.md - 15‑Minute Stand‑Up Demo Notes (for Teachers) also here: [presentation.pdf](https://github.com/blackrushllc/basil/blob/main/presentation.pdf)
 + PUNS.md - ChatGPT said "Basil" is a "Pun Volcano" and this doc proves it
-+ README.md - This file here
 + SETUP_AI.md - How to setup AI for Basil, get a ChatGPT API key, and train AI on how to make Basil mods
 + SETUP_MIDI.md - How to setup MIDI for Basil, get a MIDI API key, and train AI on how to make Basil mods
 + SETUP_WEB.md - How to setup Web for Basil, get a Web API key, and use AI in your Basil programs
 + STUDENTS.md - How the Basil BASIC Interpreter Works (for students) also here: [basil_in_a_nutshell.pdf](https://github.com/blackrushllc/basil/blob/main/basil_in_a_nutshell.pdf)
 + TECHNICAL.md - Basil Technical Architecture and Execution Model (for rocket scientists)
-+ TODO.md - A laughably old Todo list
-+ VISION.md - Part of my original proposal for Basil
 + WASM.md - Building Basil for WebAssembly (WASM)
 + WASM2.md - Running BASIL in the browser with WASM
 + WEB_PAGES.md - Basil CGI / Web Templating Design (the original proposal) (this has been implemented)
