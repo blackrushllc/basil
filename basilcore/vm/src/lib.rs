@@ -683,7 +683,7 @@ impl VM {
                     if self.frames.is_empty() { break; }
                 }
 
-                Op::Print => { let v = self.pop()?; if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Output(format!("{}", v))); } print!("{}", v); }
+                Op::Print => { let v = self.pop()?; if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Output(format!("{}", v))); } print!("{}", v); let _ = io::stdout().flush(); }
                 Op::Pop   => { let _ = self.pop()?; }
                 Op::ToInt => {
                     let v = self.pop()?;
