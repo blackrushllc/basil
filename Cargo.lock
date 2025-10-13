@@ -97,6 +97,9 @@ dependencies = [
  "basil-ast",
  "basil-bytecode",
  "basil-common",
+ "basil-parser",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -185,6 +188,8 @@ dependencies = [
  "basil-parser",
  "basil-vm",
  "rustyline",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
