@@ -47,15 +47,80 @@ use std::time::UNIX_EPOCH;
 
 use basil_parser::parse;
 use basil_compiler::compile;
+use basil_compiler::service::{analyze_source, CompilerDiagnostics};
 use basil_vm::{VM, MockInputProvider};
+use basil_vm::debug::{Debugger, DebugEvent};
 use basil_lexer::Lexer; // add this near the other use lines
 use basil_bytecode::{serialize_program, deserialize_program};
 use std::collections::HashMap;
+use serde_json;
 
 mod template;
 mod repl;
 use template::{precompile_template, parse_directives_and_bom, Directives};
 
+fn cmd_analyze(path: String, json: bool) {
+    let src = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("read {}: {}", path, e); std::process::exit(1); }
+    };
+    let diags: CompilerDiagnostics = analyze_source(&src, &path);
+    if json {
+        match serde_json::to_string_pretty(&diags) {
+            Ok(s) => println!("{}", s),
+            Err(e) => { eprintln!("json: {}", e); std::process::exit(1); }
+        }
+    } else {
+        if diags.errors.is_empty() { println!("No errors."); } else {
+            println!("Errors:");
+            for e in &diags.errors {
+                println!("- {:?} at {}:{}: {}", e.severity, e.line, e.column, e.message);
+            }
+        }
+        if !diags.symbols.is_empty() {
+            println!("Symbols:");
+            for s in &diags.symbols {
+                println!("- {:?} {} @{}:{}", s.kind, s.name, s.line, s.col);
+            }
+        }
+    }
+}
+
+fn cmd_debug(path: Option<String>) {
+    let input_path = match path {
+        Some(p) => p,
+        None => { eprintln!("usage: basilc --debug <file.basil>"); std::process::exit(2); }
+    };
+    let abs_path: PathBuf = match fs::canonicalize(&input_path) { Ok(p)=>p, Err(_)=>PathBuf::from(&input_path) };
+    let src = match std::fs::read_to_string(&abs_path) { Ok(s)=>s, Err(e)=>{ eprintln!("{}", e); std::process::exit(1);} };
+    let pre = template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() };
+    let ast = match parse(&pre.basil_source) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
+    let program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+    let dbg = Debugger::new();
+    let rx = dbg.subscribe();
+    // Spawn a thread to print JSON events
+    std::thread::spawn(move || {
+        while let Ok(ev) = rx.recv() {
+            let s = serde_json::to_string(&match &ev {
+                DebugEvent::Started => serde_json::json!({"event":"Started"}),
+                DebugEvent::StoppedBreakpoint{file,line} => serde_json::json!({"event":"Stopped","reason":"Breakpoint","file":file,"line":line}),
+                DebugEvent::Continued => serde_json::json!({"event":"Continued"}),
+                DebugEvent::Exited => serde_json::json!({"event":"Exited"}),
+                DebugEvent::Output(text) => serde_json::json!({"event":"Output","text":text}),
+            }).unwrap();
+            println!("{}", s);
+        }
+    });
+    let mut vm = VM::new(program);
+    vm.set_script_path(abs_path.to_string_lossy().to_string());
+    vm.set_debugger(dbg);
+    if let Err(e) = vm.run() {
+        let line = vm.current_line();
+        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
+        else { eprintln!("runtime error: {}", e); }
+        std::process::exit(1);
+    }
+}
 
 
 
@@ -104,12 +169,15 @@ fn print_help() {
     println!("  serve (greenhouse) Serve local HTTP (stub)");
     println!("  doc  (bouquet)     Generate docs (stub)\n");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
-    println!("  --ai               Start AI REPL (streaming chat)\n");
+    println!("  --ai               Start AI REPL (streaming chat)");
+    println!("  --analyze <file> [--json]  Run compiler analysis and print diagnostics/symbols");
+    println!("  --debug <file>              Run Basil VM with JSON debug events\n");
     println!("Usage:");
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
-    println!("  basilc sprout examples/expr.basil");
+    println!("  basilc --analyze examples/hello.basil --json");
+    println!("  basilc --debug examples/hello.basil");
     println!("  basilc init myapp");
     println!("  basilc --ai");
 
@@ -287,6 +355,19 @@ fn cli_main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_help();
+        return;
+    }
+    // Early flag handling for analysis/debug modes used by IDE tooling
+    if args[0] == "--analyze" || args[0] == "-A" {
+        if args.len() < 2 { eprintln!("usage: basilc --analyze <file.basil> [--json]"); std::process::exit(2); }
+        let file = args[1].clone();
+        let json = args.iter().any(|a| a == "--json");
+        cmd_analyze(file, json);
+        return;
+    }
+    if args[0] == "--debug" {
+        let path = args.get(1).cloned();
+        cmd_debug(path);
         return;
     }
     let cmd = canonicalize(&args[0]).to_string();

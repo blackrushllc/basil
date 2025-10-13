@@ -46,6 +46,8 @@ use basil_common::{Result, BasilError};
 use basil_ast::{Program, Stmt, Expr, BinOp};
 use basil_bytecode::{Chunk, Program as BCProgram, Value, Op, Function};
 
+pub mod service;
+
 pub fn compile(ast: &Program) -> Result<BCProgram> {
     let mut c = C::new();
     // Pre-scan to collect all function names so calls can be resolved before definitions
