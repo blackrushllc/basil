@@ -11,7 +11,7 @@
 
 ### 🌿 New stuff just added:
 
-+  
++ Updated guides and docs
 + WITH..END WITH for object-oriented programming
 + SELECT CASE .. END SELECT flow control
 + String Interpolation i.e. PRINT "Hello #{name$}! You have #{wins%} wins and #{losses%} losses.";
