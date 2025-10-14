@@ -54,7 +54,7 @@ pub fn analyze_source(source: &str, _filename: &str) -> CompilerDiagnostics {
 fn collect_symbols(ast: &Program, syms: &mut Vec<SymbolInfo>) {
     for s in ast {
         match s {
-            Stmt::Func { name, params: _, body: _ } => {
+            Stmt::Func { name, .. } => {
                 syms.push(SymbolInfo { name: name.clone(), kind: SymbolKind::Function, line: 0, col: 0 });
             }
             Stmt::Let { name, .. } => {

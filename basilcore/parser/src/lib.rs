@@ -71,8 +71,12 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt> {
         // Skip any leading semicolons (useful with newline-as-semicolon)
         while self.match_k(TokenKind::Semicolon) {}
-        // FUNC name(params) block
-        if self.match_k(TokenKind::Func) { return self.parse_func(); }
+        // FUNC/SUB name(params) block
+        if self.check(TokenKind::Func) {
+            let kw = self.next().unwrap();
+            let kind = if kw.lexeme.eq_ignore_ascii_case("SUB") { basil_ast::FuncKind::Sub } else { basil_ast::FuncKind::Func };
+            return self.parse_func(kind);
+        }
 
         // LABEL name  or  IDENT:  (colon-form)
         if self.check(TokenKind::Label) {
@@ -613,7 +617,7 @@ impl Parser {
         }
     }
 
-    fn parse_func(&mut self) -> Result<Stmt> {
+    fn parse_func(&mut self, kind: basil_ast::FuncKind) -> Result<Stmt> {
         let name = self.expect_ident()?;
         self.expect(TokenKind::LParen)?;
         let mut params = Vec::new();
@@ -647,7 +651,7 @@ impl Parser {
             body.push(Stmt::Line(line));
             body.push(stmt);
         }
-        Ok(Stmt::Func { name, params, body })
+        Ok(Stmt::Func { kind, name, params, body })
     }
 
     fn peek_binop_bp(&self) -> Option<(BinOp, u8, u8)> {

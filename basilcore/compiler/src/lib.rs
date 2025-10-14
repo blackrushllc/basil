@@ -50,10 +50,12 @@ pub mod service;
 
 pub fn compile(ast: &Program) -> Result<BCProgram> {
     let mut c = C::new();
-    // Pre-scan to collect all function names so calls can be resolved before definitions
+    // Pre-scan to collect all routine names (FUNC/SUB) with arity and kind so calls can be resolved before definitions
     for s in ast {
-        if let Stmt::Func { name, .. } = s {
-            c.fn_names.insert(name.to_ascii_uppercase());
+        if let Stmt::Func { kind, name, params, .. } = s {
+            let uname = name.to_ascii_uppercase();
+            c.fn_names.insert(uname.clone());
+            c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
         }
     }
     for s in ast {
@@ -96,11 +98,42 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
     Ok(BCProgram { chunk: c.chunk, globals: c.globals })
 }
 
+struct RoutineInfo { arity: usize, is_sub: bool }
+
+fn expr_contains_sub_call(routines: &HashMap<String, RoutineInfo>, e: &Expr) -> bool {
+    match e {
+        Expr::Call { callee, args } => {
+            if let Expr::Var(name) = &**callee {
+                let uname = name.to_ascii_uppercase();
+                if let Some(info) = routines.get(&uname) {
+                    if info.is_sub { return true; }
+                }
+            }
+            for a in args {
+                if expr_contains_sub_call(routines, a) { return true; }
+            }
+            false
+        }
+        Expr::UnaryNeg(e1) | Expr::UnaryNot(e1) => expr_contains_sub_call(routines, e1),
+        Expr::Binary { lhs, rhs, .. } => expr_contains_sub_call(routines, lhs) || expr_contains_sub_call(routines, rhs),
+        Expr::MemberGet { target, .. } => expr_contains_sub_call(routines, target),
+        Expr::MemberCall { target, args, .. } => {
+            if expr_contains_sub_call(routines, target) { return true; }
+            for a in args { if expr_contains_sub_call(routines, a) { return true; } }
+            false
+        }
+        Expr::NewObject { args, .. } => args.iter().any(|a| expr_contains_sub_call(routines, a)),
+        Expr::NewClass { filename } => expr_contains_sub_call(routines, filename),
+        _ => false,
+    }
+}
+
 struct C {
     chunk: Chunk,
     globals: Vec<String>,
     gmap: HashMap<String, u8>,
     fn_names: HashSet<String>,
+    routines: HashMap<String, RoutineInfo>,
     loop_stack: Vec<LoopCtx>,
     // Label/GOTO support (top-level)
     tl_labels: HashMap<String, usize>,
@@ -119,6 +152,7 @@ impl C {
             globals: Vec::new(),
             gmap: HashMap::new(),
             fn_names: HashSet::new(),
+            routines: HashMap::new(),
             loop_stack: Vec::new(),
             tl_labels: HashMap::new(),
             tl_goto_fixups: Vec::new(),
@@ -140,7 +174,7 @@ impl C {
     fn emit_stmt_toplevel(&mut self, s: &Stmt) -> Result<()> {
         match s {
             // Compile function to a Function value and store into a global.
-            Stmt::Func { name, params, body } => {
+            Stmt::Func { name, params, body, .. } => {
                 // remember function name for call vs array indexing disambiguation
                 self.fn_names.insert(name.to_ascii_uppercase());
                 let f = self.compile_function(name.clone(), params.clone(), body);
@@ -297,6 +331,36 @@ impl C {
             }
             Stmt::ExprStmt(e) => {
                 let mut chunk = std::mem::take(&mut self.chunk);
+                // Special-case: direct SUB call as a statement: NAME(args...);
+                if let Expr::Call { callee, args } = e {
+                    if let Expr::Var(name) = &**callee {
+                        let uname = name.to_ascii_uppercase();
+                        if let Some(info) = self.routines.get(&uname) {
+                            if info.is_sub {
+                                // Arity check
+                                if info.arity != args.len() {
+                                    return Err(BasilError(format!("procedure '{}' expects {} arguments but {} given", name, info.arity, args.len())));
+                                }
+                                // Ensure no nested SUB calls inside arguments
+                                for a in args {
+                                    if expr_contains_sub_call(&self.routines, a) {
+                                        return Err(BasilError("SUB call has no value; cannot be used inside arguments".into()));
+                                    }
+                                }
+                                // Emit callee and arguments and call
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                                for a in args { self.emit_expr_in(&mut chunk, a, None)?; }
+                                chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
+                                // discard result (SUB has no value)
+                                chunk.push_op(Op::Pop);
+                                self.chunk = chunk;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                // Generic expression statement (includes FUNC calls): validate no SUB in value context
                 self.emit_expr_in(&mut chunk, e, None)?;
                 chunk.push_op(Op::Pop);
                 self.chunk = chunk;
@@ -551,7 +615,7 @@ impl C {
                         if let Some(slot) = env.lookup(name) {
                             chunk.push_op(Op::StoreLocal);
                             chunk.push_u8(slot);
-                        } else if self.gmap.contains_key(name) && !self.fn_names.contains(&name.to_ascii_uppercase()) {
+                        } else if self.gmap.contains_key(name) && !self.routines.contains_key(&name.to_ascii_uppercase()) {
                             // Otherwise, if a global of this name exists (e.g., class field), assign to the global.
                             let g = self.gslot(name);
                             chunk.push_op(Op::StoreGlobal);
@@ -570,7 +634,7 @@ impl C {
                             chunk.push_op(Op::Builtin); chunk.push_u8(138u8); chunk.push_u8(1u8);
                             if let Some(slot) = env.lookup(name) {
                                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
-                            } else if self.gmap.contains_key(name) && !self.fn_names.contains(&name.to_ascii_uppercase()) {
+                            } else if self.gmap.contains_key(name) && !self.routines.contains_key(&name.to_ascii_uppercase()) {
                                 let g = self.gslot(name);
                                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                             } else {
@@ -676,6 +740,31 @@ impl C {
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::ExprStmt(e) => {
+                // Special-case: direct SUB call as a statement
+                if let Expr::Call { callee, args } = e {
+                    if let Expr::Var(name) = &**callee {
+                        let uname = name.to_ascii_uppercase();
+                        if let Some(info) = self.routines.get(&uname) {
+                            if info.is_sub {
+                                if info.arity != args.len() {
+                                    return Err(BasilError(format!("procedure '{}' expects {} arguments but {} given", name, info.arity, args.len())));
+                                }
+                                for a in args {
+                                    if expr_contains_sub_call(&self.routines, a) {
+                                        return Err(BasilError("SUB call has no value; cannot be used inside arguments".into()));
+                                    }
+                                }
+                                // Emit callee and args
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                                for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
+                                chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
+                                chunk.push_op(Op::Pop);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
                 self.emit_expr_in(chunk, e, Some(env))?;
                 chunk.push_op(Op::Pop);
             }
@@ -915,6 +1004,10 @@ impl C {
     }
 
     fn emit_expr_in(&mut self, chunk: &mut Chunk, e: &Expr, env: Option<&LocalEnv>) -> Result<()> {
+            // Forbid SUB calls in value contexts (allowed only as direct statements)
+            if expr_contains_sub_call(&self.routines, e) {
+                return Err(BasilError("SUB call has no value; cannot be used in an expression. Call it as a statement: NAME(...);".into()));
+            }
         match e {
             Expr::Number(n) => {
                 let idx = chunk.add_const(Value::Num(*n));
@@ -1185,7 +1278,7 @@ impl C {
                     }
                     // If not builtin, treat as array access when not a known function
                     if args.len() >= 1 && args.len() <= 4 {
-                        let is_func = self.fn_names.contains(&uname);
+                        let is_func = self.routines.contains_key(&uname);
                         // prefer local var if present
                         if let Some(env) = env {
                             if env.lookup(name).is_some() && !is_func {
@@ -1491,7 +1584,7 @@ impl C {
             Stmt::Block(stmts) => {
                 for s2 in stmts { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
             }
-            Stmt::Func { name, params, body } => {
+            Stmt::Func { name, params, body, .. } => {
                 let f = self.compile_function(name.clone(), params.clone(), body);
                 chunk.push_op(Op::Const);
                 let idx = chunk.add_const(f);

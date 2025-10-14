@@ -102,7 +102,7 @@ pub enum Stmt {
     Break,
     Continue,
     Block(Vec<Stmt>),
-    Func { name: String, params: Vec<String>, body: Vec<Stmt> },
+    Func { kind: FuncKind, name: String, params: Vec<String>, body: Vec<Stmt> },
     For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
     // FOR EACH var IN expr ... NEXT
     ForEach { var: String, enumerable: Expr, body: Box<Stmt> },
@@ -111,3 +111,10 @@ pub enum Stmt {
 }
 
 pub type Program = Vec<Stmt>;
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FuncKind {
+    Func,
+    Sub,
+}
