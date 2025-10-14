@@ -17,6 +17,8 @@ use sha1::{Digest as Sha1Digest, Sha1};
 #[cfg(feature = "sha2")]
 use sha2::Sha256;
 
+use serde_json::json;
+
 // --- Test mode flag controlled by VM ---
 #[cfg(feature = "once_cell")]
 pub static TEST_MODE: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
@@ -99,9 +101,16 @@ impl BasicObject for AiObject {
                     cache_put(&key, &out);
                     return Ok(Value::Str(out));
                 }
-                // Non-test: require API key (not implemented yet)
-                self.set_err("missing API key");
-                Ok(Value::Str(String::new()))
+                // Online path
+                match resolve_api_key() {
+                    Some(api_key) => {
+                        match chat_complete(&prompt, opts, &api_key) {
+                            Ok(out) => { cache_put(&key, &out); Ok(Value::Str(out)) }
+                            Err(e) => { self.set_err(e); Ok(Value::Str(String::new())) }
+                        }
+                    }
+                    None => { self.set_err("missing API key"); Ok(Value::Str(String::new())) }
+                }
             }
             "STREAM" => {
                 self.clear_err();
@@ -125,8 +134,23 @@ impl BasicObject for AiObject {
                     cache_put(&key, &full);
                     return Ok(Value::Str(full));
                 }
-                self.set_err("missing API key");
-                Ok(Value::Str(String::new()))
+                match resolve_api_key() {
+                    Some(api_key) => {
+                        match chat_complete(&prompt, opts, &api_key) {
+                            Ok(full) => {
+                                // simulate streaming by chunking
+                                let n = full.len();
+                                let c1 = n / 3; let c2 = (2*n) / 3;
+                                let parts = [&full[..c1], &full[c1..c2], &full[c2..]];
+                                for p in parts { print!("{}", p); let _ = std::io::stdout().flush(); std::thread::sleep(std::time::Duration::from_millis(5)); }
+                                cache_put(&key, &full);
+                                Ok(Value::Str(full))
+                            }
+                            Err(e) => { self.set_err(e); Ok(Value::Str(String::new())) }
+                        }
+                    }
+                    None => { self.set_err("missing API key"); Ok(Value::Str(String::new())) }
+                }
             }
             "EMBED" => {
                 self.clear_err();
@@ -139,11 +163,20 @@ impl BasicObject for AiObject {
                     let arr = ArrayObj { elem: ElemType::Num, dims, data: RefCell::new(data) };
                     return Ok(Value::Array(Rc::new(arr)));
                 }
-                self.set_err("missing API key");
-                // return empty array on error
-                let dims = vec![0usize];
-                let arr = ArrayObj { elem: ElemType::Num, dims, data: RefCell::new(Vec::new()) };
-                Ok(Value::Array(Rc::new(arr)))
+                match resolve_api_key() {
+                    Some(api_key) => {
+                        match embed_request(&text, &api_key) {
+                            Ok(vec) => {
+                                let dims = vec![vec.len()];
+                                let data: Vec<Value> = vec.iter().copied().map(Value::Num).collect();
+                                let arr = ArrayObj { elem: ElemType::Num, dims, data: RefCell::new(data) };
+                                Ok(Value::Array(Rc::new(arr)))
+                            }
+                            Err(e) => { self.set_err(e); let dims = vec![0usize]; let arr = ArrayObj { elem: ElemType::Num, dims, data: RefCell::new(Vec::new()) }; Ok(Value::Array(Rc::new(arr))) }
+                        }
+                    }
+                    None => { self.set_err("missing API key"); let dims = vec![0usize]; let arr = ArrayObj { elem: ElemType::Num, dims, data: RefCell::new(Vec::new()) }; Ok(Value::Array(Rc::new(arr))) }
+                }
             }
             "MODERATE%" => {
                 self.clear_err();
@@ -247,4 +280,90 @@ fn cache_get(key: &str) -> Option<String> {
 fn cache_put(key: &str, val: &str) {
     let p = cache_path_for(key);
     if let Ok(mut f) = fs::File::create(p) { let _ = f.write_all(val.as_bytes()); let _ = f.sync_all(); }
+}
+
+
+// --- Online provider helpers (OpenAI minimal) ---
+fn resolve_api_key() -> Option<String> {
+    match std::env::var("OPENAI_API_KEY") {
+        Ok(v) => { let t = v.trim().to_string(); if t.is_empty() { None } else { Some(t) } },
+        Err(_) => None,
+    }
+}
+
+fn openai_post_json(path: &str, body: serde_json::Value, api_key: &str, timeout_ms: u64) -> std::result::Result<serde_json::Value, String> {
+    let url = format!("https://api.openai.com{}", path);
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_millis(timeout_ms))
+        .build();
+    let resp = agent.post(&url)
+        .set("Authorization", &format!("Bearer {}", api_key))
+        .set("Content-Type", "application/json")
+        .send_string(&body.to_string());
+    match resp {
+        Ok(r) => {
+            let status = r.status();
+            let text = r.into_string().unwrap_or_else(|_| "".to_string());
+            let val: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("invalid json: {}", e))?;
+            if status >= 200 && status < 300 {
+                Ok(val)
+            } else {
+                // try to extract message
+                let msg = val.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or("");
+                if msg.is_empty() { Err(format!("http {}", status)) } else { Err(format!("http {}: {}", status, msg)) }
+            }
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            // HTTP status error (e.g., 401/429/5xx). Read body for message if present.
+            let text = resp.into_string().unwrap_or_else(|_| "".to_string());
+            let val: std::result::Result<serde_json::Value, _> = serde_json::from_str(&text);
+            if let Ok(v) = val {
+                let msg = v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or("");
+                if msg.is_empty() { Err(format!("http {}", code)) } else { Err(format!("http {}: {}", code, msg)) }
+            } else {
+                Err(format!("http {}", code))
+            }
+        }
+        Err(ureq::Error::Transport(t)) => Err(format!("network error: {}", t)),
+    }
+}
+
+fn chat_complete(prompt: &str, _opts: Option<&str>, api_key: &str) -> std::result::Result<String, String> {
+    let body = json!({
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 400
+    });
+    let v = openai_post_json("/v1/chat/completions", body, api_key, 60000)?;
+    let txt = v.get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(txt)
+}
+
+fn embed_request(text: &str, api_key: &str) -> std::result::Result<Vec<f64>, String> {
+    let body = json!({
+        "model": "text-embedding-3-small",
+        "input": text
+    });
+    let v = openai_post_json("/v1/embeddings", body, api_key, 60000)?;
+    let arr = v.get("data")
+        .and_then(|d| d.get(0))
+        .and_then(|o| o.get("embedding"))
+        .and_then(|e| e.as_array())
+        .ok_or_else(|| "missing embedding".to_string())?;
+    let mut out = Vec::with_capacity(arr.len());
+    for n in arr {
+        if let Some(f) = n.as_f64() { out.push(f); }
+        else if let Some(i) = n.as_i64() { out.push(i as f64); }
+        else if let Some(u) = n.as_u64() { out.push(u as f64); }
+    }
+    Ok(out)
 }

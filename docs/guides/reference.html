@@ -1924,3 +1924,24 @@ PRINT "\n---\n"; PRINT full$;
 <script src="assets/reference.js"></script>
 </body>
 </html>
+
+
+<hr/>
+<h2>Exceptions: TRY, CATCH, FINALLY, and RAISE</h2>
+<p>Basil supports structured exception handling. See the full guide: <a href="EXCEPTIONS.md" download>docs/guides/EXCEPTIONS.md</a></p>
+<p>Quick example:</p>
+<pre><code>TRY
+  IF x% = 0 THEN RAISE "Divide by zero"
+  PRINT 10 / x%
+CATCH err$
+  PRINT "Oops: ", err$
+FINALLY
+  PRINT "Always runs"
+END TRY
+</code></pre>
+<p>Notes:</p>
+<ul>
+  <li>CATCH variable (if present) must be a string (use '$' suffix).</li>
+  <li>FINALLY always runs on normal or exceptional exit.</li>
+  <li>Use <code>RAISE</code> with no expression inside CATCH to rethrow.</li>
+</ul>

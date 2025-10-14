@@ -113,10 +113,20 @@ Cache path: .basil/ai-cache/
   - Ensure OPENAI_API_KEY is set, or .basil-ai.toml points to it via env:OPENAI_API_KEY.
   - If you just want deterministic offline results, run in test mode.
 - Network/proxy issues:
-  - For now the HTTP provider is kept minimal; ensure your environment allows outbound HTTPS.
-- 429/5xx backoff:
-  - Minimal exponential backoff is planned; in test mode this isn’t applicable.
-
+  - Ensure your environment allows outbound HTTPS to api.openai.com. If you need a proxy, set HTTPS_PROXY/HTTP_PROXY.
+- http 429 (rate limit or quota):
+  - Meaning: Your request was received, but refused due to rate limiting or account quota/billing limits.
+  - Common causes:
+    - Too many requests per minute or tokens per minute for your org/model.
+    - No active billing or exhausted credits.
+  - What to do:
+    - Reduce request rate, batch less, or use a smaller model (e.g., gpt-4o-mini).
+    - Implement retries with exponential backoff (coming to library; for now just re-run after a short wait).
+    - Check usage and limits in your OpenAI dashboard and ensure billing is set up.
+- http 401 (unauthorized):
+  - Check that OPENAI_API_KEY is valid and not expired/revoked.
+- http 5xx (server error):
+  - Temporary server-side issues. Wait and retry; consider exponential backoff.
 
 ## License
 

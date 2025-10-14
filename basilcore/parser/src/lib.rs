@@ -49,10 +49,10 @@ pub fn parse(src: &str) -> Result<Program> {
     Parser::new(tokens).parse_program()
 }
 
-struct Parser { tokens: Vec<Token>, i: usize, with_depth: usize }
+struct Parser { tokens: Vec<Token>, i: usize, with_depth: usize, catch_depth: usize }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self { Self { tokens, i: 0, with_depth: 0 } }
+    fn new(tokens: Vec<Token>) -> Self { Self { tokens, i: 0, with_depth: 0, catch_depth: 0 } }
 
     fn parse_program(&mut self) -> Result<Program> {
         let mut stmts = Vec::new();
@@ -196,6 +196,87 @@ impl Parser {
             return Ok(Stmt::With { target, body });
         }
 
+        // TRY ... [CATCH [err$] ...] [FINALLY ...] END TRY
+        if self.match_k(TokenKind::Try) {
+            // Accept newline or ':' before body
+            while self.match_k(TokenKind::Semicolon) {}
+            let mut try_body: Vec<Stmt> = Vec::new();
+            // Collect try-body until CATCH/FINALLY/END
+            loop {
+                while self.match_k(TokenKind::Semicolon) {}
+                if self.check(TokenKind::Catch) || self.check(TokenKind::Finally) || self.check(TokenKind::End) { break; }
+                if self.check(TokenKind::Eof) { return Err(BasilError("Expected 'END TRY' to terminate TRY block.".into())); }
+                let line = self.peek_line();
+                let s = self.parse_stmt()?;
+                try_body.push(Stmt::Line(line));
+                try_body.push(s);
+            }
+            let mut saw_catch = false;
+            let mut saw_finally = false;
+            let mut catch_var: Option<String> = None;
+            let mut catch_body: Option<Vec<Stmt>> = None;
+            let mut finally_body: Option<Vec<Stmt>> = None;
+
+            // Parse optional CATCH/FINALLY sections in any order, at most one each
+            loop {
+                while self.match_k(TokenKind::Semicolon) {}
+                if self.match_k(TokenKind::Catch) {
+                    if saw_catch { return Err(BasilError("Only one CATCH block is allowed per TRY.".into())); }
+                    saw_catch = true;
+                    // Optional ident for error var
+                    if self.check(TokenKind::Ident) {
+                        let name = self.expect_ident()?;
+                        if !name.ends_with('$') { return Err(BasilError("CATCH variable must be a string (use '$' suffix).".into())); }
+                        catch_var = Some(name);
+                    }
+                    // Accept nl_or_colon before body
+                    while self.match_k(TokenKind::Semicolon) {}
+                    let mut body: Vec<Stmt> = Vec::new();
+                    // Enter CATCH context
+                    self.catch_depth += 1;
+                    loop {
+                        while self.match_k(TokenKind::Semicolon) {}
+                        if self.check(TokenKind::Finally) || self.check(TokenKind::End) { break; }
+                        if self.check(TokenKind::Eof) { self.catch_depth -= 1; return Err(BasilError("Expected 'END TRY' to terminate TRY block.".into())); }
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        body.push(Stmt::Line(line));
+                        body.push(s);
+                    }
+                    self.catch_depth -= 1;
+                    catch_body = Some(body);
+                    continue;
+                }
+                if self.match_k(TokenKind::Finally) {
+                    if saw_finally { return Err(BasilError("Only one FINALLY block is allowed per TRY.".into())); }
+                    saw_finally = true;
+                    // Accept nl_or_colon before body
+                    while self.match_k(TokenKind::Semicolon) {}
+                    let mut body: Vec<Stmt> = Vec::new();
+                    loop {
+                        while self.match_k(TokenKind::Semicolon) {}
+                        if self.check(TokenKind::Catch) || self.check(TokenKind::End) { break; }
+                        if self.check(TokenKind::Eof) { return Err(BasilError("Expected 'END TRY' to terminate TRY block.".into())); }
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        body.push(Stmt::Line(line));
+                        body.push(s);
+                    }
+                    finally_body = Some(body);
+                    continue;
+                }
+                break;
+            }
+            if !saw_catch && !saw_finally { return Err(BasilError("TRY must contain a CATCH or FINALLY block.".into())); }
+            // Expect END TRY
+            self.expect(TokenKind::End)?;
+            while self.match_k(TokenKind::Semicolon) {}
+            if !self.match_k(TokenKind::Try) {
+                return Err(BasilError("Expected 'END TRY' to terminate TRY block.".into()));
+            }
+            return Ok(Stmt::Try { try_body, catch_var, catch_body, finally_body });
+        }
+
         // FUNC/SUB name(params) block
         if self.check(TokenKind::Func) {
             let kw = self.next().unwrap();
@@ -257,6 +338,16 @@ impl Parser {
             let expr = if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) { None } else { Some(self.parse_expr_bp(0)?) };
             self.terminate_stmt()?;
             return Ok(Stmt::Exit(expr));
+        }
+
+        // RAISE [expr]
+        if self.match_k(TokenKind::Raise) {
+            let expr_opt = if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) { None } else { Some(self.parse_expr_bp(0)?) };
+            if expr_opt.is_none() && self.catch_depth == 0 {
+                return Err(BasilError("RAISE without an expression is only valid inside CATCH.".into()));
+            }
+            self.terminate_stmt()?;
+            return Ok(Stmt::Raise(expr_opt));
         }
 
         if self.match_k(TokenKind::Let) {
