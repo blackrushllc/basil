@@ -195,6 +195,11 @@ pub enum Op {
     Jump = 40,           // +u16
     JumpIfFalse = 41,    // +u16
     JumpBack = 42,       // +u16 (ip -= off)
+    // gosub control flow
+    Gosub = 110,         // +u16 (push return ip; ip += off or ip -= off depending on opcode variant)
+    GosubBack = 111,     // +u16 (ip -= off; push return ip)
+    GosubRet = 112,      // pop return ip into ip; error if empty
+    GosubPop = 113,      // pop and discard return ip; error if empty
 
     // calls
     Call = 50,           // +u8 (argc)

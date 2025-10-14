@@ -1,0 +1,40 @@
+REM flow_goto_gosub.basil — Demonstrate GOTO, GOSUB, RETURN, RETURN TO
+
+PRINTLN "Start";
+
+REM --- GOTO demo --------------------------------------------------------------
+GOTO AfterGoto;
+PRINTLN "This line is skipped by GOTO";
+AfterGoto:
+PRINTLN "After GOTO";
+
+REM --- Simple GOSUB/RETURN demo ----------------------------------------------
+GOSUB Work;
+PRINTLN "Back from Work";
+
+REM --- Nested GOSUB + RETURN TO <label> demo ---------------------------------
+PRINTLN "Entering Outer";
+GOSUB Outer;
+PRINTLN "Done with Outer";
+GOTO TheEnd;
+
+Work:
+  PRINTLN "In Work";
+  RETURN;
+
+Outer:
+  PRINTLN "In Outer (before inner)";
+  GOSUB Inner;
+  PRINTLN "In Outer (after inner) — this will be skipped by RETURN TO";
+  RETURN;
+
+Inner:
+  PRINTLN "  In Inner — will RETURN TO a label after the caller";
+  RETURN TO AfterOuter;
+
+AfterOuter:
+  PRINTLN "AfterOuter label reached via RETURN TO";
+  RETURN;
+
+TheEnd:
+PRINTLN "End";

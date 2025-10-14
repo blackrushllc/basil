@@ -91,6 +91,8 @@ pub enum Stmt {
     ExprStmt(Expr),
     // Function return (inside FUNC)
     Return(Option<Expr>),
+    // GOSUB/RETURN control (RETURN; or RETURN TO <label>)
+    ReturnFromGosub(Option<String>),
     // Labels and unstructured flow
     Label(String),
     Goto(String),

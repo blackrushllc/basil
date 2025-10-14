@@ -74,9 +74,17 @@ impl Parser {
         // FUNC name(params) block
         if self.match_k(TokenKind::Func) { return self.parse_func(); }
 
-        // LABEL name
-        if self.match_k(TokenKind::Label) {
-            let name = self.expect_ident()?;
+        // LABEL name  or  IDENT:  (colon-form)
+        if self.check(TokenKind::Label) {
+            // consume the Label token first
+            let tok = self.next().unwrap();
+            // If the next token is an identifier, this is the keyword form: LABEL name
+            let name = if self.check(TokenKind::Ident) {
+                self.expect_ident()?
+            } else {
+                // colon-form: the label name is carried in the Label token's lexeme
+                tok.lexeme
+            };
             self.terminate_stmt()?;
             return Ok(Stmt::Label(name));
         }
@@ -195,12 +203,20 @@ impl Parser {
         }
 
         if self.match_k(TokenKind::Return) {
-            // optional expression before terminator
-            let expr = if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) {
-                None
-            } else {
-                Some(self.parse_expr_bp(0)?)
-            };
+            // Distinguish GOSUB-return forms and function-return
+            // RETURN TO <label> ;
+            if self.match_k(TokenKind::To) {
+                let label = self.expect_ident()?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::ReturnFromGosub(Some(label)));
+            }
+            // Bare RETURN; → GOSUB return
+            if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) {
+                self.terminate_stmt()?;
+                return Ok(Stmt::ReturnFromGosub(None));
+            }
+            // Otherwise: RETURN <expr> → function return
+            let expr = Some(self.parse_expr_bp(0)?);
             self.terminate_stmt()?;
             return Ok(Stmt::Return(expr));
         }

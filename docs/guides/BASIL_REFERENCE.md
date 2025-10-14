@@ -534,22 +534,59 @@ LET params$@ = GET$();
 
 ## GOSUB
 *Type:* Flow Control  
-Jumps to a LABEL and returns when a RETURN statement is encountered within the subroutine.
+*Availability:* Core
+Transfers control to a subroutine at a LABEL and returns when a matching GOSUB return is executed. Nestable; uses a dedicated GOSUB return stack.
+
+Syntax:
+- GOSUB <label>;
+- RETURN;
+- RETURN TO <label>;
+
+Notes:
+- Labels can be written either as `LabelName:` or `LABEL LabelName` on their own line.
+- `RETURN` without a prior `GOSUB` is a runtime error.
+- The GOSUB stack is capped at 4096 nested calls (configurable); exceeding it is a runtime error.
+- If the program terminates with pending GOSUB frames, a warning is printed.
+
+Example:
 ```basil
-GOSUB work
-PRINTLN "done";
-LABEL work
-PRINTLN "working...";
-RETURN
+PRINTLN "Start";
+GOSUB Work;
+PRINTLN "Back";
+GOTO Done;
+
+Work:
+  PRINTLN "In Work";
+  RETURN;
+
+Done:
+PRINTLN "End";
+```
+
+Return-then-continue example:
+```basil
+Outer:
+  GOSUB Inner;
+  PRINTLN "This will be skipped";
+  RETURN;
+
+Inner:
+  PRINTLN "Inner...";
+  RETURN TO After;
+
+After:
+  PRINTLN "After label reached via RETURN TO";
+  RETURN;
 ```
 
 ## GOTO
 *Type:* Flow Control  
-Transfers control unconditionally to a LABEL.
+*Availability:* Core
+Transfers control unconditionally to a LABEL (labels can be written as `Name:` or `LABEL Name`).
 ```basil
-GOTO after
+GOTO After
 PRINTLN "skipped";
-LABEL after
+After:
 PRINTLN "continued";
 ```
 
@@ -778,9 +815,32 @@ FOR EACH p$ IN REQUEST$() PRINTLN p$; NEXT
 
 ## RETURN
 *Type:* Statement  
-Returns from a function, optionally with a value.
+*Availability:* Core
+Two forms:
+- Function return: `RETURN [expr];` — returns from a function with an optional value.
+- GOSUB return: `RETURN;` — returns to the most recent `GOSUB`. Use `RETURN TO <label>;` to resolve the GOSUB and continue at a label (like `RETURN` followed by `GOTO`).
+
+Examples:
 ```basil
-RETURN 42;
+FUNC Add(a, b)
+BEGIN
+  RETURN a + b;
+END
+```
+
+```basil
+GOSUB Work;
+PRINTLN "Back";
+Work:
+  RETURN;
+```
+
+```basil
+GOSUB A;
+A:
+  RETURN TO Done;
+Done:
+PRINTLN "after RETURN TO";
 ```
 
 ## RIGHT$
