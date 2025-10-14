@@ -135,6 +135,10 @@ struct C {
     fn_names: HashSet<String>,
     routines: HashMap<String, RoutineInfo>,
     loop_stack: Vec<LoopCtx>,
+    // WITH support
+    with_counter: u32,
+    with_stack_tl: Vec<String>,
+    with_stack_fn: Vec<String>,
     // Label/GOTO support (top-level)
     tl_labels: HashMap<String, usize>,
     tl_goto_fixups: Vec<(usize, usize, String)>, // (op_pos, u16_pos, label)
@@ -154,6 +158,9 @@ impl C {
             fn_names: HashSet::new(),
             routines: HashMap::new(),
             loop_stack: Vec::new(),
+            with_counter: 0,
+            with_stack_tl: Vec::new(),
+            with_stack_fn: Vec::new(),
             tl_labels: HashMap::new(),
             tl_goto_fixups: Vec::new(),
             tl_gosub_fixups: Vec::new(),
@@ -251,6 +258,18 @@ impl C {
                 self.emit_expr_in(&mut chunk, target, None)?;
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
+                self.chunk = chunk;
+            }
+            Stmt::With { target, body } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, target, None)?;
+                let name = format!("\u{0001}WITH#TMP{}", self.with_counter);
+                self.with_counter += 1;
+                let g = self.gslot(&name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.with_stack_tl.push(name.clone());
+                for s2 in body { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                self.with_stack_tl.pop();
                 self.chunk = chunk;
             }
             // SETENV/EXPORTENV
@@ -688,6 +707,17 @@ impl C {
                 self.emit_expr_in(chunk, target, Some(env))?;
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
+            }
+            Stmt::With { target, body } => {
+                // Evaluate target once into a hidden local and push with-scope
+                self.emit_expr_in(chunk, target, Some(env))?;
+                let name = format!("\u{0001}WITH#TMP{}", self.with_counter);
+                self.with_counter += 1;
+                let slot = env.bind_next_if_absent(name.clone());
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                self.with_stack_fn.push(name.clone());
+                for s2 in body { self.emit_stmt_func(chunk, s2, env)?; }
+                self.with_stack_fn.pop();
             }
             // SETENV/EXPORTENV inside function
             Stmt::SetEnv { name, value, export } => {
@@ -1389,6 +1419,32 @@ impl C {
                 self.emit_expr_in(chunk, filename, env)?;
                 chunk.push_op(Op::NewClass);
             }
+            Expr::ImplicitThis => {
+                // Load the current WITH target (local inside functions, global at top level)
+                match env {
+                    Some(env) => {
+                        if let Some(nm) = self.with_stack_fn.last().cloned() {
+                            if let Some(slot) = env.lookup(&nm) {
+                                chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                            } else {
+                                // Fallback to global if somehow not found locally
+                                let g = self.gslot(&nm);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            }
+                        } else {
+                            return Err(BasilError("Leading '.' member requires a WITH block.".into()));
+                        }
+                    }
+                    None => {
+                        if let Some(nm) = self.with_stack_tl.last().cloned() {
+                            let g = self.gslot(&nm);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        } else {
+                            return Err(BasilError("Leading '.' member requires a WITH block.".into()));
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1722,6 +1778,17 @@ impl C {
                 let end_here = chunk.here();
                 let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
                 chunk.push_op(Op::EnumDispose);
+            }
+            Stmt::With { target, body } => {
+                // Evaluate target once and bind to a hidden global; make it the current implicit receiver
+                self.emit_expr_in(chunk, target, None)?;
+                let name = format!("\u{0001}WITH#TMP{}", self.with_counter);
+                self.with_counter += 1;
+                let g = self.gslot(&name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.with_stack_tl.push(name.clone());
+                for s2 in body { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                self.with_stack_tl.pop();
             }
             Stmt::For { var, start, end, step, body } => {
                 self.emit_for_toplevel_into(chunk, var, start, end, step, body)?;
