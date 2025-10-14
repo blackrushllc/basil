@@ -77,6 +77,21 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
             return Err(BasilError(format!("Undefined label: {}", label)));
         }
     }
+    // Resolve top-level GOSUB fixups
+    for (op_pos, u16_pos, label) in std::mem::take(&mut c.tl_gosub_fixups) {
+        if let Some(&target) = c.tl_labels.get(&label) {
+            if target >= u16_pos + 2 {
+                let off = (target - (u16_pos + 2)) as u16;
+                c.chunk.patch_u16_at(u16_pos, off);
+            } else {
+                c.chunk.code[op_pos] = Op::GosubBack as u8;
+                let off = ((u16_pos + 2) - target) as u16;
+                c.chunk.patch_u16_at(u16_pos, off);
+            }
+        } else {
+            return Err(BasilError(format!("Undefined label: {}", label)));
+        }
+    }
     c.chunk.push_op(Op::Halt);
     Ok(BCProgram { chunk: c.chunk, globals: c.globals })
 }
@@ -90,9 +105,11 @@ struct C {
     // Label/GOTO support (top-level)
     tl_labels: HashMap<String, usize>,
     tl_goto_fixups: Vec<(usize, usize, String)>, // (op_pos, u16_pos, label)
+    tl_gosub_fixups: Vec<(usize, usize, String)>,
     // Label/GOTO support (current function)
     fn_labels: HashMap<String, usize>,
     fn_goto_fixups: Vec<(usize, usize, String)>,
+    fn_gosub_fixups: Vec<(usize, usize, String)>,
 }
 
 impl C {
@@ -105,8 +122,10 @@ impl C {
             loop_stack: Vec::new(),
             tl_labels: HashMap::new(),
             tl_goto_fixups: Vec::new(),
+            tl_gosub_fixups: Vec::new(),
             fn_labels: HashMap::new(),
             fn_goto_fixups: Vec::new(),
+            fn_gosub_fixups: Vec::new(),
         }
     }
 
@@ -247,7 +266,14 @@ impl C {
                 self.tl_goto_fixups.push((op_pos, u16_pos, name.clone()));
                 self.chunk = chunk;
             }
-            Stmt::Gosub(_name) => { /* GOSUB unsupported at MVP; ignoring to proceed */ }
+            Stmt::Gosub(name) => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                chunk.push_op(Op::Gosub);
+                let op_pos = chunk.here() - 1;
+                let u16_pos = chunk.emit_u16_placeholder();
+                self.tl_gosub_fixups.push((op_pos, u16_pos, name.clone()));
+                self.chunk = chunk;
+            }
             Stmt::DimObject { name, type_name, args } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 // push args
@@ -287,8 +313,23 @@ impl C {
                 for s2 in stmts { self.emit_stmt_toplevel(s2)?; }
             }
 
-            // Ignore RETURN at toplevel (harmless), but support IF blocks.
+            // Ignore function RETURN at toplevel (harmless)
             Stmt::Return(_) => {}
+            // RETURN from GOSUB
+            Stmt::ReturnFromGosub(lbl_opt) => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                match lbl_opt {
+                    None => { chunk.push_op(Op::GosubRet); }
+                    Some(label) => {
+                        chunk.push_op(Op::GosubPop);
+                        chunk.push_op(Op::Jump);
+                        let op_pos = chunk.here() - 1;
+                        let u16_pos = chunk.emit_u16_placeholder();
+                        self.tl_goto_fixups.push((op_pos, u16_pos, label.clone()));
+                    }
+                }
+                self.chunk = chunk;
+            }
             Stmt::If { cond, then_branch, else_branch } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 self.emit_if_tl_into(&mut chunk, cond, then_branch, else_branch)?;
@@ -470,6 +511,22 @@ impl C {
             }
         }
 
+        // resolve function-level GOSUBs now that all labels are known
+        for (op_pos, u16_pos, label) in std::mem::take(&mut self.fn_gosub_fixups) {
+            if let Some(&target) = self.fn_labels.get(&label) {
+                if target >= u16_pos + 2 {
+                    let off = (target - (u16_pos + 2)) as u16;
+                    fchunk.patch_u16_at(u16_pos, off);
+                } else {
+                    fchunk.code[op_pos] = Op::GosubBack as u8;
+                    let off = ((u16_pos + 2) - target) as u16;
+                    fchunk.patch_u16_at(u16_pos, off);
+                }
+            } else {
+                panic!("Undefined label in function {}: {}", name, label);
+            }
+        }
+
         // implicit return null
         fchunk.push_op(Op::Const);
         let cid = fchunk.add_const(Value::Null);
@@ -599,7 +656,12 @@ impl C {
                 let u16_pos = chunk.emit_u16_placeholder();
                 self.fn_goto_fixups.push((op_pos, u16_pos, name.clone()));
             }
-            Stmt::Gosub(_name) => { /* ignore */ }
+            Stmt::Gosub(name) => {
+                chunk.push_op(Op::Gosub);
+                let op_pos = chunk.here() - 1;
+                let u16_pos = chunk.emit_u16_placeholder();
+                self.fn_gosub_fixups.push((op_pos, u16_pos, name.clone()));
+            }
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));
@@ -630,6 +692,18 @@ impl C {
                     chunk.push_u16(cid);
                 }
                 chunk.push_op(Op::Ret);
+            }
+            Stmt::ReturnFromGosub(lbl_opt) => {
+                match lbl_opt {
+                    None => { chunk.push_op(Op::GosubRet); }
+                    Some(label) => {
+                        chunk.push_op(Op::GosubPop);
+                        chunk.push_op(Op::Jump);
+                        let op_pos = chunk.here() - 1;
+                        let u16_pos = chunk.emit_u16_placeholder();
+                        self.fn_goto_fixups.push((op_pos, u16_pos, label.clone()));
+                    }
+                }
             }
             Stmt::If { cond, then_branch, else_branch } => {
                 self.emit_if_func(chunk, cond, then_branch, else_branch, env)?;
@@ -1342,7 +1416,24 @@ impl C {
                 let u16_pos = chunk.emit_u16_placeholder();
                 self.tl_goto_fixups.push((op_pos, u16_pos, name.clone()));
             }
-            Stmt::Gosub(_name) => { /* ignore */ }
+            Stmt::Gosub(name) => {
+                chunk.push_op(Op::Gosub);
+                let op_pos = chunk.here() - 1;
+                let u16_pos = chunk.emit_u16_placeholder();
+                self.tl_gosub_fixups.push((op_pos, u16_pos, name.clone()));
+            }
+            Stmt::ReturnFromGosub(lbl_opt) => {
+                match lbl_opt {
+                    None => { chunk.push_op(Op::GosubRet); }
+                    Some(label) => {
+                        chunk.push_op(Op::GosubPop);
+                        chunk.push_op(Op::Jump);
+                        let op_pos = chunk.here() - 1;
+                        let u16_pos = chunk.emit_u16_placeholder();
+                        self.tl_goto_fixups.push((op_pos, u16_pos, label.clone()));
+                    }
+                }
+            }
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, None)?; }
                 let tci = chunk.add_const(Value::Str(type_name.clone()));

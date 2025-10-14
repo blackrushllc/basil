@@ -359,7 +359,7 @@ REM Reserved: FOREACH item IN arr ... ENDFOR
 ```
 
 ### GOSUB
-Jumps to a LABEL and returns when a RETURN statement is encountered within the subroutine.
+Jumps to a LABEL and returns when a RETURN statement is encountered within the subroutine. Use `RETURN TO <label>` to resolve the GOSUB and continue at a label.
 ```basil
 GOSUB work
 PRINTLN "done";
@@ -401,6 +401,27 @@ GOTO again
 Closes a FOR or FOR EACH loop.
 ```basil
 FOR I = 1 TO 2 PRINT I; NEXT
+```
+
+### RETURN
+Resolves the most recent GOSUB frame; use `RETURN TO <label>` to resolve and continue at a label. Part of the Core interpreter.
+```basil
+GOSUB Work
+PRINTLN "Back"
+Work:
+  RETURN
+```
+```basil
+GOSUB Outer
+Outer:
+  GOSUB Inner
+  PRINTLN "skip"
+  RETURN
+Inner:
+  RETURN TO After
+After:
+  PRINTLN "after RETURN TO"
+  RETURN
 ```
 
 ### STEP
