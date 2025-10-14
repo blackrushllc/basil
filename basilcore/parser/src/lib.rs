@@ -203,12 +203,20 @@ impl Parser {
         }
 
         if self.match_k(TokenKind::Return) {
-            // optional expression before terminator
-            let expr = if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) {
-                None
-            } else {
-                Some(self.parse_expr_bp(0)?)
-            };
+            // Distinguish GOSUB-return forms and function-return
+            // RETURN TO <label> ;
+            if self.match_k(TokenKind::To) {
+                let label = self.expect_ident()?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::ReturnFromGosub(Some(label)));
+            }
+            // Bare RETURN; → GOSUB return
+            if self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) {
+                self.terminate_stmt()?;
+                return Ok(Stmt::ReturnFromGosub(None));
+            }
+            // Otherwise: RETURN <expr> → function return
+            let expr = Some(self.parse_expr_bp(0)?);
             self.terminate_stmt()?;
             return Ok(Stmt::Return(expr));
         }
