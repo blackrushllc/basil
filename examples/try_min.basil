@@ -1,0 +1,5 @@
+TRY
+  RAISE "zzz"
+CATCH e$
+  PRINTLN e$
+END TRY

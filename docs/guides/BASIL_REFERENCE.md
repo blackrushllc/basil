@@ -1015,3 +1015,52 @@ Overwrites/creates a file with the given string data.
 ```basil
 WRITEFILE "out.txt", "Alpha\n";
 ```
+
+
+## CATCH
+Type: Flow Control
+Introduces an exception handler for a preceding TRY block. Optionally binds the exception message to a string variable (must end with '$').
+```basil
+TRY
+  RAISE "boom"
+CATCH err$
+  PRINT "Caught: ", err$
+END TRY
+```
+
+## FINALLY
+Type: Flow Control
+Cleanup block that always runs when leaving a TRY, regardless of success or exception.
+```basil
+TRY
+  PRINT "Work"
+FINALLY
+  PRINT "Cleanup"
+END TRY
+```
+
+## RAISE
+Type: Statement
+Throws a user exception with an optional message expression converted to String. A bare `RAISE` (no expression) is only valid inside CATCH and rethrows the current exception.
+```basil
+IF x% = 0 THEN RAISE "Divide by zero"
+TRY
+  RAISE "first"
+CATCH e$
+  RAISE   ' rethrow
+END TRY
+```
+
+## TRY
+Type: Flow Control
+Begins a protected region optionally followed by CATCH and/or FINALLY, terminated by END TRY.
+```basil
+TRY
+  IF x% = 0 THEN RAISE "Divide by zero"
+  PRINT 10 / x%
+CATCH err$
+  PRINT "Oops: ", err$
+FINALLY
+  PRINT "Always runs"
+END TRY
+```

@@ -891,3 +891,24 @@ PRINT "AI says: ";
 DIM full$ = AI.STREAM("Tell a one-liner about BASIC", "{ temperature:0.2 }");
 PRINT "\n---\n"; PRINT full$;
 ```
+
+
+## Exceptions
+
+### TRY / CATCH / FINALLY
+Structured exception handling. TRY begins a protected region, CATCH handles an exception (optionally binding a string variable like err$), and FINALLY always runs on exit from the TRY.
+```basil
+TRY
+  IF x% = 0 THEN RAISE "Divide by zero"
+CATCH err$
+  PRINT "Caught: ", err$
+FINALLY
+  PRINT "Cleanup"
+END TRY
+```
+
+### RAISE
+Throws a user exception with an optional message expression converted to String. Bare `RAISE` is only valid inside CATCH (rethrow).
+```basil
+IF A = 0 THEN RAISE "A must be non-zero"
+```

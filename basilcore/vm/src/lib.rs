@@ -201,6 +201,8 @@ struct FileHandleEntry {
     owner_depth: usize,
 }
 
+struct HandlerEntry { handler_ip: usize }
+
 pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
@@ -231,6 +233,9 @@ pub struct VM {
     gosub_max_depth: usize,
     // Optional debugger
     pub debugger: Option<Arc<debug::Debugger>>,
+    // Exceptions
+    _handlers: Vec<HandlerEntry>,
+    current_exception: Option<String>,
 }
 
 // --- Lightweight Class Instance object ---
@@ -369,6 +374,8 @@ impl VM {
             gosub_stack: Vec::new(),
             gosub_max_depth: 4096,
             debugger: None,
+            _handlers: Vec::new(),
+            current_exception: None,
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -655,6 +662,45 @@ impl VM {
                 Op::GosubPop => {
                     if self.gosub_stack.pop().is_none() { return Err(BasilError("RETURN without GOSUB".into())); }
                     // continue execution; typically followed by a Jump to a label
+                }
+                Op::TryPush => {
+                    // Read handler and finally offsets (we ignore finally; compiler handles FINALLY paths)
+                    let handler_off = self.read_u16()? as usize;
+                    let _finally_off = self.read_u16()? as usize;
+                    let target_ip = self.cur().ip + handler_off;
+                    self._handlers.push(HandlerEntry { handler_ip: target_ip });
+                }
+                Op::TryPop => {
+                    let _ = self._handlers.pop();
+                    // Clear any handled exception when leaving TRY region normally
+                    self.current_exception = None;
+                }
+                Op::Raise => {
+                    // Pop message, convert to string, then transfer to nearest handler or abort
+                    let msg_v = self.pop()?;
+                    let msg = format!("{}", msg_v);
+                    if let Some(h) = self._handlers.last() {
+                        // record message and jump to handler; also make it available on stack
+                        self.current_exception = Some(msg.clone());
+                        self.stack.push(Value::Str(msg));
+                        let target = h.handler_ip;
+                        self.cur().ip = target;
+                    } else {
+                        return Err(BasilError(msg));
+                    }
+                }
+                Op::Reraise => {
+                    // rethrow current exception to next outer handler
+                    let msg = match self.current_exception.clone() { Some(m) => m, None => return Err(BasilError("Reraise without active exception".into())) };
+                    // Pop current handler if any
+                    let _ = self._handlers.pop();
+                    if let Some(h) = self._handlers.last() {
+                        self.stack.push(Value::Str(msg));
+                        let target = h.handler_ip;
+                        self.cur().ip = target;
+                    } else {
+                        return Err(BasilError(msg));
+                    }
                 }
 
                 Op::Call => {
@@ -2374,6 +2420,7 @@ impl VM {
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
             100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
             110=>Op::Gosub, 111=>Op::GosubBack, 112=>Op::GosubRet, 113=>Op::GosubPop,
+            120=>Op::TryPush, 121=>Op::TryPop, 122=>Op::Raise, 123=>Op::Reraise,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
