@@ -120,3 +120,26 @@ Run:
 If everything is working, Basil should print successful responses from each AI function.
 
 ---
+
+
+
+## Why you might see "status code 429"
+
+If you run an AI example and see an error like:
+
+```
+http 429: You exceeded your current quota, please check your plan and billing details.
+```
+(or previously it might have appeared as a generic "network error ... status code 429"), this means the request reached OpenAI but was rejected due to rate limits or account quota.
+
+What 429 usually means:
+- Rate limited: Too many requests or tokens per minute for your organization/model.
+- Quota/billing: No active billing set up or free credits are exhausted.
+
+What you can do:
+- Slow down: Reduce request rate, avoid rapid loops, or switch to a smaller model (e.g., gpt-4o-mini).
+- Retry: Wait a few seconds and try again. Implement exponential backoff in your scripts when making repeated calls.
+- Check your account: Visit the OpenAI usage and billing pages to verify limits and add billing if needed.
+- Use test mode while iterating: `cargo run -q -p basilc --features obj-ai -- test examples\obj-ai\01_hello_ai.basil` (or set `TEST_MODE=1`).
+
+Once your account/usage is in a good state, re-run the example and it should succeed.

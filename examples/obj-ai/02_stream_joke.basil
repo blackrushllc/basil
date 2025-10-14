@@ -1,3 +1,4 @@
-PRINT "AI says: ";
+PRINTLN "AI says: ";
 LET full$ = AI.STREAM("Tell a one-liner about BASIC", "{ temperature:0.2 }");
-PRINT "\n---\n"; PRINT full$;
+PRINTLN "\n---\n"; PRINTLN full$;
+PRINTLN AI.LAST_ERROR$;

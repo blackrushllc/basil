@@ -24,7 +24,7 @@ obj-audio = ["hound", "cpal"]
 obj-midi  = ["midir"]
 obj-daw   = ["obj-audio", "obj-midi"]
 # New AI feature object (Phase 1 minimal)
-obj-ai = ["serde_json", "sha1", "sha2", "dirs", "once_cell"]
+obj-ai = ["serde_json", "sha1", "sha2", "dirs", "once_cell", "ureq"]
 # New terminal feature object (Crossterm)
 obj-term = ["crossterm"]
 # AWS feature objects (Phase 1)
