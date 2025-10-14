@@ -1,0 +1,19 @@
+#USE AWS_S3
+DIM aws@ AS AWS()
+DIM s3@ = aws@.MakeS3()
+
+DIM bucket$ = "your-bucket"
+DIM key$ = "basil-demo/hello.txt"
+
+TRY
+  PRINT "Uploading..."
+  PRINT "ETag: ", s3@.Put$(bucket$, key$, "Hello from Basil!")
+  PRINT "Listing..."
+  DIM keys$ = s3@.List$(bucket$, "basil-demo/", 100)
+  FOR EACH k$ IN keys$ : PRINT " - ", k$ : NEXT
+  PRINT "Signed URL: ", s3@.SignedUrl$(bucket$, key$, 300)
+  PRINT "Download: ", s3@.GetToFile(bucket$, key$, "hello.txt")
+  PRINT "Deleting: ", s3@.Delete(bucket$, key$)
+CATCH err$
+  PRINT "S3 error: ", err$
+END TRY

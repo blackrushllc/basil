@@ -105,6 +105,14 @@ pub fn register_objects(_reg: &mut Registry) {
     {
         crate::term::register(_reg);
     }
+    #[cfg(any(feature = "obj-aws-s3", feature = "obj-aws-ses", feature = "obj-aws-sqs"))]
+    {
+        // Bridge registrations from basil-objects-aws crate
+        let mut add = |type_name: &str, info: basil_objects_aws::TypeInfo| {
+            _reg.register(type_name, TypeInfo { factory: info.factory, descriptor: info.descriptor, constants: info.constants });
+        };
+        basil_objects_aws::register(&mut add);
+    }
 }
 
 #[cfg(feature = "obj-base64")]

@@ -36,3 +36,8 @@ obj-daw   = [
 ]
 obj-ai = ["basil-objects/obj-ai"]
 obj-term = ["basil-objects/obj-term"]
+# AWS features forwarded to basil-objects
+obj-aws-s3  = ["basil-objects/obj-aws-s3"]
+obj-aws-ses = ["basil-objects/obj-aws-ses"]
+obj-aws-sqs = ["basil-objects/obj-aws-sqs"]
+obj-aws     = ["obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]

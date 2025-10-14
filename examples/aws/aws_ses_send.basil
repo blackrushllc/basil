@@ -1,0 +1,10 @@
+#USE AWS_SES
+DIM aws@ AS AWS()
+DIM ses@ = aws@.MakeSES()
+
+TRY
+  DIM id$ = ses@.SendEmail("dev@example.com", "Hello from Basil", "<b>Hi!</b>", "noreply@example.com", "", 1)
+  PRINT "SES MessageId: ", id$
+CATCH e$
+  PRINT "SES failed: ", e$
+END TRY
