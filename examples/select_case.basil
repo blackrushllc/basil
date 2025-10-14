@@ -1,0 +1,31 @@
+REM SELECT CASE demo for Basil
+
+LET score% = 6;
+SELECT CASE score%
+  CASE 0
+    PRINTLN "zero";
+  CASE 1, 2, 3
+    PRINTLN "small";
+  CASE 4 TO 7
+    PRINTLN "medium";
+  CASE IS >= 8
+    PRINTLN "large";
+  CASE ELSE
+    PRINTLN "unknown";
+END SELECT
+
+LET color$ = "blue";
+SELECT CASE color$
+  CASE "red", "blue": PRINTLN "primary-ish";
+  CASE "green"      : PRINTLN "green";
+  CASE ELSE         : PRINTLN "other";
+END SELECT
+
+REM Mixed example with expressions and single-line bodies
+LET x = 10.0;
+SELECT CASE x
+  CASE IS < 0      : PRINTLN "negative";
+  CASE 0 TO 1.5    : PRINTLN "tiny";
+  CASE 1.5 TO 9.9  : PRINTLN "smallish";
+  CASE IS >= 10    : PRINTLN "double digits";
+END SELECT

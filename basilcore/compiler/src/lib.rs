@@ -399,6 +399,11 @@ impl C {
                 self.emit_if_tl_into(&mut chunk, cond, then_branch, else_branch)?;
                 self.chunk = chunk;
             }
+            Stmt::SelectCase { selector, arms, else_body } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_select_case_tl_into(&mut chunk, selector, arms, else_body)?;
+                self.chunk = chunk;
+            }
 
             // WHILE at toplevel
             Stmt::While { cond, body } => {
@@ -796,6 +801,9 @@ impl C {
             }
             Stmt::If { cond, then_branch, else_branch } => {
                 self.emit_if_func(chunk, cond, then_branch, else_branch, env)?;
+            }
+            Stmt::SelectCase { selector, arms, else_body } => {
+                self.emit_select_case_func(chunk, selector, arms, else_body, env)?;
             }
             // WHILE in function
             Stmt::While { cond, body } => {
@@ -1428,6 +1436,106 @@ impl C {
         Ok(())
     }
 
+    // Build a boolean Expr that matches any of the case patterns against a selector variable name
+    fn build_case_cond_expr(&self, tmp_name: &str, patterns: &Vec<basil_ast::CasePattern>) -> Expr {
+        // Start with false; OR in each pattern
+        let mut cond_opt: Option<Expr> = None;
+        for p in patterns {
+            let one = match p {
+                basil_ast::CasePattern::Value(v) => Expr::Binary { op: BinOp::Eq, lhs: Box::new(Expr::Var(tmp_name.to_string())), rhs: Box::new(v.clone()) },
+                basil_ast::CasePattern::Range { lo, hi } => {
+                    let ge = Expr::Binary { op: BinOp::Ge, lhs: Box::new(Expr::Var(tmp_name.to_string())), rhs: Box::new(lo.clone()) };
+                    let le = Expr::Binary { op: BinOp::Le, lhs: Box::new(Expr::Var(tmp_name.to_string())), rhs: Box::new(hi.clone()) };
+                    Expr::Binary { op: BinOp::And, lhs: Box::new(ge), rhs: Box::new(le) }
+                }
+                basil_ast::CasePattern::Compare { op, rhs } => Expr::Binary { op: *op, lhs: Box::new(Expr::Var(tmp_name.to_string())), rhs: Box::new(rhs.clone()) },
+            };
+            cond_opt = Some(match cond_opt {
+                None => one,
+                Some(prev) => Expr::Binary { op: BinOp::Or, lhs: Box::new(prev), rhs: Box::new(one) },
+            });
+        }
+        cond_opt.unwrap_or(Expr::Bool(false))
+    }
+
+    fn emit_select_case_tl_into(&mut self, chunk: &mut Chunk, selector: &Expr, arms: &Vec<basil_ast::CaseArm>, else_body: &Option<Vec<Stmt>>) -> Result<()> {
+        // Evaluate selector once into a hidden global
+        let tmp_name = "\u{0001}SEL#TMP".to_string();
+        self.emit_expr_in(chunk, selector, None)?;
+        let g = self.gslot(&tmp_name);
+        chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+        let mut end_jumps: Vec<usize> = Vec::new();
+        let mut next_labels: Vec<usize> = Vec::new();
+        for arm in arms {
+            // next label for this arm (from previous arm's jf)
+            let here = chunk.here();
+            for site in std::mem::take(&mut next_labels) { let off = (here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+            // condition
+            let cond = self.build_case_cond_expr(&tmp_name, &arm.patterns);
+            self.emit_expr_in(chunk, &cond, None)?;
+            chunk.push_op(Op::JumpIfFalse);
+            let jf = chunk.emit_u16_placeholder();
+            // body
+            for s in &arm.body { self.emit_stmt_tl_in_chunk(chunk, s)?; }
+            // jump to end
+            chunk.push_op(Op::Jump);
+            let jend = chunk.emit_u16_placeholder();
+            end_jumps.push(jend);
+            // record where to patch for next arm
+            next_labels.push(jf);
+        }
+        // After last arm, patch next_labels to current position
+        let after_arms = chunk.here();
+        for site in next_labels { let off = (after_arms - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+        // else body
+        if let Some(body) = else_body {
+            for s in body { self.emit_stmt_tl_in_chunk(chunk, s)?; }
+        }
+        // end label
+        let end_here = chunk.here();
+        for j in end_jumps { let off = (end_here - (j + 2)) as u16; chunk.patch_u16_at(j, off); }
+        Ok(())
+    }
+
+    fn emit_select_case_func(&mut self, chunk: &mut Chunk, selector: &Expr, arms: &Vec<basil_ast::CaseArm>, else_body: &Option<Vec<Stmt>>, env: &mut LocalEnv) -> Result<()> {
+        // Evaluate selector once into a hidden local
+        let tmp_name = "\u{0001}SEL#TMP".to_string();
+        let slot = env.bind_next_if_absent(tmp_name.clone());
+        self.emit_expr_in(chunk, selector, Some(env))?;
+        chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+        let mut end_jumps: Vec<usize> = Vec::new();
+        let mut next_labels: Vec<usize> = Vec::new();
+        for arm in arms {
+            // next label for this arm (from previous arm's jf)
+            let here = chunk.here();
+            for site in std::mem::take(&mut next_labels) { let off = (here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+            // condition
+            let cond = self.build_case_cond_expr(&tmp_name, &arm.patterns);
+            self.emit_expr_in(chunk, &cond, Some(env))?;
+            chunk.push_op(Op::JumpIfFalse);
+            let jf = chunk.emit_u16_placeholder();
+            // body
+            for s in &arm.body { self.emit_stmt_func(chunk, s, env)?; }
+            // jump to end
+            chunk.push_op(Op::Jump);
+            let jend = chunk.emit_u16_placeholder();
+            end_jumps.push(jend);
+            // record where to patch for next arm
+            next_labels.push(jf);
+        }
+        // After last arm, patch next_labels to current position
+        let after_arms = chunk.here();
+        for site in next_labels { let off = (after_arms - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+        // else body
+        if let Some(body) = else_body {
+            for s in body { self.emit_stmt_func(chunk, s, env)?; }
+        }
+        // end label
+        let end_here = chunk.here();
+        for j in end_jumps { let off = (end_here - (j + 2)) as u16; chunk.patch_u16_at(j, off); }
+        Ok(())
+    }
+
     fn emit_stmt_tl_in_chunk(&mut self, chunk: &mut Chunk, s: &Stmt) -> Result<()> {
         match s {
             Stmt::Let { name, indices, init } => {
@@ -1551,6 +1659,9 @@ impl C {
             Stmt::Return(_) => { /* ignore at top level inside FOR body */ }
             Stmt::If { cond, then_branch, else_branch } => {
                 self.emit_if_tl_into(chunk, cond, then_branch, else_branch)?;
+            }
+            Stmt::SelectCase { selector, arms, else_body } => {
+                self.emit_select_case_tl_into(chunk, selector, arms, else_body)?;
             }
             // WHILE inside toplevel chunk
             Stmt::While { cond, body } => {
