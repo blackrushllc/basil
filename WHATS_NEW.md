@@ -6,6 +6,10 @@
 + Distribution of binary (apt-get, etc)
 + Distribution of compiler (CARGO.IO)
 + MySQL Mod
++ PostgreSQL Mod
++ SMTP/SFTP Mod
++ PGP Mod
++ ORM Mod (this will be insane!)
 
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
