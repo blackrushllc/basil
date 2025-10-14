@@ -1,9 +1,7 @@
 # Basil 🌿
 
-🌱 A modern BASIC‑flavored language focused on web/back‑end with the 
-ability to compile to bytecode or binaries, across all platforms, and includes lots of library modules
-such as Zip, Base64, JSON, SQL, MIDI, AI, AWS, and more.
-
+🌱 A Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform Compiler** with lots of Rad Mods 
+such as AI, AWS, Zip, Crypt (Base64,PGP) CrossTerm, Inet (SMTP/FTP/Json/Curl/REST), SQL(MySQL,Sqlite,ORM, etc), MIDI (audio/DAW), and even a Totally Tubular "OK Prompt" CLI mode.
 
 ### Complete Online Reference: https://yobasic.com/basil/reference.html
 
