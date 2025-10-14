@@ -1,24 +1,27 @@
 # 🌱 WHAT'S NEW 🌱
 
-### New stuff in progress:
+### 🌱 New stuff in progress:
 + VS Code integration
 + Stand-alone IDE
 + Distribution of binary (apt-get, etc)
 + Distribution of compiler (CARGO.IO)
 + MySQL Mod
-+ 
-
-
-### New stuff not yet added to this document:
-+ Terminal UI library feature set (CrossTerm)
-+ New CLI "OK" prompt mode and immediate mode with class load
-+ New IDE integration stuff
 
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
+
+### 🌿 New stuff just added:
+ 
++ GOTO, GOSUB .. RETURN, SUB .. END [SUB] support, and other BASIC features
++ END SUB, END FUNC, END FUNTION, END WHILE, END BLOCK (etc) for readability and one's natural desire to want to use this syntax, but these are all aliases for "END" which is all you really need in any circumstance.
++ Terminal UI library feature set (CrossTerm)
++ New CLI "OK" prompt mode and immediate mode with class load
++ New IDE integration stuff
++ "GWBASIC" / "BASICA" style OK prompt interface (80's retro mode)
+
 ### 🌿 STATUS UPDATE _COMPILER_ !!!
 
-* Adds a new compiler that compiles Basil code to Rust code, which is then compiled to a native binary (Windows EXE, Linux ELF, MacOS Mach-O, etc)
+* Adds a new compiler (bcc) that compiles Basil code to a native binary (Windows EXE, Linux ELF, MacOS Mach-O, etc)
 * See compiler folder for a bunch of docs (documentation is ongoing)
 * See c.bat for a Windows batch file to compile a BASIC file from the examples folder, run it if the build succeeds, or output a report to paste into AI to fix whatever the issue is
 * ^ example: ./c.bat bigtest - Compiles examples/bigtest.basil to bigtest.exe or generates output for you to give AI to fix
