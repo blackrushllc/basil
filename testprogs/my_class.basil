@@ -11,7 +11,7 @@ BEGIN
     IF UserNames$(i%) == "" THEN
       BEGIN
         LET UserNames$(i%) = name$;
-        RETURN TRUE
+        RETURN TRUE; // Functions MUST return a value even if it's not used (See SUB/END SUB)
       END
   NEXT
 END
