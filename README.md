@@ -1,7 +1,7 @@
 # Basil 🌿
 
 🌱 A Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform Compiler** with lots of Rad Mods 
-such as AI, AWS, Zip, Crypt (Base64,PGP) CrossTerm, Inet (SMTP/FTP/Json/Curl/REST), SQL(MySQL,Sqlite,ORM, etc), MIDI (audio/DAW), and even a Totally Tubular "OK Prompt" CLI mode.
+such as AI, AWS, Zip, Crypt (Base64,PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), SQL(MySQL/RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode (Jolt Cola not included)
 
 ### Complete Online Reference: https://yobasic.com/basil/reference.html
 
