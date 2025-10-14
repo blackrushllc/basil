@@ -26,6 +26,8 @@ license = "MIT"
 # (no `name` here)
 
 [workspace.dependencies]
+windows = "=0.53.0"
+windows-sys = "=0.52.0"  # only if you also use windows-sys and need a consistent version
 basil-ast       = { path = "basilcore/ast" }
 basil-lexer     = { path = "basilcore/lexer" }
 basil-parser    = { path = "basilcore/parser" }
@@ -38,4 +40,6 @@ basil-common    = { path = "basilcore/common" }
 basil-bytecode  = { path = "basilcore/bytecode" }
 
 [profile.dev]
-debug = 0
+debug = 1
+incremental = false
+
