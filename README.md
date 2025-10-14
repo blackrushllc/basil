@@ -5,7 +5,7 @@ ability to compile to bytecode or binaries, across all platforms, and includes l
 such as Zip, Base64, JSON, SQL, MIDI, AI, AWS, and more.
 
 
-### Online Reference: https://yobasic.com/basil/reference.html
+### Complete Online Reference: https://yobasic.com/basil/reference.html
 
 ### Look at the /docs/ folder for guides, development notes, and more.
 
@@ -24,11 +24,15 @@ using \<?basil .. ?> tags like Php.
 
 🌱 Basil puts the power of AI in the hands of the student, hobbyist, and professional programmer.
 
+🌱 Basil includes Built-in support for AI, Audio, MIDI, AWS, CSV, CURL, JSON, SQL, Zip, Base64 and more
+
 🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library Objects ("Mods") and write Basil code.
+
+🌱 Read the previous line again
 
 🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Class files for manual testing, enter a program (with line number!) and run it, save it, load it, list it, and more. Cowabunga!
 
-🌱 Basil has LOTS of documentation, examples, and a lot of fun. 
+🌱 Basil has LOTS of documentation, examples, and a lot of old school and new school fun. 
 
 🌱 Basil is inspired by Bob Zale's PowerBASIC and the warmth and simplicity of BASIC, 
 but reimagined for today's developer needs with modern features, a robust standard library, 
