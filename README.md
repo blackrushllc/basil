@@ -2,21 +2,32 @@
 
 🌱 A modern BASIC‑flavored language focused on web/back‑end with the 
 ability to compile to bytecode or binaries, across all platforms, and includes lots of library modules
-such as Zip, Base64, JSON, SQL, MIDI, AI, and more.
+such as Zip, Base64, JSON, SQL, MIDI, AI, AWS, and more.
+
+
+### Online Reference: https://yobasic.com/basil/reference.html
+
+### Look at the /docs/ folder for guides, development notes, and more.
+
 
 🌱 Basil is the first high level interpreted and compiled language designed with AI in mind, from code generation, module building, and even adding features or fixing bugs in itself!
 
-🌱 Basil programs can be compiled
-to native binaries for Windows, Linux, and MacOS. Basil can also run as a CGI script templating engine
+🌱 Basil programs can be compiled to native binaries for Windows, Linux, and MacOS. Basil can also run as a CGI script templating engine
 using \<?basil .. ?> tags like Php.  
 
 🌱 Basil is easier to use, and much faster than Python or Php.
+
+🌱 Basil is a fantastic "First Programming Language", but powerful enough to be used for anything.
 
 🌱 Basil includes lots of sample programs including a complete Website Framework and MIDI DAW application.
 
 🌱 Basil puts the power of AI in the hands of the student, hobbyist, and professional programmer.
 
-🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library mods and write Basil code.
+🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library Objects ("Mods") and write Basil code.
+
+🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Class files for manual testing, enter a program (with line number!) and run it, save it, load it, list it, and more. Cowabunga!
+
+🌱 Basil has LOTS of documentation, examples, and a lot of fun. 
 
 🌱 Basil is inspired by Bob Zale's PowerBASIC and the warmth and simplicity of BASIC, 
 but reimagined for today's developer needs with modern features, a robust standard library, 
@@ -26,9 +37,12 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Basil is open source under the MIT or Apache-2.0 license.
 
-🌱 Basil is a project by Blackrush LLC (https://blackrush.us).
+🌱 Basil is a project by Blackrush LLC, Tarpon Springs, Florida, and written by Erik Olson.
 
 🌱 Basil is pronounced like "basil" the herb, and is a pun volcano.
+
+
+
 
 ### Quick Try:
 
@@ -53,7 +67,7 @@ install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
 cargo run -q -p basilc --features "obj-curl obj-zip obj-base64" -- run examples/zip_demo.basil
 ```
 
-🌿 Running a basil program with a full build (all libraries)
+🌿 Running a basil program with a full build (all libraries) (Recommended)
 
 ```terminal
 cargo run -q -p basilc --features obj-all -- run examples/objects.basil
