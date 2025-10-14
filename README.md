@@ -9,13 +9,14 @@ such as Zip, Base64, JSON, SQL, MIDI, AI, AWS, and more.
 
 ### Look at the /docs/ folder for guides, development notes, and more.
 
-
 🌱 Basil is the first high level interpreted and compiled language designed with AI in mind, from code generation, module building, and even adding features or fixing bugs in itself!
 
 🌱 Basil programs can be compiled to native binaries for Windows, Linux, and MacOS. Basil can also run as a CGI script templating engine
 using \<?basil .. ?> tags like Php.  
 
 🌱 Basil is easier to use, and much faster than Python or Php.
+
+🌱 Basil has all of the simplicity of old BASIC, but with all of the features of modern languages like Python or Go, plus the power of AI.
 
 🌱 Basil is a fantastic "First Programming Language", but powerful enough to be used for anything.
 
