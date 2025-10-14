@@ -66,6 +66,8 @@ pub enum TokenKind {
     Describe,
     New,
     Class,
+    // New for SELECT CASE
+    Select, Case, Is,
     // Env and process control
     Setenv, Exportenv, Shell, Exit,
     // Unstructured control flow
@@ -153,6 +155,7 @@ impl<'a> Lexer<'a> {
             ')' => { let tok = self.make(TokenKind::RParen);    self.advance(); Ok(tok) }
             ',' => { let tok = self.make(TokenKind::Comma);     self.advance(); Ok(tok) }
             ';' => { let tok = self.make(TokenKind::Semicolon); self.advance(); Ok(tok) }
+            ':' => { let tok = self.make(TokenKind::Semicolon); self.advance(); Ok(tok) }
             '+' => { let tok = self.make(TokenKind::Plus);      self.advance(); Ok(tok) }
             '-' => { let tok = self.make(TokenKind::Minus);     self.advance(); Ok(tok) }
             '*' => { let tok = self.make(TokenKind::Star);      self.advance(); Ok(tok) }
@@ -435,6 +438,9 @@ impl<'a> Lexer<'a> {
             "ENDSUB" => TokenKind::End,
             "ENDWHILE" => TokenKind::End,
             "ENDBLOCK" => TokenKind::End,
+            "SELECT" => TokenKind::Select,
+            "CASE"   => TokenKind::Case,
+            "IS"     => TokenKind::Is,
             "BREAK"  => TokenKind::Break,
             "CONTINUE" => TokenKind::Continue,
             "LET"    => TokenKind::Let,
