@@ -11,6 +11,7 @@ members = [
     "basilcore/vm",
     "basil-objects",
     "basil-objects-aws",
+    "basil-objects-net",
     "crates/basil-frontend",
     "crates/basil-ir",
     "crates/backend-rs",
@@ -32,5 +33,9 @@ basil-compiler  = { path = "basilcore/compiler" }
 basil-vm        = { path = "basilcore/vm" }
 basil-objects   = { path = "basil-objects" }
 basil-objects-aws = { path = "basil-objects-aws" }
+basil-objects-net = { path = "basil-objects-net" }
 basil-common    = { path = "basilcore/common" }
 basil-bytecode  = { path = "basilcore/bytecode" }
+
+[profile.dev]
+debug = 0

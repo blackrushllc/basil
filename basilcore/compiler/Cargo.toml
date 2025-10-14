@@ -30,3 +30,7 @@ obj-daw   = ["obj-audio", "obj-midi"]
 obj-ai = []
 # Terminal feature gate (no deps here)
 obj-term = []
+# NET feature gates (no deps here)
+obj-net-sftp = []
+obj-net-smtp = []
+obj-net      = ["obj-net-sftp", "obj-net-smtp"]

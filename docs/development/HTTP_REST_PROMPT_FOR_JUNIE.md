@@ -16,6 +16,7 @@ Use the existing **`basil-objects-net/`** crate and add an HTTP module with feat
 
 * `obj-net-http` → enables HTTP object
 * umbrella `obj-net` should include `obj-net-http` alongside any existing `obj-net-sftp`, `obj-net-smtp`.
++ `obj-all = **everything**` umbrella
 
 Wire via workspace deps with forward slashes; register the object with the global registry only when the feature is enabled.
 
@@ -107,7 +108,7 @@ All body-returning methods yield the **response body as a string** (binary-safe 
 
 ## Docs (must include)
 
-Create **`docs/integrations/http/README.md`** explaining for end users:
+Create **`docs/guides/HTTP.md`** explaining for end users:
 
 * What `HTTP` provides; method table with short one-liners.
 * Quickstart with `GET`/`POST JSON` and base URL/headers.
@@ -128,11 +129,11 @@ Place under `/examples/`:
 ```
 REM Basic GET + JSON POST
 DIM http@ AS HTTP()
-PRINT "GET:"
-PRINT http@.Get$("https://httpbin.org/get")
+PRINTLN "GET:"
+PRINTLN http@.Get$("https://httpbin.org/get")
 
-PRINT "\nPOST JSON:"
-PRINT http@.PostJson$("https://httpbin.org/post", "{""hello"":""basil""}")
+PRINTLN "\nPOST JSON:"
+PRINTLN http@.PostJson$("https://httpbin.org/post", "{""hello"":""basil""}")
 ```
 
 2. **`http_headers_auth.basil`**
@@ -147,11 +148,11 @@ http@.TimeoutMs% = 10000
 http@.RaiseForStatus% = 1
 
 TRY
-  PRINT http@.Get$("https://httpbin.org/anything/path")
-  PRINT "Status:", http@.LastStatus%, " URL:", http@.LastUrl$
-  PRINT "Resp headers:", http@.LastHeaders$
+  PRINTLN http@.Get$("https://httpbin.org/anything/path")
+  PRINTLN "Status:", http@.LastStatus%, " URL:", http@.LastUrl$
+  PRINTLN "Resp headers:", http@.LastHeaders$
 CATCH e$
-  PRINT "HTTP error: ", e$
+  PRINTLN "HTTP error: ", e$
 END TRY
 ```
 
@@ -161,11 +162,11 @@ END TRY
 REM Download to file and upload a file (multipart)
 DIM http@ AS HTTP()
 
-PRINT "Downloading…"
-PRINT http@.DownloadToFile("https://httpbin.org/image/png", "out/test.png")
+PRINTLN "Downloading…"
+PRINTLN http@.DownloadToFile("https://httpbin.org/image/png", "out/test.png")
 
-PRINT "Uploading…"
-PRINT http@.UploadFile$("https://httpbin.org/post", "out/test.png", "file", "image/png")
+PRINTLN "Uploading…"
+PRINTLN http@.UploadFile$("https://httpbin.org/post", "out/test.png", "file", "image/png")
 ```
 
 4. **`http_error_handling.basil`**
@@ -176,15 +177,15 @@ DIM http@ AS HTTP()
 http@.RaiseForStatus% = 1
 
 TRY
-  PRINT http@.Get$("https://httpbin.org/status/404")
+  PRINTLN http@.Get$("https://httpbin.org/status/404")
 CATCH e$
-  PRINT "Caught expected 404: ", e$
+  PRINTLN "Caught expected 404: ", e$
 END TRY
 
 TRY
-  PRINT http@.Get$("https://httpbin.org/delay/3", 1000)  REM 1s timeout override
+  PRINTLN http@.Get$("https://httpbin.org/delay/3", 1000)  REM 1s timeout override
 CATCH e$
-  PRINT "Caught timeout: ", e$
+  PRINTLN "Caught timeout: ", e$
 END TRY
 ```
 
@@ -207,6 +208,6 @@ END TRY
 * [ ] Workspace builds with `--features obj-net-http` and with features off.
 * [ ] `DESCRIBE http@` lists properties & methods.
 * [ ] The four example programs exist and run (with internet access) and demonstrate headers, auth, query params, file I/O, timeouts, and error handling.
-* [ ] `docs/integrations/http/README.md` exists and matches the implemented surface.
+* [ ] `docs/guides/HTTP.md` exists and matches the implemented surface.
 * [ ] Errors map to Basil exceptions with helpful messages; `LastStatus%`, `LastUrl$`, `LastHeaders$`, `LastError$` behave as described.
 

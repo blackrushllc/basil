@@ -1,0 +1,8 @@
+REM SMTP demo
+DIM smtp@ AS MAIL_SMTP("smtp.mailprovider.com", "me@example.com", "apppass", 587, "starttls")
+TRY
+  PRINTLN "Sending..."
+  PRINTLN smtp@.SendEmail("you@example.com", "Hello from Basil", "<b>Hi!</b>", "me@example.com", 1)
+CATCH e$
+  PRINTLN "SMTP error: ", e$
+END TRY

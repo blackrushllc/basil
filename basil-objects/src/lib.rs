@@ -113,6 +113,14 @@ pub fn register_objects(_reg: &mut Registry) {
         };
         basil_objects_aws::register(&mut add);
     }
+    #[cfg(any(feature = "obj-net-sftp", feature = "obj-net-smtp"))]
+    {
+        // Bridge registrations from basil-objects-net crate
+        let mut add = |type_name: &str, info: basil_objects_net::TypeInfo| {
+            _reg.register(type_name, TypeInfo { factory: info.factory, descriptor: info.descriptor, constants: info.constants });
+        };
+        basil_objects_net::register(&mut add);
+    }
 }
 
 #[cfg(feature = "obj-base64")]
