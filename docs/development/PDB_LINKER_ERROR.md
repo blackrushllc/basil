@@ -131,3 +131,115 @@ cargo build -p basilc --features obj-all --verbose
 ### Summary
 - Fix warnings by removing unnecessary `mut` and either using or annotating the unused function in `smtp.rs`.
 - The link failure is a known MSVC PDB issue. Start with `cargo clean`, lower `debuginfo`, and disable incremental; update toolchain and unify `windows` crate versions if needed. These steps typically resolve `LNK1318 LIMIT (12)` on large Rust projects on Windows.
+
+> Jeepers I tried everything, rebooting, turning off AV, deleting the files, cargo clear, cargo update, setting the
+> values on Cargo.toml. Even set RUSTFLAGS=-C link-arg=/DEBUG:NONE had no effect. I copied the entire proect folder to my
+> C: drive and we get the same results. I updated my Visual Studio build tools too. Same results. I switched branches to
+> my stable branch from before we added a new module, which includes SMTP and SFTP functionality, and it's fine. The
+> difference is we added a new feature called for SMTP and SFTP in a folder called basil-object-net. Hmmm ... What is it
+> about having this additional code that could be causing this error?
+
+Short answer: your new SMTP/SFTP module pulled in a *lot* more deps (e.g., `lettre`, `native-tls/schannel`, `libssh2-sys`, `libz-sys`, `windows*`, etc.). That explodes debug symbol output in **dev** builds and tickles an MSVC PDB bug—hence LNK1318. Release works because there’s far less (or different) debug info.
+
+Two big, actionable points for you:
+
+## 1) Your `/DEBUG:NONE` test likely didn’t run
+
+You’re in **PowerShell**, but you used CMD syntax:
+
+```
+set RUSTFLAGS=...
+```
+
+In PowerShell you must use:
+
+```powershell
+$env:RUSTFLAGS = '-C link-arg=/DEBUG:NONE'
+cargo clean -p basilc
+cargo build -p basilc
+```
+
+Or, to *completely* turn off debuginfo (stronger):
+
+```powershell
+$env:RUSTFLAGS = '-C debuginfo=0 -C link-arg=/DEBUG:NONE'
+cargo clean -p basilc
+cargo build -p basilc
+```
+
+If that succeeds, you’ve confirmed it’s purely PDB generation.
+
+## 2) Reduce/avoid PDB pressure in dev and tame the graph
+
+Add this to the repo to make dev builds sane on Windows (and still keep symbols if you want them):
+
+```toml
+# .cargo/config.toml (create if missing)
+[profile.dev]
+debug = 1            # smaller PDBs (0 = none, 1 = light, 2 = default)
+split-debuginfo = "off"
+incremental = false  # fewer weird PDB interactions
+```
+
+Then:
+
+```powershell
+cargo clean -p basilc
+cargo build -p basilc
+```
+
+### Also worth doing (one-time cleanups)
+
+* **Unify the `windows`/`windows-sys` versions.** Your link line shows both 0.52.x and 0.53.x getting pulled, which bloats and confuses symbol generation.
+
+  ```powershell
+  cargo tree -i windows
+  cargo tree -i windows-sys
+  # choose a single version, e.g. 0.53.x:
+  cargo update -p windows --precise 0.53.0
+  cargo update -p windows-sys --precise 0.52.0   # or bump both to compatible releases
+  ```
+
+  If something resists, temporarily pin with:
+
+  ```toml
+  # Cargo.toml (workspace root)
+  [patch.crates-io]
+  windows = "=0.53.0"
+  windows-sys = "=0.52.0"
+  ```
+
+  (Goal: stop multiple major/minor `windows*` crates from coexisting.)
+
+* **Prefer rustls over schannel/native-tls** for SMTP if you can (fewer Windows-specific libs involved). For `lettre`, pick the `rustls` TLS feature rather than `native-tls`:
+
+  ```toml
+  lettre = { version = "...", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+  ```
+
+  This removes `schannel` from the graph and often shrinks PDBs.
+
+* **libssh2-sys**: use the vendored build (default) and keep it up to date. Nothing special to do, but be aware it adds C objects + symbols in debug.
+
+If, after all that, dev still trips LNK1318 on your box, you have two pragmatic options for daily work:
+
+* Keep `[profile.dev] debug = 0` on Windows (no PDBs in dev) and use `cargo run --release` when you need full speed.
+* Or create a custom profile that disables debuginfo only for `basilc`:
+
+  ```toml
+  [profile.dev.package.basilc]
+  debug = 0
+  ```
+
+**Why the new module triggers it:** SMTP/SFTP added TLS + crypto + Windows bindings + C sys-crates. That multiplies type info and object counts in debug. MSVC’s PDB writer occasionally hits internal limits in that scenario, which is exactly what “LIMIT (12)” is hinting at.
+
+
+If you want, paste the output of:
+
+```powershell
+cargo tree -e features -p basilc
+cargo tree -i windows
+cargo tree -i windows-sys
+```
+
+and I’ll show you precisely which features/versions to flip to slim the graph.
