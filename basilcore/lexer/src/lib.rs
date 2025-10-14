@@ -280,6 +280,8 @@ impl<'a> Lexer<'a> {
         let lex = &self.src[start..end];
         let kind = match &*lex.to_ascii_uppercase() {
             "FUNC"   => TokenKind::Func,
+            "FUNCTION" => TokenKind::Func,
+            "SUB"    => TokenKind::Func,
             "RETURN" => TokenKind::Return,
             "IF"     => TokenKind::If,
             "THEN"   => TokenKind::Then,
@@ -288,6 +290,12 @@ impl<'a> Lexer<'a> {
             "DO"     => TokenKind::Do,
             "BEGIN"  => TokenKind::Begin,
             "END"    => TokenKind::End,
+            "ENDIF"  => TokenKind::End,
+            "ENDFUNC" => TokenKind::End,
+            "ENDFUNCTION" => TokenKind::End,
+            "ENDSUB" => TokenKind::End,
+            "ENDWHILE" => TokenKind::End,
+            "ENDBLOCK" => TokenKind::End,
             "BREAK"  => TokenKind::Break,
             "CONTINUE" => TokenKind::Continue,
             "LET"    => TokenKind::Let,
