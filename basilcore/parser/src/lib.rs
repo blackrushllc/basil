@@ -49,10 +49,10 @@ pub fn parse(src: &str) -> Result<Program> {
     Parser::new(tokens).parse_program()
 }
 
-struct Parser { tokens: Vec<Token>, i: usize }
+struct Parser { tokens: Vec<Token>, i: usize, with_depth: usize }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self { Self { tokens, i: 0 } }
+    fn new(tokens: Vec<Token>) -> Self { Self { tokens, i: 0, with_depth: 0 } }
 
     fn parse_program(&mut self) -> Result<Program> {
         let mut stmts = Vec::new();
@@ -163,6 +163,37 @@ impl Parser {
                 return Err(BasilError("Expected 'END' or 'END SELECT' to terminate SELECT CASE block.".into()));
             }
             return Ok(Stmt::SelectCase { selector, arms, else_body });
+        }
+
+        // WITH <expr> ... END WITH
+        if self.match_k(TokenKind::With) {
+            let target = self.parse_expr_bp(0)?;
+            // Accept newline or ':' before body
+            while self.match_k(TokenKind::Semicolon) {}
+            // Enter WITH scope
+            self.with_depth += 1;
+            let mut body: Vec<Stmt> = Vec::new();
+            loop {
+                while self.match_k(TokenKind::Semicolon) {}
+                if self.check(TokenKind::End) {
+                    let _ = self.next(); // consume END
+                    if self.match_k(TokenKind::With) {
+                        break;
+                    } else {
+                        return Err(BasilError("Expected 'END WITH' to terminate WITH block.".into()));
+                    }
+                }
+                if self.check(TokenKind::Eof) {
+                    return Err(BasilError("Expected 'END WITH' to terminate WITH block.".into()));
+                }
+                let line = self.peek_line();
+                let s = self.parse_stmt()?;
+                body.push(Stmt::Line(line));
+                body.push(s);
+            }
+            // Exit WITH scope
+            self.with_depth -= 1;
+            return Ok(Stmt::With { target, body });
         }
 
         // FUNC/SUB name(params) block
@@ -663,6 +694,27 @@ impl Parser {
             return Ok(Expr::UnaryNot(Box::new(e)));
         }
         match self.peek_kind() {
+            Some(TokenKind::Dot) => {
+                // Leading '.' only allowed inside a WITH block
+                if self.with_depth == 0 {
+                    return Err(BasilError("Leading '.' member requires a WITH block.".into()));
+                }
+                let _ = self.next(); // consume '.'
+                let name = self.expect_member_name()?;
+                if self.match_k(TokenKind::LParen) {
+                    let mut args = Vec::new();
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr_bp(0)?);
+                            if !self.match_k(TokenKind::Comma) { break; }
+                        }
+                    }
+                    self.expect(TokenKind::RParen)?;
+                    Ok(Expr::MemberCall { target: Box::new(Expr::ImplicitThis), method: name, args })
+                } else {
+                    Ok(Expr::MemberGet { target: Box::new(Expr::ImplicitThis), name })
+                }
+            }
             Some(TokenKind::Number) => {
                 let t = self.next().unwrap();
                 if let Some(Literal::Num(n)) = t.literal { Ok(Expr::Number(n)) } else { Err(BasilError(format!("parse error at line {}: number literal missing", t.line))) }
@@ -809,6 +861,7 @@ impl Parser {
             | Some(TokenKind::Do)
             | Some(TokenKind::Begin)
             | Some(TokenKind::End)
+            | Some(TokenKind::With)
             | Some(TokenKind::Break)
             | Some(TokenKind::Continue)
             | Some(TokenKind::Let)

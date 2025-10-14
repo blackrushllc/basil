@@ -54,6 +54,8 @@ pub enum Expr {
     // Object member access and method calls
     MemberGet { target: Box<Expr>, name: String },
     MemberCall { target: Box<Expr>, method: String, args: Vec<Expr> },
+    // Implicit receiver inside WITH block
+    ImplicitThis,
     // NEW TYPE(args) expression
     NewObject { type_name: String, args: Vec<Expr> },
     // CLASS("filename") expression
@@ -108,6 +110,8 @@ pub enum Stmt {
     ForEach { var: String, enumerable: Expr, body: Box<Stmt> },
     // SELECT CASE statement
     SelectCase { selector: Expr, arms: Vec<CaseArm>, else_body: Option<Vec<Stmt>> },
+    // WITH block
+    With { target: Expr, body: Vec<Stmt> },
     // Line marker for runtime error reporting
     Line(u32),
 }

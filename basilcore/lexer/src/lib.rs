@@ -54,7 +54,7 @@ pub enum TokenKind {
     // Literals / identifiers
     Ident, Number, String,
     // Keywords
-    Func, Return, If, Then, Else, While, Do, Begin, End,
+    Func, Return, If, Then, Else, While, Do, Begin, End, With,
     Break, Continue,
     Let, Print, Println, True, False, Null, And, Or, Not,
     Author,
@@ -466,6 +466,7 @@ impl<'a> Lexer<'a> {
             "DESCRIBE" => TokenKind::Describe,
             "NEW"    => TokenKind::New,
             "CLASS"  => TokenKind::Class,
+            "WITH"   => TokenKind::With,
             "SETENV" => TokenKind::Setenv,
             "EXPORTENV" => TokenKind::Exportenv,
             "SHELL"  => TokenKind::Shell,

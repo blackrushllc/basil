@@ -1,0 +1,29 @@
+REM WITH … END WITH demo for Basil
+
+#USE BMX_RIDER, BMX_TEAM
+
+DIM r@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+t@.AddRider(r@);
+
+REM Basic WITH: mutate and call methods without repeating the receiver
+WITH r@
+  .Wins% = .Wins% + 1;
+  .Losses% = .Losses%;
+  PRINTLN "Rider:", .Describe$();
+END WITH
+
+REM Nested WITH: inner WITH binds leading dots to the innermost target
+WITH t@
+  .TeamWins% = 13;
+  PRINTLN "Team:", .Info$();
+  WITH .TopRider()
+    PRINTLN "Top Rider:", .Describe$();
+  END WITH
+END WITH
+
+REM Single-line WITH using ':'
+WITH t@ : .TeamLosses% = .TeamLosses% + 1 : PRINTLN "WinPct:", .WinPct() : END WITH
+
+REM Error showcase (uncomment to test):
+REM WITH 42 : .Wins% = 1 : END WITH        REM should error: target not an object
