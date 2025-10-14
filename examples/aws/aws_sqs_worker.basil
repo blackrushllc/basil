@@ -1,0 +1,16 @@
+#USE AWS_SQS
+DIM aws@ AS AWS()
+DIM sqs@ = aws@.MakeSQS()
+
+DIM q$ = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+
+PRINT "Polling once..."
+TRY
+  DIM msgs$ = sqs@.Receive$(q$, 5, 10, 30)
+  FOR EACH m$ IN msgs$
+    PRINT "Msg: ", m$
+    REM Extract ReceiptHandle from JSON (left to user or JSON helper)
+  NEXT
+CATCH e$
+  PRINT "SQS error: ", e$
+END TRY

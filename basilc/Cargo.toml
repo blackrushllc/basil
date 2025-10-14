@@ -33,6 +33,11 @@ obj-midi  = ["basil-vm/obj-midi",  "basil-compiler/obj-midi"]
 obj-daw   = ["basil-vm/obj-daw", "basil-compiler/obj-daw", "obj-audio", "obj-midi"]
 obj-ai    = ["basil-vm/obj-ai", "basil-compiler/obj-ai"]
 obj-term  = ["basil-vm/obj-term", "basil-compiler/obj-term"]
+# AWS features forwarded to VM
+obj-aws-s3  = ["basil-vm/obj-aws-s3"]
+obj-aws-ses = ["basil-vm/obj-aws-ses"]
+obj-aws-sqs = ["basil-vm/obj-aws-sqs"]
+obj-aws     = ["basil-vm/obj-aws", "obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-daw", "obj-ai", "obj-term"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws"]

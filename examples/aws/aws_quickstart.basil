@@ -1,0 +1,4 @@
+REM Quickstart: verify AWS config & region
+DIM aws@ AS AWS()
+PRINT "Region: #{aws@.Region$}"
+PRINT "Profile: #{aws@.Profile$}"

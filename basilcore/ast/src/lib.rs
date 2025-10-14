@@ -112,6 +112,10 @@ pub enum Stmt {
     SelectCase { selector: Expr, arms: Vec<CaseArm>, else_body: Option<Vec<Stmt>> },
     // WITH block
     With { target: Expr, body: Vec<Stmt> },
+    // TRY/CATCH/FINALLY
+    Try { try_body: Vec<Stmt>, catch_var: Option<String>, catch_body: Option<Vec<Stmt>>, finally_body: Option<Vec<Stmt>> },
+    // RAISE statement
+    Raise(Option<Expr>),
     // Line marker for runtime error reporting
     Line(u32),
 }

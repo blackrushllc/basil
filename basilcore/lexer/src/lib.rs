@@ -68,6 +68,8 @@ pub enum TokenKind {
     Class,
     // New for SELECT CASE
     Select, Case, Is,
+    // Exceptions
+    Try, Catch, Finally, Raise,
     // Env and process control
     Setenv, Exportenv, Shell, Exit,
     // Unstructured control flow
@@ -467,6 +469,10 @@ impl<'a> Lexer<'a> {
             "NEW"    => TokenKind::New,
             "CLASS"  => TokenKind::Class,
             "WITH"   => TokenKind::With,
+            "TRY"    => TokenKind::Try,
+            "CATCH"  => TokenKind::Catch,
+            "FINALLY"=> TokenKind::Finally,
+            "RAISE"  => TokenKind::Raise,
             "SETENV" => TokenKind::Setenv,
             "EXPORTENV" => TokenKind::Exportenv,
             "SHELL"  => TokenKind::Shell,
