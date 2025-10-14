@@ -237,6 +237,12 @@ pub enum Op {
     EnumCurrent  = 92,  // pushes current element Value
     EnumDispose  = 93,  // best-effort cleanup
 
+    // exceptions
+    TryPush = 120,      // +u16 (handler off), +u16 (finally off or 0)
+    TryPop  = 121,      // no extra
+    Raise   = 122,      // expects message (any value) on stack; converts to string and raises
+    Reraise = 123,      // rethrow current exception
+
     Halt  = 255,
 }
 

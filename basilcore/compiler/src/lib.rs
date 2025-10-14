@@ -272,6 +272,103 @@ impl C {
                 self.with_stack_tl.pop();
                 self.chunk = chunk;
             }
+            Stmt::Raise(expr_opt) => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                match expr_opt {
+                    Some(e) => { self.emit_expr_in(&mut chunk, e, None)?; chunk.push_op(Op::Raise); }
+                    None => { chunk.push_op(Op::Reraise); }
+                }
+                self.chunk = chunk;
+            }
+            Stmt::Try { try_body, catch_var, catch_body, finally_body } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                let has_catch = catch_body.is_some();
+                let has_finally = finally_body.is_some();
+                // Enter TRY region
+                chunk.push_op(Op::TryPush);
+                let hp = chunk.emit_u16_placeholder();
+                let fp = chunk.emit_u16_placeholder();
+                // TRY body
+                for s2 in try_body { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                // Normal completion path
+                let mut j_after_sites: Vec<usize> = Vec::new();
+                let mut j_to_finally_norm: Option<usize> = None;
+                if has_finally {
+                    chunk.push_op(Op::Jump);
+                    j_to_finally_norm = Some(chunk.emit_u16_placeholder());
+                } else {
+                    chunk.push_op(Op::TryPop);
+                    chunk.push_op(Op::Jump);
+                    j_after_sites.push(chunk.emit_u16_placeholder());
+                }
+                // Handler label
+                let handler_here = chunk.here();
+                let off_h = (handler_here - (fp + 2)) as u16; chunk.patch_u16_at(hp, off_h);
+                // We don't use VM-run finally; compile-time handles finally
+                chunk.patch_u16_at(fp, 0);
+                // Handler code
+                let mut j_to_finally_exc: Option<usize> = None;
+                if has_catch {
+                    if let Some(name) = catch_var {
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                    } else {
+                        chunk.push_op(Op::Pop);
+                    }
+                    if let Some(body) = catch_body {
+                        for s2 in body { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                    }
+                    if has_finally {
+                        chunk.push_op(Op::Jump);
+                        j_to_finally_exc = Some(chunk.emit_u16_placeholder());
+                    } else {
+                        chunk.push_op(Op::TryPop);
+                        chunk.push_op(Op::Jump);
+                        j_after_sites.push(chunk.emit_u16_placeholder());
+                    }
+                } else {
+                    // no catch: run finally (if any) then rethrow
+                    chunk.push_op(Op::Pop); // discard message on stack
+                    if has_finally {
+                        chunk.push_op(Op::Jump);
+                        j_to_finally_exc = Some(chunk.emit_u16_placeholder());
+                    } else {
+                        chunk.push_op(Op::Reraise);
+                    }
+                }
+                // FINALLY blocks (duplicated for normal/exceptional)
+                if let Some(fbody) = finally_body {
+                    // finally (normal)
+                    if let Some(site) = j_to_finally_norm { let here = chunk.here(); let off = (here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                    for s2 in fbody { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                    chunk.push_op(Op::TryPop);
+                    chunk.push_op(Op::Jump);
+                    let j_after_from_finally_norm = chunk.emit_u16_placeholder();
+                    // finally (exception)
+                    if let Some(site) = j_to_finally_exc { let here2 = chunk.here(); let off2 = (here2 - (site + 2)) as u16; chunk.patch_u16_at(site, off2); }
+                    for s2 in fbody { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                    chunk.push_op(Op::TryPop);
+                    if has_catch {
+                        chunk.push_op(Op::Jump);
+                        let j_after_from_finally_exc = chunk.emit_u16_placeholder();
+                        // After label
+                        let after_here = chunk.here();
+                        let offn = (after_here - (j_after_from_finally_norm + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_norm, offn);
+                        let offe = (after_here - (j_after_from_finally_exc + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_exc, offe);
+                    } else {
+                        // rethrow after finally
+                        chunk.push_op(Op::Reraise);
+                        // After label for normal path only: allow normal path to skip exceptional FINALLY+RERAISE
+                        let after_here = chunk.here();
+                        let offn = (after_here - (j_after_from_finally_norm + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_norm, offn);
+                    }
+                } else {
+                    // No FINALLY: create after label to land normal/catch paths
+                    let after_here = chunk.here();
+                    for site in j_after_sites { let off = (after_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                }
+                self.chunk = chunk;
+            }
             // SETENV/EXPORTENV
             Stmt::SetEnv { name, value, export } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
@@ -718,6 +815,100 @@ impl C {
                 self.with_stack_fn.push(name.clone());
                 for s2 in body { self.emit_stmt_func(chunk, s2, env)?; }
                 self.with_stack_fn.pop();
+            }
+            Stmt::Raise(expr_opt) => {
+                match expr_opt {
+                    Some(e) => { self.emit_expr_in(chunk, e, Some(env))?; chunk.push_op(Op::Raise); }
+                    None => { chunk.push_op(Op::Reraise); }
+                }
+            }
+            Stmt::Try { try_body, catch_var, catch_body, finally_body } => {
+                let has_catch = catch_body.is_some();
+                let has_finally = finally_body.is_some();
+                // Enter TRY region
+                chunk.push_op(Op::TryPush);
+                let hp = chunk.emit_u16_placeholder();
+                let fp = chunk.emit_u16_placeholder();
+                // TRY body
+                for s2 in try_body { self.emit_stmt_func(chunk, s2, env)?; }
+                // Normal completion path
+                let mut j_after_sites: Vec<usize> = Vec::new();
+                let mut j_to_finally_norm: Option<usize> = None;
+                let j_after_from_normal: Option<usize> = None;
+                if has_finally {
+                    chunk.push_op(Op::Jump);
+                    j_to_finally_norm = Some(chunk.emit_u16_placeholder());
+                } else {
+                    chunk.push_op(Op::TryPop);
+                    chunk.push_op(Op::Jump);
+                    j_after_sites.push(chunk.emit_u16_placeholder());
+                }
+                // Handler label
+                let handler_here = chunk.here();
+                let off_h = (handler_here - (fp + 2)) as u16; chunk.patch_u16_at(hp, off_h);
+                // Don't use VM-run finally
+                chunk.patch_u16_at(fp, 0);
+                // Handler code
+                let mut j_to_finally_exc: Option<usize> = None;
+                if has_catch {
+                    if let Some(name) = catch_var {
+                        let slot = env.bind_next_if_absent(name.clone());
+                        chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                    } else {
+                        chunk.push_op(Op::Pop);
+                    }
+                    if let Some(body) = catch_body {
+                        for s2 in body { self.emit_stmt_func(chunk, s2, env)?; }
+                    }
+                    if has_finally {
+                        chunk.push_op(Op::Jump);
+                        j_to_finally_exc = Some(chunk.emit_u16_placeholder());
+                    } else {
+                        chunk.push_op(Op::TryPop);
+                        chunk.push_op(Op::Jump);
+                        j_after_sites.push(chunk.emit_u16_placeholder());
+                    }
+                } else {
+                    // no catch: run finally (if any) then rethrow
+                    chunk.push_op(Op::Pop);
+                    if has_finally {
+                        chunk.push_op(Op::Jump);
+                        j_to_finally_exc = Some(chunk.emit_u16_placeholder());
+                    } else {
+                        chunk.push_op(Op::Reraise);
+                    }
+                }
+                // FINALLY blocks (duplicated)
+                if let Some(fbody) = finally_body {
+                    // finally (normal)
+                    if let Some(site) = j_to_finally_norm { let here = chunk.here(); let off = (here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                    for s2 in fbody { self.emit_stmt_func(chunk, s2, env)?; }
+                    chunk.push_op(Op::TryPop);
+                    chunk.push_op(Op::Jump);
+                    let j_after_from_finally_norm = chunk.emit_u16_placeholder();
+                    // finally (exception)
+                    if let Some(site) = j_to_finally_exc { let here2 = chunk.here(); let off2 = (here2 - (site + 2)) as u16; chunk.patch_u16_at(site, off2); }
+                    for s2 in fbody { self.emit_stmt_func(chunk, s2, env)?; }
+                    chunk.push_op(Op::TryPop);
+                    if has_catch {
+                        chunk.push_op(Op::Jump);
+                        let j_after_from_finally_exc = chunk.emit_u16_placeholder();
+                        // After label
+                        let after_here = chunk.here();
+                        if let Some(site) = j_after_from_normal { let off = (after_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                        let offn = (after_here - (j_after_from_finally_norm + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_norm, offn);
+                        let offe = (after_here - (j_after_from_finally_exc + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_exc, offe);
+                    } else {
+                        // rethrow after finally
+                        chunk.push_op(Op::Reraise);
+                        // After (normal only): allow normal path to skip exceptional FINALLY+RERAISE
+                        let after_here = chunk.here();
+                        let offn = (after_here - (j_after_from_finally_norm + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_norm, offn);
+                    }
+                } else {
+                    let after_here = chunk.here();
+                    if let Some(site) = j_after_from_normal { let off = (after_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                }
             }
             // SETENV/EXPORTENV inside function
             Stmt::SetEnv { name, value, export } => {
@@ -1637,6 +1828,99 @@ impl C {
                 self.emit_expr_in(chunk, target, None)?;
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
+            }
+            Stmt::Raise(expr_opt) => {
+                match expr_opt {
+                    Some(e) => { self.emit_expr_in(chunk, e, None)?; chunk.push_op(Op::Raise); }
+                    None => { chunk.push_op(Op::Reraise); }
+                }
+            }
+            Stmt::Try { try_body, catch_var, catch_body, finally_body } => {
+                let has_catch = catch_body.is_some();
+                let has_finally = finally_body.is_some();
+                // Enter TRY region
+                chunk.push_op(Op::TryPush);
+                let hp = chunk.emit_u16_placeholder();
+                let fp = chunk.emit_u16_placeholder();
+                // TRY body
+                for s2 in try_body { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                // Normal completion path
+                let mut j_after_sites: Vec<usize> = Vec::new();
+                let mut j_to_finally_norm: Option<usize> = None;
+                if has_finally {
+                    chunk.push_op(Op::Jump);
+                    j_to_finally_norm = Some(chunk.emit_u16_placeholder());
+                } else {
+                    chunk.push_op(Op::TryPop);
+                    chunk.push_op(Op::Jump);
+                    j_after_sites.push(chunk.emit_u16_placeholder());
+                }
+                // Handler label
+                let handler_here = chunk.here();
+                let off_h = (handler_here - (fp + 2)) as u16; chunk.patch_u16_at(hp, off_h);
+                // Don't use VM-run finally
+                chunk.patch_u16_at(fp, 0);
+                // Handler code
+                let mut j_to_finally_exc: Option<usize> = None;
+                if has_catch {
+                    if let Some(name) = catch_var {
+                        let g = self.gslot(&name);
+                        chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                    } else {
+                        chunk.push_op(Op::Pop);
+                    }
+                    if let Some(body) = catch_body {
+                        for s2 in body { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                    }
+                    if has_finally {
+                        chunk.push_op(Op::Jump);
+                        j_to_finally_exc = Some(chunk.emit_u16_placeholder());
+                    } else {
+                        chunk.push_op(Op::TryPop);
+                        chunk.push_op(Op::Jump);
+                        j_after_sites.push(chunk.emit_u16_placeholder());
+                    }
+                } else {
+                    // no catch: run finally (if any) then rethrow
+                    chunk.push_op(Op::Pop);
+                    if has_finally {
+                        chunk.push_op(Op::Jump);
+                        j_to_finally_exc = Some(chunk.emit_u16_placeholder());
+                    } else {
+                        chunk.push_op(Op::Reraise);
+                    }
+                }
+                // FINALLY blocks (duplicated)
+                if let Some(fbody) = finally_body {
+                    // finally (normal)
+                    if let Some(site) = j_to_finally_norm { let here = chunk.here(); let off = (here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                    for s2 in fbody { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                    chunk.push_op(Op::TryPop);
+                    chunk.push_op(Op::Jump);
+                    let j_after_from_finally_norm = chunk.emit_u16_placeholder();
+                    // finally (exception)
+                    if let Some(site) = j_to_finally_exc { let here2 = chunk.here(); let off2 = (here2 - (site + 2)) as u16; chunk.patch_u16_at(site, off2); }
+                    for s2 in fbody { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                    chunk.push_op(Op::TryPop);
+                    if has_catch {
+                        chunk.push_op(Op::Jump);
+                        let j_after_from_finally_exc = chunk.emit_u16_placeholder();
+                        // After label
+                        let after_here = chunk.here();
+                        let offn = (after_here - (j_after_from_finally_norm + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_norm, offn);
+                        let offe = (after_here - (j_after_from_finally_exc + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_exc, offe);
+                    } else {
+                        // rethrow after finally
+                        chunk.push_op(Op::Reraise);
+                        // After (normal only): allow normal path to skip exceptional FINALLY+RERAISE
+                        let after_here = chunk.here();
+                        let offn = (after_here - (j_after_from_finally_norm + 2)) as u16; chunk.patch_u16_at(j_after_from_finally_norm, offn);
+                    }
+                } else {
+                    // No FINALLY: create after label to land normal/catch paths
+                    let after_here = chunk.here();
+                    for site in j_after_sites { let off = (after_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+                }
             }
             // SETENV/EXPORTENV
             Stmt::SetEnv { name, value, export } => {
