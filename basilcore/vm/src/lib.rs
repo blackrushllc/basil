@@ -226,6 +226,9 @@ pub struct VM {
     next_fh: i64,
     // Control whether to auto-close handles on function return (used for class methods)
     close_handles_on_ret: bool,
+    // GOSUB stack and safety cap
+    gosub_stack: Vec<usize>,
+    gosub_max_depth: usize,
     // Optional debugger
     pub debugger: Option<Arc<debug::Debugger>>,
 }
@@ -363,6 +366,8 @@ impl VM {
             file_table: HashMap::new(),
             next_fh: 1,
             close_handles_on_ret: true,
+            gosub_stack: Vec::new(),
+            gosub_max_depth: 4096,
             debugger: None,
         };
         #[cfg(feature = "obj-ai")]
@@ -628,6 +633,28 @@ impl VM {
                 Op::JumpBack => {
                     let off = self.read_u16()? as usize;
                     self.cur().ip -= off;
+                }
+                Op::Gosub => {
+                    let off = self.read_u16()? as usize;
+                    let ip_after = self.cur().ip;
+                    if self.gosub_stack.len() >= self.gosub_max_depth { return Err(BasilError(format!("GOSUB stack overflow (depth limit {})", self.gosub_max_depth))); }
+                    self.gosub_stack.push(ip_after);
+                    self.cur().ip += off;
+                }
+                Op::GosubBack => {
+                    let off = self.read_u16()? as usize;
+                    let ip_after = self.cur().ip;
+                    if self.gosub_stack.len() >= self.gosub_max_depth { return Err(BasilError(format!("GOSUB stack overflow (depth limit {})", self.gosub_max_depth))); }
+                    self.gosub_stack.push(ip_after);
+                    self.cur().ip -= off;
+                }
+                Op::GosubRet => {
+                    let ret_ip = match self.gosub_stack.pop() { Some(ip) => ip, None => return Err(BasilError("RETURN without GOSUB".into())) };
+                    self.cur().ip = ret_ip;
+                }
+                Op::GosubPop => {
+                    if self.gosub_stack.pop().is_none() { return Err(BasilError("RETURN without GOSUB".into())); }
+                    // continue execution; typically followed by a Jump to a label
                 }
 
                 Op::Call => {
@@ -2293,6 +2320,9 @@ impl VM {
             }
         }
         if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Exited); }
+        if !self.gosub_stack.is_empty() {
+            eprintln!("warning: program terminated with {} pending GOSUB frames (missing RETURN?)", self.gosub_stack.len());
+        }
         Ok(())
     }
 
@@ -2343,6 +2373,7 @@ impl VM {
             80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
             100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
+            110=>Op::Gosub, 111=>Op::GosubBack, 112=>Op::GosubRet, 113=>Op::GosubPop,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
