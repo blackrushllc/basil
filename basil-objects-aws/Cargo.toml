@@ -1,0 +1,29 @@
+[package]
+name = "basil-objects-aws"
+version = "0.1.0"
+authors = ["Blackrush LLC"]
+edition = "2021"
+
+[lib]
+name = "basil_objects_aws"
+path = "src/lib.rs"
+
+[features]
+default = []
+obj-aws-s3 = ["aws-sdk-s3", "tokio/rt-multi-thread", "tokio/macros"]
+obj-aws-ses = ["aws-sdk-sesv2", "tokio/rt-multi-thread", "tokio/macros"]
+obj-aws-sqs = ["aws-sdk-sqs", "tokio/rt-multi-thread", "tokio/macros"]
+obj-aws = ["obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
+
+[dependencies]
+basil-common = { workspace = true }
+basil-bytecode = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], default-features = false }
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-credential-types = { version = "1" }
+aws-types = { version = "1" }
+aws-sdk-s3 = { version = "1", optional = true }
+aws-sdk-sesv2 = { version = "1", optional = true }
+aws-sdk-sqs = { version = "1", optional = true }
+serde_json = { version = "1" }
+once_cell = { version = "1" }

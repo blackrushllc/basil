@@ -24,13 +24,13 @@ using \<?basil .. ?> tags like Php.
 
 🌱 Basil puts the power of AI in the hands of the student, hobbyist, and professional programmer.
 
-🌱 Basil includes Built-in support for AI, Audio, MIDI, AWS, CSV, CURL, JSON, SQL, Zip, Base64 and more
+🌱 Basil includes Built-in support ("Mods") for AI, Audio, MIDI, AWS (s3, ses, sqs, etc), CSV, CURL, JSON, SQL, Zip, Base64, PGP (encryption), REST, SFTP, SMTP and more
 
 🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library Objects ("Mods") and write Basil code.
 
 🌱 Read the previous line again
 
-🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Class files for manual testing, enter a program (with line number!) and run it, save it, load it, list it, and more. Cowabunga!
+🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Classes for manual testing, enter a program (with line numbers!) and run it, save it, load it, list it, and more. Cowabunga!
 
 🌱 Basil has LOTS of documentation, examples, and a lot of old school and new school fun. 
 
