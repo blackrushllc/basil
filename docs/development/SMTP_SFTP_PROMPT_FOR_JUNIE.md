@@ -20,6 +20,8 @@ Create a new crate: **`basil-objects-net/`** with Cargo features:
 * `obj-net-sftp` → enables SFTP module
 * `obj-net-smtp` → enables SMTP module
 * `obj-net = ["obj-net-sftp","obj-net-smtp"]` umbrella
++ `obj-all = **everything**` umbrella
+
 
 Wire via workspace deps (forward slashes) and register objects with the existing Basil object registry only when features are enabled.
 
@@ -86,7 +88,7 @@ DIM smtp@ AS MAIL_SMTP(host$, user$?, pass$?, port%?, tls_mode$?)
 
 ## Docs (must include)
 
-Create **`docs/integrations/net/README.md`** covering:
+Create **`docs/guides/SMTP_SFTP.md`** covering:
 
 * What NET_SFTP and NET_SMTP do; object names and method tables.
 * Security guidance:
@@ -109,22 +111,22 @@ Place under `/examples/`:
 
 ```
 REM SFTP demo
-DIM host$ = "sftp.example.com"
-DIM user$ = "demo"
-DIM pass$ = "apppass"
+LET host$ = "sftp.example.com"
+LET user$ = "demo"
+LET pass$ = "apppass"
 DIM sftp@ AS NET_SFTP(host$, user$, pass$, "", 22)
 
 TRY
-  PRINT "MKDIR: ", sftp@.Mkdir("/incoming")
-  PRINT "PUT: ", sftp@.Put$("report.csv", "/incoming/report.csv")
-  DIM names$ = sftp@.List$("/incoming")
-  PRINT "Listing:"
-  FOR EACH n$ IN names$ : PRINT " - ", n$ : NEXT
-  PRINT "GET: ", sftp@.GetToFile("/incoming/report.csv", "report_downloaded.csv")
-  PRINT "RENAME: ", sftp@.Rename("/incoming/report.csv", "/incoming/report_old.csv")
-  PRINT "DELETE: ", sftp@.Delete("/incoming/report_old.csv")
+  PRINTLN "MKDIR: ", sftp@.Mkdir("/incoming")
+  PRINTLN "PUT: ", sftp@.Put$("report.csv", "/incoming/report.csv")
+  LET names$ = sftp@.List$("/incoming")
+  PRINTLN "Listing:"
+  FOR EACH n$ IN names$ : PRINTLN " - ", n$ : NEXT
+  PRINTLN "GET: ", sftp@.GetToFile("/incoming/report.csv", "report_downloaded.csv")
+  PRINTLN "RENAME: ", sftp@.Rename("/incoming/report.csv", "/incoming/report_old.csv")
+  PRINTLN "DELETE: ", sftp@.Delete("/incoming/report_old.csv")
 CATCH err$
-  PRINT "SFTP error: ", err$
+  PRINTLN "SFTP error: ", err$
 END TRY
 ```
 
@@ -134,10 +136,10 @@ END TRY
 REM SMTP demo
 DIM smtp@ AS MAIL_SMTP("smtp.mailprovider.com", "me@example.com", "apppass", 587, "starttls")
 TRY
-  PRINT "Sending..."
-  PRINT smtp@.SendEmail("you@example.com", "Hello from Basil", "<b>Hi!</b>", "me@example.com", 1)
+  PRINTLN "Sending..."
+  PRINTLN smtp@.SendEmail("you@example.com", "Hello from Basil", "<b>Hi!</b>", "me@example.com", 1)
 CATCH e$
-  PRINT "SMTP error: ", e$
+  PRINTLN "SMTP error: ", e$
 END TRY
 ```
 
@@ -146,6 +148,6 @@ END TRY
 * [ ] Workspace builds with `--features obj-net` and with features off.
 * [ ] Objects register only when features are enabled; `DESCRIBE sftp@` / `DESCRIBE smtp@` show members.
 * [ ] Examples compile and run against real servers (with valid creds).
-* [ ] `docs/integrations/net/README.md` exists and covers setup, security, feature flags, and `TRY/CATCH` usage.
+* [ ] `docs/guides/SMTP_SFTP.md` exists and covers setup, security, feature flags, and `TRY/CATCH` usage.
 * [ ] Errors are readable (service/operation/reply); sensitive data is not logged.
 

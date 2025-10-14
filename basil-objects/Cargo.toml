@@ -32,13 +32,19 @@ obj-aws-s3  = ["basil-objects-aws/obj-aws-s3"]
 obj-aws-ses = ["basil-objects-aws/obj-aws-ses"]
 obj-aws-sqs = ["basil-objects-aws/obj-aws-sqs"]
 obj-aws     = ["obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws"]
+# NET feature objects (Phase 1)
+obj-net-sftp = ["basil-objects-net/obj-net-sftp", "basil-objects-net"]
+obj-net-smtp = ["basil-objects-net/obj-net-smtp", "basil-objects-net"]
+obj-net = ["obj-net-sftp", "obj-net-smtp"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net"]
 
 [dependencies]
 basil-common = { workspace = true }
 basil-bytecode = { workspace = true }
 # AWS objects live in separate crate
 basil-objects-aws = { workspace = true, optional = true }
+# NET objects live in separate crate
+basil-objects-net = { workspace = true, optional = true }
 base64 = { version = "0.22", optional = true }
 zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
 walkdir = { version = "2", optional = true }
