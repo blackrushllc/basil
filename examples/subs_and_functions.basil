@@ -1,0 +1,72 @@
+# REM this demonstrates endings
+
+
+SUB MAIN() BEGIN
+    PRINTLN "I'm a SUB";
+    PRINTLN "I'm a SUB";
+    PRINTLN "I'm a SUB";
+END
+
+FUNC TEST() BEGIN
+    PRINTLN "I'm a FUNC";
+    PRINTLN "I'm a FUNC";
+    PRINTLN "I'm a FUNC";
+    RETURN 1;
+END
+
+
+SUB MAIN2()
+    PRINTLN "I'm a SUB, and BEGIN is optional";
+    PRINTLN "I'm a SUB, and BEGIN is optional";
+    PRINTLN "I'm a SUB, and BEGIN is optional";
+END
+
+FUNC TEST2()
+    PRINTLN "I'm a FUNC, and BEGIN is optional";
+    PRINTLN "I'm a FUNC, and BEGIN is optional";
+    PRINTLN "I'm a FUNC, and BEGIN is optional";
+    RETURN 2;
+END
+
+SUB MAIN3(A$, B%)
+    PRINTLN "I'm a SUB, A$ is " + A$;
+    PRINTLN "I'm a SUB, B% is " + B%;;
+END
+
+FUNC TEST3$(C, D$)
+    PRINTLN "I'm a FUNC, C is " + C;
+    PRINTLN "I'm a FUNC, D$ is " + D$;;
+    RETURN "Complete";
+END
+
+SUB MAIN4(A$, B%)
+    PRINTLN "I'm a SUB, A$ is " + A$;
+    PRINTLN "I'm a SUB, B% is " + B%;;
+END SUB // The SUB is optional  (END is required)
+
+FUNCTION TEST4$(C, D$) // FUNCTION is an alias for FUNC
+    PRINTLN "I'm a FUNC, C is " + C;
+    PRINTLN "I'm a FUNC, D$ is " + D$;;
+    RETURN "Complete";
+END FUNCTION // The FUNCTION is optional (END is required)
+
+
+PRINTLN "hello world";
+
+MAIN();              // ← Empty Parentheses for SUB calls, no return value, use ()
+LET A% = TEST();   // Empty Parentheses for FUNC calls with arguments/return value use ()
+PRINTLN A%;
+
+MAIN2();              // ← Empty Parentheses for SUB calls, no return value, use ()
+LET A% = TEST2();   // Empty Parentheses for FUNC calls with arguments/return value use ()
+PRINTLN A%;
+
+MAIN3("foo", 42);  // ← Parentheses for SUB calls, no return value, Arity must match the number of arguments
+LET A$ = TEST3$("foo", 42);   // Parentheses for FUNC calls with arguments/return value, arity must be correct
+PRINTLN A$;
+
+MAIN4("foo", 42);  // ← Parentheses for SUB calls, no return value, Arity must match the number of arguments
+LET A$ = TEST4$("foo", 42);   // Parentheses for FUNC calls with arguments/return value, arity must be correct
+PRINTLN A$;
+
+PRINTLN "Bye!";
