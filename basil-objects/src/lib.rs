@@ -1,4 +1,4 @@
-/use std::collections::HashMap;
+use std::collections::HashMap;
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Value, ObjectRef, ObjectDescriptor};
