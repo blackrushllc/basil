@@ -1,7 +1,7 @@
 REM term_selftest_noninteractive.basil — sequential obj-term checks (no prompts/logging)
 
 TERM.INIT;
-TERM.RAW ON;
+TERM.RAW(1);
 COLOR_RESET;
 CLS;
 
@@ -89,5 +89,5 @@ COLOR_RESET;
 
 REM --- Teardown ----------------------------------------------------------------
 CURSOR_SHOW;
-TERM.RAW OFF;
+TERM.RAW(0);
 TERM.END;
