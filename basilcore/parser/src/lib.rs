@@ -249,7 +249,7 @@ impl Parser {
                         let mut else_body = Vec::new();
                         loop {
                             while self.match_k(TokenKind::Semicolon) {}
-                            if self.match_k(TokenKind::End) { break; }
+                            if self.match_k(TokenKind::End) { self.consume_optional_end_suffix(); break; }
                             if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated ELSE BEGIN/END", self.peek_line()))); }
                             let line = self.peek_line();
                             let stmt = self.parse_stmt()?;
@@ -261,13 +261,13 @@ impl Parser {
                         let s = self.parse_stmt()?;
                         // After a single-statement ELSE, require END to close the IF
                         while self.match_k(TokenKind::Semicolon) {}
-                        self.expect(TokenKind::End)?;
+                        self.expect_end_any()?;
                         Some(Box::new(s))
                     }
                 } else {
                     // No ELSE: require END to close the IF
                     while self.match_k(TokenKind::Semicolon) {}
-                    self.expect(TokenKind::End)?;
+                    self.expect_end_any()?;
                     None
                 };
                 return Ok(Stmt::If { cond, then_branch: then_s, else_branch: else_s });
@@ -292,7 +292,7 @@ impl Parser {
             let mut body = Vec::new();
             loop {
                 while self.match_k(TokenKind::Semicolon) {}
-                if self.match_k(TokenKind::End) { break; }
+                if self.match_k(TokenKind::End) { self.consume_optional_end_suffix(); break; }
                 if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated WHILE BEGIN/END", self.peek_line()))); }
                 let line = self.peek_line();
                 let stmt = self.parse_stmt()?;
@@ -309,7 +309,7 @@ impl Parser {
             let mut inner = Vec::new();
             loop {
                 while self.match_k(TokenKind::Semicolon) {}
-                if self.match_k(TokenKind::End) { break; }
+                if self.match_k(TokenKind::End) { self.consume_optional_end_suffix(); break; }
                 if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated BEGIN/END", self.peek_line()))); }
                 let line = self.peek_line();
                 let stmt = self.parse_stmt()?;
@@ -632,11 +632,11 @@ impl Parser {
         loop {
             while self.match_k(TokenKind::Semicolon) {}
             if has_begin {
-                if self.match_k(TokenKind::End) { break; }
+                if self.match_k(TokenKind::End) { self.consume_optional_end_suffix(); break; }
             } else {
                 if self.check(TokenKind::End) {
                     let _ = self.next(); // consume END
-                    // optional FUNC after END
+                    // optional FUNC (includes FUNCTION/SUB) after END
                     if self.check(TokenKind::Func) { let _ = self.next(); }
                     break;
                 }
@@ -676,6 +676,24 @@ impl Parser {
     // small helpers
     fn expect(&mut self, k: TokenKind) -> Result<Token> {
         if self.check(k.clone()) { Ok(self.next().unwrap()) } else { Err(BasilError(format!("parse error at line {}: expected {:?}", self.peek_line(), k))) }
+    }
+    // Expect END and consume optional alias suffix words like IF/FUNC/FUNCTION/SUB/WHILE/BLOCK
+    fn expect_end_any(&mut self) -> Result<()> {
+        let _ = self.expect(TokenKind::End)?;
+        self.consume_optional_end_suffix();
+        Ok(())
+    }
+    fn consume_optional_end_suffix(&mut self) {
+        // Accept a following token that is either IF/FUNC/WHILE or an identifier 'BLOCK'
+        match self.peek_kind() {
+            Some(TokenKind::If) | Some(TokenKind::Func) | Some(TokenKind::While) => { let _ = self.next(); }
+            Some(TokenKind::Ident) => {
+                // Allow END BLOCK (Ident form)
+                let t = self.tokens.get(self.i).unwrap();
+                if t.lexeme.eq_ignore_ascii_case("BLOCK") { let _ = self.next(); }
+            }
+            _ => {}
+        }
     }
     fn expect_ident(&mut self) -> Result<String> {
         if self.check(TokenKind::Ident) { Ok(self.next().unwrap().lexeme) } else { Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))) }
