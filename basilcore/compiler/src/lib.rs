@@ -59,6 +59,24 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
     for s in ast {
         c.emit_stmt_toplevel(s)?;
     }
+    // Resolve top-level GOTO fixups now that all labels are known
+    for (op_pos, u16_pos, label) in std::mem::take(&mut c.tl_goto_fixups) {
+        if let Some(&target) = c.tl_labels.get(&label) {
+            // Decide direction and patch
+            if target >= u16_pos + 2 {
+                // forward jump
+                let off = (target - (u16_pos + 2)) as u16;
+                c.chunk.patch_u16_at(u16_pos, off);
+            } else {
+                // backward jump → flip opcode to JumpBack and patch distance backwards
+                c.chunk.code[op_pos] = Op::JumpBack as u8;
+                let off = ((u16_pos + 2) - target) as u16;
+                c.chunk.patch_u16_at(u16_pos, off);
+            }
+        } else {
+            return Err(BasilError(format!("Undefined label: {}", label)));
+        }
+    }
     c.chunk.push_op(Op::Halt);
     Ok(BCProgram { chunk: c.chunk, globals: c.globals })
 }
@@ -69,11 +87,27 @@ struct C {
     gmap: HashMap<String, u8>,
     fn_names: HashSet<String>,
     loop_stack: Vec<LoopCtx>,
+    // Label/GOTO support (top-level)
+    tl_labels: HashMap<String, usize>,
+    tl_goto_fixups: Vec<(usize, usize, String)>, // (op_pos, u16_pos, label)
+    // Label/GOTO support (current function)
+    fn_labels: HashMap<String, usize>,
+    fn_goto_fixups: Vec<(usize, usize, String)>,
 }
 
 impl C {
     fn new() -> Self {
-        Self { chunk: Chunk::default(), globals: Vec::new(), gmap: HashMap::new(), fn_names: HashSet::new(), loop_stack: Vec::new() }
+        Self {
+            chunk: Chunk::default(),
+            globals: Vec::new(),
+            gmap: HashMap::new(),
+            fn_names: HashSet::new(),
+            loop_stack: Vec::new(),
+            tl_labels: HashMap::new(),
+            tl_goto_fixups: Vec::new(),
+            fn_labels: HashMap::new(),
+            fn_goto_fixups: Vec::new(),
+        }
     }
 
     fn gslot(&mut self, name: &str) -> u8 {
@@ -198,9 +232,21 @@ impl C {
                 chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
                 self.chunk = chunk;
             }
-            // Unstructured flow placeholders (no-op for now)
-            Stmt::Label(_name) => { /* no-op at toplevel */ }
-            Stmt::Goto(_name) => { /* GOTO unsupported at MVP; ignoring to proceed */ }
+            // Unstructured flow: LABEL/GOTO at top level
+            Stmt::Label(name) => {
+                let pos = self.chunk.here();
+                if self.tl_labels.insert(name.clone(), pos).is_some() {
+                    return Err(BasilError(format!("Duplicate label: {}", name)));
+                }
+            }
+            Stmt::Goto(name) => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                chunk.push_op(Op::Jump);
+                let op_pos = chunk.here() - 1;
+                let u16_pos = chunk.emit_u16_placeholder();
+                self.tl_goto_fixups.push((op_pos, u16_pos, name.clone()));
+                self.chunk = chunk;
+            }
             Stmt::Gosub(_name) => { /* GOSUB unsupported at MVP; ignoring to proceed */ }
             Stmt::DimObject { name, type_name, args } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
@@ -399,9 +445,29 @@ impl C {
             env.bind(p.to_string(), i as u8);
         }
 
+        // reset function-scope labels/fixups
+        self.fn_labels.clear();
+        self.fn_goto_fixups.clear();
+
         // body
         for s in body {
             self.emit_stmt_func(&mut fchunk, s, &mut env).unwrap();
+        }
+
+        // resolve function-level GOTOs now that all labels are known
+        for (op_pos, u16_pos, label) in std::mem::take(&mut self.fn_goto_fixups) {
+            if let Some(&target) = self.fn_labels.get(&label) {
+                if target >= u16_pos + 2 {
+                    let off = (target - (u16_pos + 2)) as u16;
+                    fchunk.patch_u16_at(u16_pos, off);
+                } else {
+                    fchunk.code[op_pos] = Op::JumpBack as u8;
+                    let off = ((u16_pos + 2) - target) as u16;
+                    fchunk.patch_u16_at(u16_pos, off);
+                }
+            } else {
+                panic!("Undefined label in function {}: {}", name, label);
+            }
         }
 
         // implicit return null
@@ -520,9 +586,19 @@ impl C {
                 else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
                 chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
             }
-            // Unstructured flow placeholders (no-op inside function for now)
-            Stmt::Label(_name) => { /* no-op */ }
-            Stmt::Goto(_name) => { /* ignore */ }
+            // Unstructured flow inside function: support LABEL/GOTO
+            Stmt::Label(name) => {
+                let pos = chunk.here();
+                if self.fn_labels.insert(name.clone(), pos).is_some() {
+                    return Err(BasilError(format!("Duplicate label: {}", name)));
+                }
+            }
+            Stmt::Goto(name) => {
+                chunk.push_op(Op::Jump);
+                let op_pos = chunk.here() - 1;
+                let u16_pos = chunk.emit_u16_placeholder();
+                self.fn_goto_fixups.push((op_pos, u16_pos, name.clone()));
+            }
             Stmt::Gosub(_name) => { /* ignore */ }
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
@@ -1253,9 +1329,19 @@ impl C {
                 else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
                 chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
             }
-            // Unstructured flow placeholders (no-op inside toplevel chunk)
-            Stmt::Label(_name) => { /* no-op */ }
-            Stmt::Goto(_name) => { /* ignore */ }
+            // Unstructured flow inside toplevel chunk: support LABEL/GOTO
+            Stmt::Label(name) => {
+                let pos = chunk.here();
+                if self.tl_labels.insert(name.clone(), pos).is_some() {
+                    return Err(BasilError(format!("Duplicate label: {}", name)));
+                }
+            }
+            Stmt::Goto(name) => {
+                chunk.push_op(Op::Jump);
+                let op_pos = chunk.here() - 1;
+                let u16_pos = chunk.emit_u16_placeholder();
+                self.tl_goto_fixups.push((op_pos, u16_pos, name.clone()));
+            }
             Stmt::Gosub(_name) => { /* ignore */ }
             Stmt::DimObject { name, type_name, args } => {
                 for a in args { self.emit_expr_in(chunk, a, None)?; }

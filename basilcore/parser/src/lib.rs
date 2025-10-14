@@ -74,9 +74,17 @@ impl Parser {
         // FUNC name(params) block
         if self.match_k(TokenKind::Func) { return self.parse_func(); }
 
-        // LABEL name
-        if self.match_k(TokenKind::Label) {
-            let name = self.expect_ident()?;
+        // LABEL name  or  IDENT:  (colon-form)
+        if self.check(TokenKind::Label) {
+            // consume the Label token first
+            let tok = self.next().unwrap();
+            // If the next token is an identifier, this is the keyword form: LABEL name
+            let name = if self.check(TokenKind::Ident) {
+                self.expect_ident()?
+            } else {
+                // colon-form: the label name is carried in the Label token's lexeme
+                tok.lexeme
+            };
             self.terminate_stmt()?;
             return Ok(Stmt::Label(name));
         }

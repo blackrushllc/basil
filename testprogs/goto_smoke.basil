@@ -1,0 +1,5 @@
+PRINTLN "Start";
+GOTO L1;
+PRINTLN "Should not print";
+L1:
+PRINTLN "Done";

@@ -323,6 +323,12 @@ impl<'a> Lexer<'a> {
             "MOD"    => TokenKind::Mod,
             _        => TokenKind::Ident,
         };
+        // Support colon-form labels: IDENT ':' -> Label token with ident as lexeme
+        if matches!(kind, TokenKind::Ident) && self.cur == Some(':') {
+            // consume ':' and emit a Label token whose lexeme is the identifier
+            self.advance();
+            return Ok(self.make_with_span(TokenKind::Label, start, end));
+        }
         Ok(self.make_with_span(kind, start, end))
     }
 
