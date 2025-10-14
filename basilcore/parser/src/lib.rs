@@ -71,6 +71,100 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt> {
         // Skip any leading semicolons (useful with newline-as-semicolon)
         while self.match_k(TokenKind::Semicolon) {}
+
+        // SELECT CASE <expr> ... END [SELECT]
+        if self.match_k(TokenKind::Select) {
+            self.expect(TokenKind::Case)?;
+            let selector = self.parse_expr_bp(0)?;
+            // Accept newline or ':' (both as Semicolon) after header
+            while self.match_k(TokenKind::Semicolon) {}
+            let mut arms: Vec<basil_ast::CaseArm> = Vec::new();
+            let mut else_body: Option<Vec<Stmt>> = None;
+            let mut saw_else = false;
+            loop {
+                while self.match_k(TokenKind::Semicolon) {}
+                if self.check(TokenKind::End) {
+                    // consume END and optional SELECT suffix
+                    let _ = self.next();
+                    if self.check(TokenKind::Select) { let _ = self.next(); }
+                    break;
+                }
+                if self.check(TokenKind::Eof) {
+                    return Err(BasilError("Expected 'END' or 'END SELECT' to terminate SELECT CASE block.".into()));
+                }
+                if self.match_k(TokenKind::Case) {
+                    if self.match_k(TokenKind::Else) {
+                        if saw_else { return Err(BasilError("Only one CASE ELSE is allowed.".into())); }
+                        saw_else = true;
+                        // Accept nl_or_colon, then collect body until END or next CASE
+                        while self.match_k(TokenKind::Semicolon) {}
+                        let mut body: Vec<Stmt> = Vec::new();
+                        loop {
+                            while self.match_k(TokenKind::Semicolon) {}
+                            if self.check(TokenKind::End) || self.check(TokenKind::Case) { break; }
+                            if self.check(TokenKind::Eof) { return Err(BasilError("Expected 'END' or 'END SELECT' to terminate SELECT CASE block.".into())); }
+                            let line = self.peek_line();
+                            let s = self.parse_stmt()?;
+                            body.push(Stmt::Line(line));
+                            body.push(s);
+                        }
+                        else_body = Some(body);
+                        continue;
+                    }
+                    // Parse one or more patterns separated by commas
+                    let mut patterns: Vec<basil_ast::CasePattern> = Vec::new();
+                    loop {
+                        // 'IS' comparator form
+                        if self.match_k(TokenKind::Is) {
+                            let op = match self.peek_kind() {
+                                Some(TokenKind::EqEq) => { let _ = self.next(); BinOp::Eq },
+                                Some(TokenKind::BangEq) => { let _ = self.next(); BinOp::Ne },
+                                Some(TokenKind::Lt) => { let _ = self.next(); BinOp::Lt },
+                                Some(TokenKind::LtEq) => { let _ = self.next(); BinOp::Le },
+                                Some(TokenKind::Gt) => { let _ = self.next(); BinOp::Gt },
+                                Some(TokenKind::GtEq) => { let _ = self.next(); BinOp::Ge },
+                                _ => return Err(BasilError("Use 'CASE IS <op> <expr>' with one comparator operator.".into())),
+                            };
+                            let rhs = self.parse_expr_bp(0)?;
+                            patterns.push(basil_ast::CasePattern::Compare { op, rhs });
+                        } else {
+                            // Value or range form
+                            let first = self.parse_expr_bp(0)?;
+                            if self.match_k(TokenKind::To) {
+                                // Range must be 'expr TO expr'
+                                let hi = self.parse_expr_bp(0)?;
+                                patterns.push(basil_ast::CasePattern::Range { lo: first, hi });
+                            } else {
+                                patterns.push(basil_ast::CasePattern::Value(first));
+                            }
+                        }
+                        if self.match_k(TokenKind::Comma) { continue; }
+                        break;
+                    }
+                    if patterns.is_empty() {
+                        return Err(BasilError("CASE requires at least one value, range, or comparator.".into()));
+                    }
+                    // Accept nl_or_colon, then parse body until next CASE or END
+                    while self.match_k(TokenKind::Semicolon) {}
+                    let mut body: Vec<Stmt> = Vec::new();
+                    loop {
+                        while self.match_k(TokenKind::Semicolon) {}
+                        if self.check(TokenKind::End) || self.check(TokenKind::Case) { break; }
+                        if self.check(TokenKind::Eof) { return Err(BasilError("Expected 'END' or 'END SELECT' to terminate SELECT CASE block.".into())); }
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        body.push(Stmt::Line(line));
+                        body.push(s);
+                    }
+                    arms.push(basil_ast::CaseArm { patterns, body });
+                    continue;
+                }
+                // If we reached here, we expected either CASE or END
+                return Err(BasilError("Expected 'END' or 'END SELECT' to terminate SELECT CASE block.".into()));
+            }
+            return Ok(Stmt::SelectCase { selector, arms, else_body });
+        }
+
         // FUNC/SUB name(params) block
         if self.check(TokenKind::Func) {
             let kw = self.next().unwrap();

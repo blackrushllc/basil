@@ -106,8 +106,23 @@ pub enum Stmt {
     For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
     // FOR EACH var IN expr ... NEXT
     ForEach { var: String, enumerable: Expr, body: Box<Stmt> },
+    // SELECT CASE statement
+    SelectCase { selector: Expr, arms: Vec<CaseArm>, else_body: Option<Vec<Stmt>> },
     // Line marker for runtime error reporting
     Line(u32),
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseArm {
+    pub patterns: Vec<CasePattern>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CasePattern {
+    Value(Expr),
+    Range { lo: Expr, hi: Expr },
+    Compare { op: BinOp, rhs: Expr },
 }
 
 pub type Program = Vec<Stmt>;
