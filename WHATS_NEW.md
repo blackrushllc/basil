@@ -9,9 +9,9 @@
 
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
-
 ### 🌿 New stuff just added:
  
++ SELECT CASE .. END SELECT flo
 + String Interpolation i.e. PRINT "Hello #{name$}! You have #{wins%} wins and #{losses%} losses.";
 + GOTO, GOSUB .. RETURN, SUB .. END [SUB] support, and other BASIC features
 + END SUB, END FUNC, END FUNTION, END WHILE, END BLOCK (etc) for readability and one's natural desire to want to use this syntax, but these are all aliases for "END" which is all you really need in any circumstance.
