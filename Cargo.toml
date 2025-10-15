@@ -41,5 +41,6 @@ basil-bytecode  = { path = "basilcore/bytecode" }
 
 [profile.dev]
 debug = 1            # smaller PDBs (0 = none, 1 = light, 2 = default)
-split-debuginfo = "off"
 incremental = false  # fewer weird PDB interactions
+split-debuginfo = "off"
+
