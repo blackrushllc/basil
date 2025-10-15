@@ -1,0 +1,21 @@
+[package]
+name = "basil-objects-crypto"
+version = "0.1.0"
+authors = ["Blackrush LLC"]
+edition = "2021"
+
+[lib]
+name = "basil_objects_crypto"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Phase 1: PGP only
+obj-crypto-pgp = []
+# Umbrella feature for future crypto objects
+obj-crypto = ["obj-crypto-pgp"]
+
+[dependencies]
+basil-common = { workspace = true }
+basil-bytecode = { workspace = true }
+sequoia-openpgp = { version = "1.21", default-features = true }

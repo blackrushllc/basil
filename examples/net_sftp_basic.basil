@@ -1,0 +1,18 @@
+REM SFTP demo
+LET host$ = "sftp.example.com"
+LET user$ = "demo"
+LET pass$ = "apppass"
+DIM sftp@ AS NET_SFTP(host$, user$, pass$, "", 22)
+
+TRY
+  PRINTLN "MKDIR: ", sftp@.Mkdir("/incoming")
+  PRINTLN "PUT: ", sftp@.Put$("report.csv", "/incoming/report.csv")
+  LET names$ = sftp@.List$("/incoming")
+  PRINTLN "Listing:"
+  FOR EACH n$ IN names$ : PRINTLN " - ", n$ : NEXT
+  PRINTLN "GET: ", sftp@.GetToFile("/incoming/report.csv", "report_downloaded.csv")
+  PRINTLN "RENAME: ", sftp@.Rename("/incoming/report.csv", "/incoming/report_old.csv")
+  PRINTLN "DELETE: ", sftp@.Delete("/incoming/report_old.csv")
+CATCH err$
+  PRINTLN "SFTP error: ", err$
+END TRY

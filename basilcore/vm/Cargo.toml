@@ -41,3 +41,7 @@ obj-aws-s3  = ["basil-objects/obj-aws-s3"]
 obj-aws-ses = ["basil-objects/obj-aws-ses"]
 obj-aws-sqs = ["basil-objects/obj-aws-sqs"]
 obj-aws     = ["obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
+# NET features forwarded to basil-objects
+obj-net-sftp = ["basil-objects/obj-net-sftp"]
+obj-net-smtp = ["basil-objects/obj-net-smtp"]
+obj-net      = ["obj-net-sftp", "obj-net-smtp"]

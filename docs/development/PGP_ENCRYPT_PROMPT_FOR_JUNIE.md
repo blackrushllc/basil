@@ -69,7 +69,7 @@ Map all failures to readable Basil exceptions:
 
 ## Docs (must include)
 
-Create `docs/integrations/crypto/pgp.md` explaining for end users:
+Create `docs/guides/PGP.md` explaining for end users:
 
 * What CRYPTO_PGP provides (methods table with short descriptions).
 * **Key generation** quickstart with GnuPG:
@@ -98,16 +98,16 @@ REM Encrypt & decrypt strings with armored keys
 
 DIM pub$ = READFILE$("pub.asc")       REM provide these files locally
 DIM sec$ = READFILE$("sec.asc")
-DIM pass$ = ""                         REM or "your-passphrase" if key is protected
+LET pass$ = ""                         REM or "your-passphrase" if key is protected
 
 DIM pgp@ AS CRYPTO_PGP()
-DIM msg$ = "Hello from Basil PGP!"
+LET msg$ = "Hello from Basil PGP!"
 
-DIM cipher$ = pgp@.EncryptArmored$(pub$, msg$)
-PRINT "CIPHER:\n", cipher$
+LET cipher$ = pgp@.EncryptArmored$(pub$, msg$)
+PRINTLN "CIPHER:\n", cipher$
 
-DIM plain$ = pgp@.DecryptArmored$(sec$, pass$, cipher$)
-PRINT "PLAIN:\n", plain$
+LET plain$ = pgp@.DecryptArmored$(sec$, pass$, cipher$)
+PRINTLN "PLAIN:\n", plain$
 ```
 
 2. **`pgp_sign_verify.basil`**
@@ -115,17 +115,17 @@ PRINT "PLAIN:\n", plain$
 ```
 REM Detached sign & verify
 
-DIM pub$ = READFILE$("pub.asc")
-DIM sec$ = READFILE$("sec.asc")
-DIM pass$ = ""
+LET pub$ = READFILE$("pub.asc")
+LET sec$ = READFILE$("sec.asc")
+LET pass$ = ""
 
 DIM pgp@ AS CRYPTO_PGP()
-DIM data$ = "Important message"
+LET data$ = "Important message"
 
-DIM sig$ = pgp@.SignArmored$(sec$, pass$, data$)
-PRINT "SIG:\n", sig$
+LET sig$ = pgp@.SignArmored$(sec$, pass$, data$)
+PRINTLN "SIG:\n", sig$
 
-PRINT "VERIFY OK? ", pgp@.Verify$(pub$, data$, sig$)
+PRINTLN "VERIFY OK? ", pgp@.Verify$(pub$, data$, sig$)
 ```
 
 3. **`pgp_file_ops.basil`**
@@ -133,16 +133,16 @@ PRINT "VERIFY OK? ", pgp@.Verify$(pub$, data$, sig$)
 ```
 REM File encrypt/decrypt/sign/verify
 
-DIM pub$ = READFILE$("pub.asc")
-DIM sec$ = READFILE$("sec.asc")
-DIM pass$ = ""
+LET pub$ = READFILE$("pub.asc")
+LET sec$ = READFILE$("sec.asc")
+LET pass$ = ""
 
 DIM pgp@ AS CRYPTO_PGP()
 
-PRINT "Encrypt file: ", pgp@.EncryptFile$(pub$, "input.txt", "input.txt.asc")
-PRINT "Decrypt file: ", pgp@.DecryptFile$(sec$, pass$, "input.txt.asc", "input.out.txt")
-PRINT "Sign file: ", pgp@.SignFile$(sec$, pass$, "input.txt", "input.txt.sig")
-PRINT "Verify file: ", pgp@.VerifyFile$(pub$, "input.txt", "input.txt.sig")
+PRINTLN "Encrypt file: ", pgp@.EncryptFile$(pub$, "input.txt", "input.txt.asc")
+PRINTLN "Decrypt file: ", pgp@.DecryptFile$(sec$, pass$, "input.txt.asc", "input.out.txt")
+PRINTLN "Sign file: ", pgp@.SignFile$(sec$, pass$, "input.txt", "input.txt.sig")
+PRINTLN "Verify file: ", pgp@.VerifyFile$(pub$, "input.txt", "input.txt.sig")
 ```
 
 *(These examples assume you have `pub.asc`, `sec.asc`, and `input.txt` in the working directory. The doc should mention how to produce them.)*
@@ -159,6 +159,7 @@ PRINT "Verify file: ", pgp@.VerifyFile$(pub$, "input.txt", "input.txt.sig")
 ## Acceptance checklist
 
 * [ ] Workspace builds with `--features obj-crypto-pgp` and also when the feature is off.
+* [ ] `--features obj-all` includes `obj-crypto-pgp` !!!
 * [ ] `CRYPTO_PGP` registers only when the feature is enabled; `DESCRIBE pgp@` shows methods.
 * [ ] `/examples/pgp_encrypt_decrypt.basil`, `/examples/pgp_sign_verify.basil`, `/examples/pgp_file_ops.basil` exist and run with local test keys.
 * [ ] `docs/integrations/crypto/pgp.md` exists and covers key generation, usage, feature flags, and exception handling notes.
