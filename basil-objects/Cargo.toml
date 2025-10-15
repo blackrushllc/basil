@@ -40,7 +40,11 @@ obj-net = ["obj-net-sftp", "obj-net-smtp", "obj-net-http"]
 # CRYPTO umbrella and specific features
 obj-crypto-pgp = ["basil-objects-crypto/obj-crypto-pgp", "basil-objects-crypto"]
 obj-crypto = ["obj-crypto-pgp"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-crypto"]
+# SQL feature objects (Phase 1)
+obj-sql-mysql    = ["basil-objects-sql/obj-sql-mysql", "basil-objects-sql"]
+obj-sql-postgres = ["basil-objects-sql/obj-sql-postgres", "basil-objects-sql"]
+obj-sql          = ["obj-sql-mysql", "obj-sql-postgres"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-crypto", "obj-sql"]
 
 [dependencies]
 basil-common = { workspace = true }
@@ -51,6 +55,8 @@ basil-objects-aws = { workspace = true, optional = true }
 basil-objects-net = { workspace = true, optional = true }
 # CRYPTO objects live in separate crate
 basil-objects-crypto = { workspace = true, optional = true }
+# SQL objects live in separate crate
+basil-objects-sql = { workspace = true, optional = true }
 base64 = { version = "0.22", optional = true }
 zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
 walkdir = { version = "2", optional = true }

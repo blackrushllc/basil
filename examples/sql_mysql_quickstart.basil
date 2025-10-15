@@ -1,0 +1,12 @@
+REM MySQL quickstart (adapt host/user/pass/db)
+LET dsn$ = "mysql://user:pass@localhost:3306/test?ssl-mode=DISABLED"
+DIM db@ AS DB_MYSQL(dsn$)
+
+TRY
+  PRINTLN db@.Execute("CREATE TABLE IF NOT EXISTS t (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50))")
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Alice"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Bob"])
+  PRINTLN db@.Query$("SELECT id, name FROM t WHERE name LIKE ?", ["A%"])
+CATCH e$
+  PRINTLN "MySQL error: ", e$
+END TRY

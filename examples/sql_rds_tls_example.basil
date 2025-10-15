@@ -1,0 +1,5 @@
+REM RDS TLS example (show RootCertPath$ usage)
+LET dsn$ = "postgres://user:pass@mydb.abcdefg.us-east-1.rds.amazonaws.com:5432/app?sslmode=require"
+DIM db@ AS DB_POSTGRES(dsn$)
+db@.RootCertPath$ = "rds-ca-root.pem"   REM download AWS RDS CA bundle
+PRINTLN db@.Query$("SELECT version()", [])

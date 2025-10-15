@@ -22,6 +22,7 @@ Create a new crate: **`basil-objects-sql/`** with features:
 * `obj-sql-mysql`     → enables MySQL connector
 * `obj-sql-postgres`  → enables Postgres connector
 * umbrella `obj-sql = ["obj-sql-mysql","obj-sql-postgres"]`
+* `obj-all` includes obj-sql-mysql and obj-sql-postgres.
 
 Wire via workspace dependencies (forward slashes). Register objects with the global registry **only** when features are enabled.
 
@@ -129,7 +130,7 @@ db@.Connect$("host$", port%, "user$", "pass$", "dbname$", "sslmode$")
 
 ## Docs (must include)
 
-Create **`docs/integrations/sql/README.md`** (single page covering both connectors):
+Create **`docs/guides/SQL.md`** (single page covering both connectors):
 
 * **Supported servers**: MySQL/Aurora/Percona/MariaDB; Postgres/Aurora Postgres.
 * **Connection strings** (DSN examples):
@@ -157,16 +158,16 @@ Place under `/examples/`:
 
 ```
 REM MySQL quickstart (adapt host/user/pass/db)
-DIM dsn$ = "mysql://user:pass@localhost:3306/test?ssl-mode=DISABLED"
+LET dsn$ = "mysql://user:pass@localhost:3306/test?ssl-mode=DISABLED"
 DIM db@ AS DB_MYSQL(dsn$)
 
 TRY
-  PRINT db@.Execute("CREATE TABLE IF NOT EXISTS t (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50))")
-  PRINT db@.Execute("INSERT INTO t (name) VALUES (?)", ["Alice"])
-  PRINT db@.Execute("INSERT INTO t (name) VALUES (?)", ["Bob"])
-  PRINT db@.Query$("SELECT id, name FROM t WHERE name LIKE ?", ["A%"])
+  PRINTLN db@.Execute("CREATE TABLE IF NOT EXISTS t (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50))")
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Alice"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Bob"])
+  PRINTLN db@.Query$("SELECT id, name FROM t WHERE name LIKE ?", ["A%"])
 CATCH e$
-  PRINT "MySQL error: ", e$
+  PRINTLN "MySQL error: ", e$
 END TRY
 ```
 
@@ -174,16 +175,16 @@ END TRY
 
 ```
 REM Postgres quickstart (adapt host/user/pass/db)
-DIM dsn$ = "postgres://user:pass@localhost:5432/test?sslmode=disable"
+LET dsn$ = "postgres://user:pass@localhost:5432/test?sslmode=disable"
 DIM db@ AS DB_POSTGRES(dsn$)
 
 TRY
-  PRINT db@.Execute("CREATE TABLE IF NOT EXISTS t (id SERIAL PRIMARY KEY, name TEXT)")
-  PRINT db@.Execute("INSERT INTO t (name) VALUES ($1)", ["Carol"])
-  PRINT db@.Execute("INSERT INTO t (name) VALUES ($1)", ["Dave"])
-  PRINT db@.Query$("SELECT id, name FROM t WHERE name LIKE $1", ["C%"])
+  PRINTLN db@.Execute("CREATE TABLE IF NOT EXISTS t (id SERIAL PRIMARY KEY, name TEXT)")
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES ($1)", ["Carol"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES ($1)", ["Dave"])
+  PRINTLN db@.Query$("SELECT id, name FROM t WHERE name LIKE $1", ["C%"])
 CATCH e$
-  PRINT "Postgres error: ", e$
+  PRINTLN "Postgres error: ", e$
 END TRY
 ```
 
@@ -191,17 +192,17 @@ END TRY
 
 ```
 REM Transaction demo (either connector)
-DIM dsn$ = "mysql://user:pass@localhost:3306/test?ssl-mode=DISABLED"
+LET dsn$ = "mysql://user:pass@localhost:3306/test?ssl-mode=DISABLED"
 DIM db@ AS DB_MYSQL(dsn$)
 
 TRY
   db@.Begin()
-  PRINT db@.Execute("INSERT INTO t (name) VALUES (?)", ["Txn1"])
-  PRINT db@.Execute("INSERT INTO t (name) VALUES (?)", ["Txn2"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Txn1"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Txn2"])
   db@.Commit()
-  PRINT db@.Query$("SELECT COUNT(*) AS cnt FROM t")
+  PRINTLN db@.Query$("SELECT COUNT(*) AS cnt FROM t")
 CATCH e$
-  PRINT "SQL error: ", e$
+  PRINTLN "SQL error: ", e$
   db@.Rollback()
 END TRY
 ```
@@ -210,10 +211,10 @@ END TRY
 
 ```
 REM RDS TLS example (show RootCertPath$ usage)
-DIM dsn$ = "postgres://user:pass@mydb.abcdefg.us-east-1.rds.amazonaws.com:5432/app?sslmode=require"
+LET dsn$ = "postgres://user:pass@mydb.abcdefg.us-east-1.rds.amazonaws.com:5432/app?sslmode=require"
 DIM db@ AS DB_POSTGRES(dsn$)
 db@.RootCertPath$ = "rds-ca-root.pem"   REM download AWS RDS CA bundle
-PRINT db@.Query$("SELECT version()", [])
+PRINTLN db@.Query$("SELECT version()", [])
 ```
 
 ## Implementation notes (guidance)
@@ -232,6 +233,6 @@ PRINT db@.Query$("SELECT version()", [])
 * [ ] Workspace builds with `--features obj-sql` and also with features off.
 * [ ] `DB_MYSQL` and/or `DB_POSTGRES` register only when features enabled; `DESCRIBE` shows properties/methods.
 * [ ] Examples compile and run against local DBs (or RDS) when credentials are valid.
-* [ ] `docs/integrations/sql/README.md` exists and covers DSNs, TLS/RDS, params, transactions, pooling/timeouts, feature flags, and `TRY/CATCH`.
+* [ ] `docs/guides/SQL.md` exists and covers DSNs, TLS/RDS, params, transactions, pooling/timeouts, feature flags, and `TRY/CATCH`.
 * [ ] Errors map to Basil exceptions with clear, non-sensitive messages.
 

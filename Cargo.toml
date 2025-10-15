@@ -13,6 +13,7 @@ members = [
     "basil-objects-aws",
     "basil-objects-net",
     "basil-objects-crypto",
+    "basil-objects-sql",
     "crates/basil-frontend",
     "crates/basil-ir",
     "crates/backend-rs",
@@ -38,6 +39,7 @@ basil-objects   = { path = "basil-objects" }
 basil-objects-aws = { path = "basil-objects-aws" }
 basil-objects-net = { path = "basil-objects-net" }
 basil-objects-crypto = { path = "basil-objects-crypto" }
+basil-objects-sql = { path = "basil-objects-sql" }
 basil-common    = { path = "basilcore/common" }
 basil-bytecode  = { path = "basilcore/bytecode" }
 
