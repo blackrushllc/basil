@@ -12,6 +12,7 @@ members = [
     "basil-objects",
     "basil-objects-aws",
     "basil-objects-net",
+    "basil-objects-crypto",
     "crates/basil-frontend",
     "crates/basil-ir",
     "crates/backend-rs",
@@ -26,8 +27,8 @@ license = "MIT"
 # (no `name` here)
 
 [workspace.dependencies]
-# windows = "=0.53.0"
-# windows-sys = "=0.52.0"  # only if you also use windows-sys and need a consistent version
+windows = "=0.53.0"
+windows-sys = "=0.52.0"  # only if you also use windows-sys and need a consistent version
 basil-ast       = { path = "basilcore/ast" }
 basil-lexer     = { path = "basilcore/lexer" }
 basil-parser    = { path = "basilcore/parser" }
@@ -36,11 +37,12 @@ basil-vm        = { path = "basilcore/vm" }
 basil-objects   = { path = "basil-objects" }
 basil-objects-aws = { path = "basil-objects-aws" }
 basil-objects-net = { path = "basil-objects-net" }
+basil-objects-crypto = { path = "basil-objects-crypto" }
 basil-common    = { path = "basilcore/common" }
 basil-bytecode  = { path = "basilcore/bytecode" }
 
 [profile.dev]
-debug = 1            # smaller PDBs (0 = none, 1 = light, 2 = default)
+debug = 0            # disable PDBs to avoid MSVC LNK1318 on large workspaces
 incremental = false  # fewer weird PDB interactions
 split-debuginfo = "off"
 
