@@ -1418,6 +1418,7 @@ impl C {
                         "DELETE" => Some(56u8),
                         "DIR$" => Some(57u8),
                         "ENV$" => Some(58u8),
+                        "LOADENV%" => Some(63u8),
                         "MKDIRS%" => Some(62u8),
                         #[cfg(feature = "obj-base64")] "BASE64_ENCODE$" => Some(90u8),
                         #[cfg(feature = "obj-base64")] "BASE64_DECODE$" => Some(91u8),

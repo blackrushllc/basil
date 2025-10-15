@@ -1694,6 +1694,49 @@ impl VM {
                                 Err(_e) => self.stack.push(Value::Int(0)),
                             }
                         }
+                        63 => { // LOADENV%(filename$?) -> Int (1=ok,0=fail)
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("LOADENV% expects 0 or 1 argument".into())); }
+                            let default_name = ".env".to_string();
+                            let file = if argc == 0 {
+                                default_name
+                            } else {
+                                let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                                let t = s.trim();
+                                if t.is_empty() { ".env".to_string() } else { t.to_string() }
+                            };
+                            match fs::read_to_string(&file) {
+                                Ok(contents) => {
+                                    for (i, line) in contents.lines().enumerate() {
+                                        let trimmed = line.trim();
+                                        if trimmed.is_empty() { continue; }
+                                        if trimmed.starts_with('#') || trimmed.starts_with(';') { continue; }
+                                        match trimmed.find('=') {
+                                            Some(eq) => {
+                                                let key = trimmed[..eq].trim();
+                                                let val_raw = trimmed[eq+1..].trim();
+                                                if key.is_empty() {
+                                                    eprintln!("warning: LOADENV% {}:{}: missing key before '='", file, i + 1);
+                                                    continue;
+                                                }
+                                                let unquoted = if (val_raw.starts_with('"') && val_raw.ends_with('"') && val_raw.len() >= 2) ||
+                                                                (val_raw.starts_with('\'') && val_raw.ends_with('\'') && val_raw.len() >= 2) {
+                                                    val_raw[1..val_raw.len()-1].to_string()
+                                                } else { val_raw.to_string() };
+                                                env::set_var(key, unquoted);
+                                            }
+                                            None => {
+                                                eprintln!("warning: LOADENV% {}:{}: invalid line (expected name=value or comment)", file, i + 1);
+                                            }
+                                        }
+                                    }
+                                    self.stack.push(Value::Int(1));
+                                }
+                                Err(e) => {
+                                    eprintln!("warning: LOADENV% could not read {}: {}", file, e);
+                                    self.stack.push(Value::Int(0));
+                                }
+                            }
+                        }
                         #[cfg(feature = "obj-base64")]
                         90 => { // BASE64_ENCODE$(text$)
                             if argc != 1 { return Err(BasilError("BASE64_ENCODE$ expects 1 argument".into())); }
