@@ -675,6 +675,13 @@ EXPORTENV DEMO_EXPORT = "HELLO WORLD";
 PRINTLN ENV$("DEMO_EXPORT");
 ```
 
+### LOADENV%
+Loads name=value pairs from a file (default ".env" when omitted/blank) into the current process environment. Returns 1 on success, 0 on error reading the file. Malformed lines cause warnings.
+```basil
+IF LOADENV%() THEN PRINTLN "Loaded .env";
+PRINTLN ENV$("API_KEY");
+```
+
 ### SHELL
 Executes a command string in the parent command environment and waits for it to complete.
 ```basil

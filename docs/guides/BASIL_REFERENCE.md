@@ -410,6 +410,22 @@ Returns the value of an environment variable named by its string argument, or an
 PRINTLN "PATH=", ENV$("PATH");
 ```
 
+## LOADENV%
+*Type:* Function (returns Integer)
+Loads environment variables from a text file containing newline-separated `name=value` pairs. Lines starting with `#` or `;` are treated as comments; blank lines are ignored. Values are set for the current Basil process (so they are visible to ENV$ and to child processes you spawn).
+
+- Parameters: optional `filename$` (String). If omitted or blank, defaults to `.env` in the current directory.
+- Returns: `1` (TRUE) on success (file read and processed), `0` (FALSE) on error reading the file. Malformed lines cause warnings but do not make the call fail.
+- Notes: Surrounding single or double quotes around values are removed when present.
+```basil
+' Load from default .env
+IF LOADENV%() THEN PRINTLN "Loaded .env"; ELSE PRINTLN "No .env";
+
+' Load from a specific file
+IF LOADENV%("config.env") THEN PRINTLN "Loaded config.env";
+PRINTLN "API_KEY=", ENV$("API_KEY");
+```
+
 ## ESCAPE$
 *Type:* Function (returns String)  
 Escapes a string for safe inclusion in SQL string literals by doubling single quotes.
