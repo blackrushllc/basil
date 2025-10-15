@@ -44,7 +44,11 @@ obj-crypto = ["obj-crypto-pgp"]
 obj-sql-mysql    = ["basil-objects-sql/obj-sql-mysql", "basil-objects-sql"]
 obj-sql-postgres = ["basil-objects-sql/obj-sql-postgres", "basil-objects-sql"]
 obj-sql          = ["obj-sql-mysql", "obj-sql-postgres"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-crypto", "obj-sql"]
+obj-orm = ["basil-objects-orm/obj-orm", "basil-objects-orm"]
+obj-orm-mysql = ["basil-objects-orm/obj-orm-mysql", "basil-objects-orm"]
+obj-orm-postgres = ["basil-objects-orm/obj-orm-postgres", "basil-objects-orm"]
+obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-crypto", "obj-sql", "obj-orm-all"]
 
 [dependencies]
 basil-common = { workspace = true }
@@ -57,6 +61,8 @@ basil-objects-net = { workspace = true, optional = true }
 basil-objects-crypto = { workspace = true, optional = true }
 # SQL objects live in separate crate
 basil-objects-sql = { workspace = true, optional = true }
+# ORM objects live in separate crate
+basil-objects-orm = { workspace = true, optional = true }
 base64 = { version = "0.22", optional = true }
 zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
 walkdir = { version = "2", optional = true }

@@ -1,0 +1,18 @@
+#USE DB_POSTGRES, ORM
+DIM db@ AS DB_POSTGRES("postgres://user:pass@localhost:5432/app?sslmode=disable")
+DIM orm@ AS ORM(db@)
+
+orm@.ModelFromTable$("users")
+orm@.ModelFromTable$("posts")
+orm@.HasMany("users","posts","user_id%")
+orm@.BelongsTo("posts","users","user_id%","id%")
+
+DIM u@ = orm@.New("users")
+u@.Name$="Alice": u@.Email$="alice@example.com": u@.Save()
+
+' Create a post (lazy relation create pattern via direct New on table)
+DIM p@ = orm@.New("posts")
+p@.User_Id% = u@.Pk$ : p@.Title$="First": p@.Body$="Hello": p@.Save()
+
+DIM rs@ = orm@.Table("users").OrderBy$("id%","DESC").Get()
+FOR EACH row@ IN rs@ : PRINT row@.Name$; PRINT " posts="; PRINTLN 0 : NEXT
