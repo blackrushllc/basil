@@ -1,0 +1,34 @@
+[package]
+name = "basil-objects-net"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[lib]
+name = "basil_objects_net"
+path = "src/lib.rs"
+
+[features]
+# Fine-grained features
+obj-net-sftp = ["dep:ssh2", "dep:once_cell", "dep:tokio"]
+obj-net-smtp = ["dep:lettre", "dep:once_cell", "dep:tokio"]
+obj-net-http = ["dep:reqwest", "dep:once_cell", "dep:tokio", "dep:serde", "dep:serde_json", "dep:mime", "dep:base64"]
+# Umbrellas
+obj-net = ["obj-net-sftp", "obj-net-smtp", "obj-net-http"]
+obj-all = ["obj-net"]
+
+[dependencies]
+basil-bytecode = { workspace = true }
+basil-common   = { workspace = true }
+
+once_cell = { version = "1.19", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync"], optional = true }
+ssh2 = { version = "0.9", optional = true }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls", "rustls-native-certs", "ring"], optional = true }
+
+# HTTP client deps
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "deflate", "stream", "rustls-tls", "multipart"], optional = true }
+mime = { version = "0.3", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+base64 = { version = "0.22", optional = true }
