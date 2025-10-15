@@ -1,7 +1,7 @@
 # Basil 🌿
 
 🌱 A Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform Compiler** with lots of Rad Mods 
-such as AI, AWS, Zip, Crypt (Base64, PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), SQL(MySQL/RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode (Jolt Cola not included)
+such as AI, AWS, Zip, Crypt (Base64, PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), SQL(MySQL/Postgres, RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode (Jolt Cola not included)
 
 ### Complete Online Reference: https://yobasic.com/basil/reference.html
 
@@ -27,6 +27,8 @@ using \<?basil .. ?> tags like Php.
 🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library Objects ("Mods") and write Basil code.
 
 🌱 Read the previous line again
+
+🌱 Basil has a built-in ORM (Object Relational Mapping) for SQL databases.
 
 🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Classes for manual testing, enter a program (with line numbers!) and run it, save it, load it, list it, and more. Cowabunga!
 
