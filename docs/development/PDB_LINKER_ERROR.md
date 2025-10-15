@@ -243,3 +243,75 @@ cargo tree -i windows-sys
 ```
 
 and I’ll show you precisely which features/versions to flip to slim the graph.
+
+> Yeah it's definitely that branch. I cloned a fresh copy of the repo on my C: drive and it does the same thing. I
+> updated the Cargo.toml like you suggested and the problem went away. It never seemed to be an issue with Linux
+
+Sweet — that lines up perfectly with a Windows-only PDB/linker quirk. Linux doesn’t emit MSVC PDBs, so it never trips the same limit. Your new SMTP/SFTP module pulled in a lot of Windows-flavored deps (TLS, libssh2, windows*/schannel, etc.), which made the **debug** build on MSVC spit out way more symbols than before; dialing back debug info (or slimming features/versions) fixes it.
+
+Here’s how I’d lock this in so it never bites you again:
+
+## 1) Make a Windows-only dev profile
+
+Keep symbols small only on Windows debug builds; leave other platforms unchanged:
+
+```toml
+# .cargo/config.toml (workspace root)
+[target.'cfg(windows)'.profile.dev]
+debug = 1          # lighter PDBs (0 = none, 1 = light, 2 = default)
+incremental = false
+```
+
+If you ever need to go nuclear on a stubborn machine, temporarily do:
+
+```powershell
+$env:RUSTFLAGS = '-C debuginfo=0 -C link-arg=/DEBUG:NONE'
+```
+
+(For PowerShell, not `set`.)
+
+## 2) Prefer rustls over schannel on Windows
+
+This trims Windows linkage and symbol bloat:
+
+```toml
+# basil-objects-net/Cargo.toml (or wherever SMTP lives)
+lettre = { version = "0.11", default-features = false, features = [
+  "smtp-transport",            # what you need
+  "tokio1-rustls-tls",         # use rustls, not native-tls/schannel
+  "builder"
+] }
+```
+
+## 3) Avoid mixed `windows` crate versions
+
+Your failing link line showed both `windows 0.52.x` and `0.53.x`. Pin to one:
+
+```toml
+# Cargo.toml (workspace root)
+[patch.crates-io]
+windows = "=0.53.0"
+windows-sys = "=0.52.0"  # or align to what your deps expect
+```
+
+Then:
+
+```powershell
+cargo update -p windows --precise 0.53.0
+cargo update -p windows-sys --precise 0.52.0
+```
+
+(Fewer, unified Windows bindings → smaller PDBs and fewer surprises.)
+
+## 4) Keep CI happy and document it
+
+* Add a note in `SETUP_WINDOWS.md` (or README) explaining the Windows dev profile and the rustls choice.
+* In CI, keep a Windows debug build to catch regressions, but use the trimmed settings above.
+* If you split crates later, consider isolating the SMTP/SFTP bits so `basilc` doesn’t always pull them in during *debug* development.
+
+### Why Linux was fine
+
+* Linux uses DWARF debug info and `ld`/`lld` linkers — no MSVC PDB writer involved.
+* The extra deps don’t stress the same internal limits there.
+
+If you want, paste your current `Cargo.toml` feature blocks for the net module and I’ll propose the cleanest feature set for Windows vs. non-Windows.
