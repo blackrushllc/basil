@@ -1,0 +1,49 @@
+REM ELAIZA: AI-assisted psychoanalysis demo for Basil
+REM This example is like ELIZA but calls the AI module for a short analysis.
+REM How to run (requires obj-ai feature enabled):
+REM   cargo run -q -p basilc --features obj-ai -- run examples\elaiza.basil
+REM Tip: during development you can use "test" instead of "run" to avoid long waits/hangs.
+
+PRINTLN "=== Elaiza (AI Therapist) ===";
+PRINTLN "I will ask a couple quick questions and then reflect with suggestions.";
+
+REM Collect a few short inputs (single-line each) to keep it quick/non-blocking
+LET name$   = INPUT$("\nFirst, what name should I call you? (or leave blank): ");
+LET concern$ = INPUT$("Briefly, what's on your mind today? ");
+LET feel$    = INPUT$("How does this mainly make you feel? (1-3 words) ");
+LET goal$    = INPUT$("What would you like to change or improve? ");
+
+REM Build the prompt for AI.CHAT$
+LET who$ = name$;
+IF LEN(TRIM$(who$)) == 0 THEN LET who$ = "friend";
+
+LET sys$ = "You are Elaiza, an empathetic therapist/coach. Be concise, kind, practical. " +
+           "Avoid clinical diagnosis; focus on feelings, patterns, and actionable ideas. " +
+           "Write under 200 words. Use second person (‘you’).";
+
+LET user$ = "Client name (optional): " + who$ + "\n" +
+            "Primary concern: " + concern$ + "\n" +
+            "Feelings: " + feel$ + "\n" +
+            "Goal: " + goal$ + "\n\n" +
+            "Please respond with: \n" +
+            "1) A brief empathy statement (1-2 sentences).\n" +
+            "2) 3-5 concise observations about patterns/needs.\n" +
+            "3) 2 concrete next steps I can try this week.";
+
+PRINTLN "\nThinking (contacting AI)...";
+
+LET prompt$ = "System:\n" + sys$ + "\n\nUser:\n" + user$;
+LET reply$ = AI.CHAT$(prompt$);
+
+IF LEN(reply$) == 0 THEN BEGIN
+    PRINTLN "\nSorry, I couldn't reach the AI right now.";
+    LET err$ = AI.LAST_ERROR$;
+    IF LEN(err$) > 0 THEN PRINTLN "Details: ", err$; ELSE PRINTLN "Tip: Ensure obj-ai is enabled and your AI credentials are configured.";
+    PRINTLN "You can still try journaling: write 3 sentences about your concern and 2 possible next steps.";
+    EXIT(0);
+END
+
+PRINTLN "\nElaiza:";
+PRINTLN reply$;
+
+PRINTLN "\nTake care. If you want more, run me again with updated thoughts.";
