@@ -283,3 +283,293 @@ Add a minimal builds table (project_id, job_id, status, created_at). Show recent
 * Dark/light theme toggle.
 * Remember last filename (not content) in local storage.
 * Accessible form labels, focus states, and keyboard flow.
+
+---
+
+# Phase 1 — Step 1 & 2 Implementation (upload UI + compile handler)
+
+Below are **drop‑in files** and minimal patches that keep the simple, same‑folder CGI layout and read HTML from `/views/`.
+
+## 1) NEW: `views/upload.html`
+
+```html
+<!-- views/upload.html -->
+<section class="wrap">
+  <div class="intro">
+    <h2>Compile a Basil file</h2>
+    <p>Upload a single <code>.basil</code> file. We’ll compile it to bytecode and return a ZIP with your source and the <code>.basilx</code>.</p>
+  </div>
+  <div class="card" style="max-width:560px">
+    <form action="compile.basil" method="post" enctype="multipart/form-data">
+      <label for="source">Choose a .basil file</label>
+      <input id="source" name="source" type="file" accept=".basil" required>
+      <p class="notice" style="margin-top:.75rem">Max size: 256 KB by default. Only <code>.basil</code> files.</p>
+      <div style="margin-top:1rem">
+        <button class="btn" type="submit">Compile & Download ZIP</button>
+        <a class="btn secondary" href="user_home.basil">Cancel</a>
+      </div>
+    </form>
+  </div>
+</section>
+```
+
+## 2) PATCH: add a link from `views/logged_in.html`
+
+Add this button somewhere sensible (e.g., under the greeting/dashboard area):
+
+```html
+<a class="btn" href="compile.basil">Compile a Basil file</a>
+```
+
+> Note: we link directly to `compile.basil` so GET shows the upload form; POST handles the compile.
+
+## 3) NEW: `compile.basil` (CGI handler)
+
+This script serves the upload form on **GET** and handles upload/compile/zip/download on **POST**. It keeps **relative redirects** and assumes a few helper functions noted below. If any helper doesn’t exist yet (e.g., `FILE_EXISTS()`), Junie can wire it using Basil’s FS/CGI APIs.
+
+```basil
+' compile.basil — upload → compile to .basilx → zip → stream download
+#CGI_NO_HEADER
+
+' -----------------
+' CONFIG DEFAULTS
+' -----------------
+LET MAX_SIZE% = 262144           ' 256 KB default (env override BASIL_WEB_MAX_UPLOAD)
+LET TMP_ROOT$ = "tmp"            ' per-request subdir will be created inside here
+LET ZIP_NAME$ = "project"       ' base name for the download zip
+
+' read env override if present
+IF LEN(ENV$("BASIL_WEB_MAX_UPLOAD")) > 0 THEN LET MAX_SIZE% = VAL(ENV$("BASIL_WEB_MAX_UPLOAD"))
+
+' -----------------
+' AUTH GUARD
+' -----------------
+IF LEN(get_cookie$("user")) == 0 THEN BEGIN
+  PRINT "Status: 302 Found
+"
+  PRINT "Location: login.basil
+
+"
+  EXIT 0
+END
+
+' -----------------
+' DISPATCH BY METHOD
+' -----------------
+IF UCASE$(CGI_REQUEST_METHOD$()) == "POST" THEN
+  GOTO :handle_post
+ELSE
+  GOTO :show_form
+END
+
+:show_form
+  send_header_ok_html()
+  layout_start("Upload & Compile")
+  ' TODO: if you want to surface a flash message, print it here
+  PRINT READFILE$("views/upload.html")
+  layout_end()
+  EXIT 0
+
+:handle_post
+  ' 1) VALIDATE UPLOAD
+  DIM err$
+  LET field$ = "source"
+  IF NOT CGI_HAS_FILE%(field$) THEN LET err$ = "No file uploaded."
+
+  IF LEN(err$) == 0 THEN BEGIN
+    LET fname$ = CGI_FILE_NAME$(field$)        ' original name user provided
+    LET size%  = CGI_FILE_SIZE%(field$)
+
+    IF size% <= 0 THEN LET err$ = "Empty upload."
+    IF size% > MAX_SIZE% THEN LET err$ = "File too large (limit " + STR$(MAX_SIZE%) + " bytes)."
+
+    ' enforce .basil extension, case-insensitive
+    IF LEN(err$) == 0 THEN BEGIN
+      LET lower$ = LCASE$(fname$)
+      IF RIGHT$(lower$, 6) <> ".basil" THEN LET err$ = "Only .basil files are allowed."
+    END
+  END
+
+  IF LEN(err$) > 0 THEN BEGIN
+    ' 400 Bad Request
+    PRINT "Status: 400 Bad Request
+"
+    PRINT "Content-Type: text/html; charset=utf-8
+
+"
+    layout_start("Upload error")
+    PRINT "<div class=\"error\">"; HTML$(err$); "</div>"
+    PRINT READFILE$("views/upload.html")
+    layout_end()
+    EXIT 0
+  END
+
+  ' 2) PREP TEMP WORKDIR
+  LET req_id$ = gen_req_id$()
+  LET workdir$ = make_workdir$(TMP_ROOT$, req_id$)      ' e.g., tmp/17300-ABCD12/
+  IF LEN(workdir$) == 0 THEN BEGIN
+    GOTO :fatal_500
+  END
+
+  ' sanitize basename, but we’ll save as main.basil internally
+  LET base$ = safe_basename$(fname$)
+  LET src_path$ = workdir$ + "main.basil"
+  LET out_path$ = workdir$ + "main.basilx"
+  LET readme$   = workdir$ + "README.txt"
+  LET zip_path$ = workdir$ + "artifact.zip"
+
+  ' 3) SAVE UPLOADED FILE TO workdir/main.basil
+  IF CGI_SAVE_FILE%(field$, src_path$) == 0 THEN BEGIN
+    LET err$ = "Failed to save uploaded file."
+    GOTO :respond_500
+  END
+
+  ' 4) COMPILE TO BYTECODE (prefer bcc, fallback to basilc)
+  DIM comp
+  comp = run_compile%(workdir$, src_path$, out_path$, readme$)
+  IF comp <> 0 OR NOT FILE_EXISTS(out_path$) THEN BEGIN
+    ' 422 + show stderr tail from readme or a separate stderr file
+    PRINT "Status: 422 Unprocessable Entity
+"
+    PRINT "Content-Type: text/html; charset=utf-8
+
+"
+    layout_start("Compile failed")
+    PRINT "<div class=\"error\"><strong>Compilation failed.</strong><br>"
+    PRINT "Please check your Basil syntax and try again.</div>"
+    PRINT "<pre class=\"notice\">"; HTML$(tail_file$(readme$, 2000)); "</pre>"
+    PRINT READFILE$("views/upload.html")
+    layout_end()
+    cleanup_dir(workdir$)
+    EXIT 0
+  END
+
+  ' 5) CREATE ZIP: main.basil, main.basilx, README.txt
+  IF create_zip%(zip_path$, src_path$, out_path$, readme$) == 0 THEN BEGIN
+    LET err$ = "Failed to create ZIP."
+    GOTO :respond_500
+  END
+
+  ' 6) STREAM DOWNLOAD
+  LET dl_name$ = ZIP_NAME$ + "-" + STR$(EPOCH%()) + ".zip"
+  PRINT "Status: 200 OK
+"
+  PRINT "Content-Type: application/zip
+"
+  PRINT "Content-Disposition: attachment; filename=\""; dl_name$; "\"
+
+"
+  SEND_FILE(zip_path$)
+
+  cleanup_dir(workdir$)
+  EXIT 0
+
+:fatal_500
+  LET err$ = "Server error (unable to prepare temp directory)."
+
+:respond_500
+  PRINT "Status: 500 Internal Server Error
+"
+  PRINT "Content-Type: text/html; charset=utf-8
+
+"
+  layout_start("Server error")
+  PRINT "<div class=\"error\">"; HTML$(err$); "</div>"
+  PRINT READFILE$("views/upload.html")
+  layout_end()
+  EXIT 0
+
+' -----------------
+' HELPER FUNCTIONS (assumptions allowed; Junie can wire real impls)
+' -----------------
+FUNCTION gen_req_id$()
+  RETURN STR$(EPOCH%()) + "-" + RANDOMSTR$(6)
+END
+
+FUNCTION make_workdir$(root$, id$)
+  LET path$ = root$ + "/" + id$ + "/"
+  IF NOT FILE_EXISTS(root$) THEN MKDIR(root$)
+  IF MKDIRS(path$) == 0 THEN RETURN ""
+  RETURN path$
+END
+
+FUNCTION safe_basename$(name$)
+  DIM i%: i% = LASTINDEXOF(name$, "/")
+  IF i% > 0 THEN LET name$ = MID$(name$, i%+1)
+  i% = LASTINDEXOF(name$, "\")
+  IF i% > 0 THEN LET name$ = MID$(name$, i%+1)
+  ' allow only safe chars
+  RETURN REGEX_REPLACE$(name$, "[^A-Za-z0-9._-]", "_")
+END
+
+FUNCTION run_compile%(workdir$, src$, out$, readme$)
+  ' Try bcc first
+  DIM cmd$
+  cmd$ = "bcc bc " + QUOTE$(src$) + " -o " + QUOTE$(out$)
+  DIM rc%: rc% = SYS_EXEC%(cmd$, workdir$, readme$)
+  IF rc% == 0 THEN RETURN 0
+  ' Fallback: basilc with a bytecode flag (placeholder)
+  cmd$ = "basilc --bytecode " + QUOTE$(src$) + " -o " + QUOTE$(out$)
+  rc% = SYS_EXEC%(cmd$, workdir$, readme$)
+  RETURN rc%
+END
+
+FUNCTION create_zip%(zip$, file1$, file2$, file3$)
+  ' If Basil ships a ZIP helper, use it. Otherwise shell out.
+  IF ZIP_CREATE%(zip$, file1$, file2$, file3$) == 1 THEN RETURN 1
+  DIM cmd$
+  cmd$ = "zip -q -j " + QUOTE$(zip$) + " " + QUOTE$(file1$) + " " + QUOTE$(file2$) + " " + QUOTE$(file3$)
+  RETURN (SYS_EXEC%(cmd$, "", "") == 0)
+END
+
+FUNCTION tail_file$(path$, limit%)
+  IF NOT FILE_EXISTS(path$) THEN RETURN ""
+  DIM s$: s$ = READFILE$(path$)
+  IF LEN(s$) <= limit% THEN RETURN s$
+  RETURN RIGHT$(s$, limit%)
+END
+
+SUB cleanup_dir(path$)
+  ' Best-effort remove temp dir; Junie can implement a recursive delete helper
+  ' e.g., DIR_DELETE_RECURSIVE(path$)
+END
+```
+
+### Notes on helpers & assumptions
+
+* `CGI_HAS_FILE%`, `CGI_FILE_NAME$`, `CGI_FILE_SIZE%`, `CGI_SAVE_FILE%` represent reasonable CGI upload primitives. If names differ in Basil, Junie can map them.
+* `SYS_EXEC%(cmd$, cwd$, tee_to$)` should run a process with optional working dir and append stdout/stderr to `tee_to$`. If not available, split into `SYS_EXEC%` and `APPENDFILE$()` calls.
+* `FILE_EXISTS(path$)`, `MKDIRS(path$)`, `SEND_FILE(path$)`, `ZIP_CREATE%()` are proposed helpers; Junie can supply equivalents or small wrappers.
+* We keep **relative** links and redirects to support hosting in a subfolder.
+
+## 4) (Optional) Tiny CSS tweak for better error/notice blocks
+
+`site.css` already includes `.error` and `.notice`. If you want a subtle border:
+
+```css
+/* optional */
+.notice{border:1px solid #dbeafe}
+.error{border-left:4px solid #b00020;padding-left:.8rem}
+```
+
+---
+
+## Smoke tests to run now
+
+1. Visit `compile.basil` while logged out → 302 to `login.basil`.
+2. Logged in → upload form renders (GET).
+3. Upload non-.basil file → 400 with error.
+4. Upload >256KB → 413 (if you want this stricter status) or 400 with message.
+5. Upload syntactically broken Basil → 422 with stderr tail.
+6. Valid file → browser downloads `project-<epoch>.zip` containing `main.basil`, `main.basilx`, `README.txt`.
+
+```
+```
+Added:
+
+* `views/upload.html` (clean upload form)
+* `compile.basil` (GET shows form; POST validates → compiles → zips → streams download)
+* A tiny patch to `views/logged_in.html` (button link)
+* Helper stubs + assumptions clearly marked so Junie can wire the actual Basil APIs
+
+Want me to also drop in a minimal `SYS_EXEC%`/`FILE_EXISTS`/`SEND_FILE` shim file (e.g., `web_utils.basil`) to make it runnable immediately, or do you prefer Junie to connect those to Basil’s real primitives first?

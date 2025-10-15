@@ -34,3 +34,6 @@ obj-term = []
 obj-net-sftp = []
 obj-net-smtp = []
 obj-net      = ["obj-net-sftp", "obj-net-smtp"]
+# CRYPTO feature gates (no deps here)
+obj-crypto-pgp = []
+obj-crypto     = ["obj-crypto-pgp"]
