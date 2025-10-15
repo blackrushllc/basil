@@ -189,6 +189,15 @@ impl BasicObject for AiObject {
                 // Non-test: stub allow
                 Ok(Value::Int(0))
             }
+            "KNOWLEDGE$" => {
+                self.clear_err();
+                if !(args.len() == 1 || args.len() == 2) { return Err(self.set_err("AI.KNOWLEDGE$ expects 1 or 2 arguments")); }
+                let path = match &args[0] { Value::Str(s)=>s.clone(), other => format!("{}", other) };
+                match fs::read_to_string(&path) {
+                    Ok(s) => Ok(Value::Str(s)),
+                    Err(e) => { self.set_err(format!("read failed: {}", e)); Ok(Value::Str(String::new())) }
+                }
+            }
             other => Err(BasilError(format!("Unknown method '{}' on AI", other))),
         }
     }
@@ -207,6 +216,7 @@ fn descriptor_static() -> ObjectDescriptor {
             basil_bytecode::MethodDesc { name: "STREAM".to_string(), arity: 2, arg_names: vec!["prompt$".to_string(), "opts$".to_string()], return_type: "String".to_string() },
             basil_bytecode::MethodDesc { name: "EMBED".to_string(), arity: 2, arg_names: vec!["text$".to_string(), "opts$".to_string()], return_type: "Float[]".to_string() },
             basil_bytecode::MethodDesc { name: "MODERATE%".to_string(), arity: 2, arg_names: vec!["text$".to_string(), "opts$".to_string()], return_type: "Int".to_string() },
+            basil_bytecode::MethodDesc { name: "KNOWLEDGE$".to_string(), arity: 2, arg_names: vec!["path$".to_string(), "opts$".to_string()], return_type: "String".to_string() },
         ],
         examples: vec![
             "PRINT AI.CHAT$(\"Hello\")".to_string(),

@@ -1,0 +1,93 @@
+REM Basil Program Generator using obj-ai
+REM This interactive demo asks what kind of Basil program you want,
+REM summarizes the plan, then on confirmation generates the program file.
+
+PRINTLN "=== Basil Program Generator (obj-ai) ===";
+PRINTLN "This demo will ask you a few questions and then generate a Basil program.";
+PRINTLN "Build/run tip: cargo run -q -p basilc --features obj-ai -- run examples\\obj-ai\\06_basil_code_generator.basil";
+
+REM --- Questions ---
+LET title$      = INPUT$("\nWhat should the program be called (short title)? ");
+LET desc$       = INPUT$("Describe what the program should do (1-3 sentences): ");
+LET outDir$     = INPUT$("Output folder (default examples\\generated): ");
+IF LEN(outDir$) = 0 THEN LET outDir$ = "examples\\generated";
+LET fileName$   = INPUT$("Output file name (e.g., my_prog.basil): ");
+IF LEN(fileName$) = 0 THEN LET fileName$ = "generated.basil";
+LET includeLex$ = UCASE$(INPUTC$("Include the Basil lexicon to prime the AI? (Y/N, default Y): "));
+IF includeLex$ <> "N" THEN LET includeLex$ = "Y";
+LET extraMods$  = INPUT$("Optional: list any Basil feature modules to use (comma separated, e.g., obj-sqlite,obj-term): ");
+
+REM Normalize file path
+IF RIGHT$(outDir$,1) = "\\" OR RIGHT$(outDir$,1) = "/" THEN
+    LET outDir$ = LEFT$(outDir$, LEN(outDir$)-1);
+END
+LET outPath$ = outDir$ + "\\" + fileName$;
+
+REM --- Plan summary ---
+PRINTLN "\nPlan:";
+PRINTLN "- Title: ", title$;
+PRINTLN "- Description: ", desc$;
+PRINTLN "- Output: ", outPath$;
+PRINTLN "- Include Basil lexicon: ", includeLex$;
+IF LEN(extraMods$) > 0 THEN PRINTLN "- Requested modules: ", extraMods$;
+
+LET ok$ = UCASE$(INPUTC$("\nProceed to generate this Basil program? (Y/N): "));
+IF ok$ <> "Y" THEN PRINTLN "Aborted by user."; STOP; END
+
+REM --- Ensure output directory exists ---
+REM Using a trick: open a file for append in the directory will fail if path is bad; we try to create a marker file then delete it
+LET _probePath$ = outDir$ + "\\.probe";
+LET _ph% = FOPEN(_probePath$, "a");
+IF _ph% < 0 THEN PRINTLN "Could not create files in output folder. Check path and permissions."; STOP; END
+CALL FCLOSE%(_ph%);
+REM Best-effort cleanup (ignore errors)
+LET _ph% = FOPEN(_probePath$, "w"); CALL FCLOSE%(_ph%);
+
+REM --- Build the system prompt ---
+LET sys$ = "You are an expert Basil code generator. Output only Basil source code with no commentary.\n" +
+           "Follow Basil syntax exactly. Use requested feature modules only if needed.\n" +
+           "If modules are requested, include a #USE line, e.g.: #USE BMX_RIDER, BMX_TEAM (no quotes).\n" +
+           "Prefer Windows-style paths (\\). Avoid trailing spaces.\n";
+
+IF includeLex$ = "Y" THEN
+    LET lexPath$ = "docs\\data\\basil_lexicon_for_ai.txt";
+    LET lex$ = AI.KNOWLEDGE$(lexPath$);
+    IF LEN(lex$) = 0 THEN PRINTLN "Warning: Could not load lexicon: ", AI.LAST_ERROR$; END
+    IF LEN(lex$) > 0 THEN
+        LET sys$ = sys$ + "\nBasil Language Reference (condensed) follows. Keep it in mind, do not echo it.\n" + lex$ + "\nEND OF REFERENCE\n";
+    END
+END
+
+REM --- Build the user task ---
+LET task$ = "Title: " + title$ + "\n" +
+            "Description: " + desc$ + "\n" +
+            "Output file: " + outPath$ + "\n" +
+            "Requested modules: " + (IF LEN(extraMods$)>0 THEN extraMods$ ELSE "(none)") + "\n\n" +
+            "Requirements:" + "\n" +
+            "- Generate a single, runnable Basil program implementing the description." + "\n" +
+            "- If interactive CLI is appropriate, use PRINT/INPUT." + "\n" +
+            "- If files are written, use FOPEN/FWRITE/FCLOSE." + "\n" +
+            "- Add minimal helpful comments, but no extra explanations outside code." + "\n" +
+            "- Do not include markdown fences; output only raw Basil source.";
+
+REM --- Consolidate final prompt ---
+LET prompt$ = sys$ + "\n\nTask:\n" + task$;
+
+PRINTLN "\nContacting AI to generate code...";
+LET code$ = AI.CHAT$(prompt$);
+IF LEN(code$) = 0 THEN
+    PRINTLN "AI.CHAT$ returned empty output.";
+    LET err$ = AI.LAST_ERROR$;
+    IF LEN(err$) > 0 THEN PRINTLN "Error: ", err$; END
+    PRINTLN "Aborting.";
+    STOP;
+END
+
+REM --- Write to file ---
+LET fh% = FOPEN(outPath$, "w");
+IF fh% < 0 THEN PRINTLN "Could not open output file for writing: ", outPath$; STOP; END
+CALL FWRITE%(fh%, code$);
+CALL FCLOSE%(fh%);
+
+PRINTLN "\nDone! Wrote: ", outPath$;
+PRINTLN "You can run it with: cargo run -q -p basilc -- run ", outPath$;
