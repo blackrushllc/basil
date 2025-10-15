@@ -35,7 +35,8 @@ obj-aws     = ["obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
 # NET feature objects (Phase 1)
 obj-net-sftp = ["basil-objects-net/obj-net-sftp", "basil-objects-net"]
 obj-net-smtp = ["basil-objects-net/obj-net-smtp", "basil-objects-net"]
-obj-net = ["obj-net-sftp", "obj-net-smtp"]
+obj-net-http = ["basil-objects-net/obj-net-http", "basil-objects-net"]
+obj-net = ["obj-net-sftp", "obj-net-smtp", "obj-net-http"]
 obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net"]
 
 [dependencies]
