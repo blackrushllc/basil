@@ -1,0 +1,15 @@
+REM Default headers, bearer auth, query params
+DIM http@ AS HTTP()
+http@.SetHeader("X-Client", "Basil")
+http@.SetBearer$("test-token-123")
+http@.SetQueryParam("lang", "en")
+http@.TimeoutMs% = 10000
+http@.RaiseForStatus% = 1
+
+TRY
+  PRINTLN http@.Get$("https://httpbin.org/anything/path")
+  PRINTLN "Status:", http@.LastStatus%, " URL:", http@.LastUrl$
+  PRINTLN "Resp headers:", http@.LastHeaders$
+CATCH e$
+  PRINTLN "HTTP error: ", e$
+END TRY

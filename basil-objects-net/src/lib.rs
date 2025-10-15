@@ -2,12 +2,14 @@ use basil_common::Result;
 use basil_bytecode::{ObjectDescriptor, Value, ObjectRef};
 
 // Module gating
-#[cfg(any(feature = "obj-net-sftp", feature = "obj-net-smtp"))]
+#[cfg(any(feature = "obj-net-sftp", feature = "obj-net-smtp", feature = "obj-net-http"))]
 mod runtime;
 #[cfg(feature = "obj-net-sftp")]
 pub mod sftp;
 #[cfg(feature = "obj-net-smtp")]
 pub mod smtp;
+#[cfg(feature = "obj-net-http")]
+pub mod http;
 
 // Mirror the Registry interface expected by basil-objects as a shim
 pub struct TypeInfo {
@@ -25,5 +27,9 @@ pub fn register<F: FnMut(&str, TypeInfo)>(mut reg: F) {
     #[cfg(feature = "obj-net-smtp")]
     {
         smtp::register(&mut reg);
+    }
+    #[cfg(feature = "obj-net-http")]
+    {
+        http::register(&mut reg);
     }
 }

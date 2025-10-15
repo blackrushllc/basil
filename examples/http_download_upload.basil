@@ -1,0 +1,8 @@
+REM Download to file and upload a file (multipart)
+DIM http@ AS HTTP()
+
+PRINTLN "Downloading…"
+PRINTLN http@.DownloadToFile("https://httpbin.org/image/png", "out/test.png")
+
+PRINTLN "Uploading…"
+PRINTLN http@.UploadFile$("https://httpbin.org/post", "out/test.png", "file", "image/png")

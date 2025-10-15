@@ -200,6 +200,7 @@ END TRY
 ## Wiring
 
 * Add module `http.rs` inside `basil-objects-net/` behind `#[cfg(feature = "obj-net-http")]`.
+* Make sure obj-all builds with `obj-net-http` !!
 * Register the object factory into the global registry under the type name `HTTP`.
 * Update workspace `Cargo.toml` to include the feature flag and reqwest deps (rustls).
 

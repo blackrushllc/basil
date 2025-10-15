@@ -1,0 +1,15 @@
+REM Demonstrate RaiseForStatus and timeout override
+DIM http@ AS HTTP()
+http@.RaiseForStatus% = 1
+
+TRY
+  PRINTLN http@.Get$("https://httpbin.org/status/404")
+CATCH e$
+  PRINTLN "Caught expected 404: ", e$
+END TRY
+
+TRY
+  PRINTLN http@.Get$("https://httpbin.org/delay/3", 1000)  REM 1s timeout override
+CATCH e$
+  PRINTLN "Caught timeout: ", e$
+END TRY
