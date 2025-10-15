@@ -16,11 +16,13 @@ Core concepts
 
 File I/O (core builtins)
 - FOPEN(path$, mode$) → handle% where mode$ in {"r","w","a"}; returns -1 on failure.
-- FWRITE%(h%, text$) → bytes% (writes text as-is).
+- FWRITE(h%, text$) → BOOL (writes text as-is).
+- FWRITELN(h%, text$) → BOOL (writes text + newline).
 - FREADLINE$(h%) → line$ (without trailing newline) or "" at EOF; use FEOF%(h%) to detect end.
 - FEOF%(h%) → 0 or 1.
 - FSEEK%(h%, offset%) → 0 on success.
-- FCLOSE%(h%) → 0 on success.
+- FCLOSE(h%) → 0 on success.
+- MKDIRS%(path$) → Int 1 on success, 0 on failure (creates directories recursively).
 
 Paths
 - Use backslashes on Windows in examples: "examples\\hello.basil".
@@ -80,8 +82,9 @@ CLI Patterns
 - Generate code using AI.CHAT$; if AI.KNOWLEDGE$ file contents are available, prepend to system prompt (see below).
 
 Prompt construction tips
-- Provide a strict system prompt that presents the Basil lexicon first, then task-specific requirements. Ask for pure Basil code fenced by ```basil if you’ll extract; or just plain program text if you will write directly.
+- Provide a strict system prompt that presents the Basil lexicon first, then task-specific requirements. Ask for plain Basil program text only; the host tool will write it to disk.
 - Limit scope, specify file paths, and request no extra commentary.
+- Generate the final target program itself (no meta-generators). Do not include AI.* calls in the output. Avoid file I/O unless the user explicitly requests it.
 
 Example: Knowledge-primed codegen system prompt (pseudo)
 LET lex$ = AI.KNOWLEDGE$("docs\\data\\basil_lexicon_for_ai.txt")

@@ -1502,11 +1502,18 @@ impl VM {
                             else if m.starts_with('w') { writable = true; opts.write(true).create(true).truncate(true); if plus { readable = true; opts.read(true); } }
                             else if m.starts_with('a') { writable = true; opts.append(true).create(true); if plus { readable = true; opts.read(true); opts.write(true); } }
                             else { return Err(BasilError(format!("FOPEN: invalid mode '{}'; expected r/w/a variants", mode))); }
-                            let file = opts.open(&path).map_err(|e| BasilError(format!("FOPEN {}: {}", path, e)))?;
-                            let fh = self.next_fh; self.next_fh += 1;
-                            let entry = FileHandleEntry { file, text, readable, writable, owner_depth: self.frames.len() };
-                            self.file_table.insert(fh, entry);
-                            self.stack.push(Value::Int(fh));
+                            match opts.open(&path) {
+                                Ok(file) => {
+                                    let fh = self.next_fh; self.next_fh += 1;
+                                    let entry = FileHandleEntry { file, text, readable, writable, owner_depth: self.frames.len() };
+                                    self.file_table.insert(fh, entry);
+                                    self.stack.push(Value::Int(fh));
+                                }
+                                Err(_e) => {
+                                    // Non-throwing failure: return -1 to signal open error
+                                    self.stack.push(Value::Int(-1));
+                                }
+                            }
                         }
                         41 => { // FCLOSE fh%
                             if argc != 1 { return Err(BasilError("FCLOSE expects 1 argument".into())); }
@@ -1678,6 +1685,14 @@ impl VM {
                             if argc != 1 { return Err(BasilError("EXIT expects 1 argument".into())); }
                             let code = self.to_i64(&args[0])? as i32;
                             std::process::exit(code);
+                        }
+                        62 => { // MKDIRS%(path$) -> Int (1=ok,0=fail)
+                            if argc != 1 { return Err(BasilError("MKDIRS% expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            match fs::create_dir_all(&path) {
+                                Ok(_) => self.stack.push(Value::Int(1)),
+                                Err(_e) => self.stack.push(Value::Int(0)),
+                            }
                         }
                         #[cfg(feature = "obj-base64")]
                         90 => { // BASE64_ENCODE$(text$)

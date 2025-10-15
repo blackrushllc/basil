@@ -99,11 +99,26 @@ pub struct Lexer<'a> {
     tok_line: usize, // line number at start of current token
     pending_nl_semi: bool, // if true, emit a Semicolon token before next real token
     pending: VecDeque<Token>, // injected tokens (e.g., for string interpolation lowering)
+    // --- line continuation state ---
+    paren_depth: i32,
+    last_was_continuation: bool,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        let mut l = Self { src, chars: src.chars(), cur: None, pos: 0, start: 0, line: 1, tok_line: 1, pending_nl_semi: false, pending: VecDeque::new() };
+        let mut l = Self {
+            src,
+            chars: src.chars(),
+            cur: None,
+            pos: 0,
+            start: 0,
+            line: 1,
+            tok_line: 1,
+            pending_nl_semi: false,
+            pending: VecDeque::new(),
+            paren_depth: 0,
+            last_was_continuation: false,
+        };
         l.advance(); // prime `cur` and `pos`
         l
     }
@@ -122,6 +137,7 @@ impl<'a> Lexer<'a> {
     fn next_token(&mut self) -> Result<Token> {
         // If we have injected tokens (e.g., from string interpolation), serve them first
         if let Some(tok) = self.pending.pop_front() {
+            self.post_emit_adjust(&tok);
             return Ok(tok);
         }
 
@@ -134,7 +150,9 @@ impl<'a> Lexer<'a> {
         if self.pending_nl_semi {
             if self.cur.is_some() {
                 self.pending_nl_semi = false;
-                return Ok(self.make_with_span(TokenKind::Semicolon, self.pos, self.pos));
+                let tok = self.make_with_span(TokenKind::Semicolon, self.pos, self.pos);
+                self.post_emit_adjust(&tok);
+                return Ok(tok);
             } else {
                 // At EOF, don't bother emitting a trailing semicolon
                 self.pending_nl_semi = false;
@@ -144,56 +162,100 @@ impl<'a> Lexer<'a> {
         // If no current char, emit EOF
         let ch = match self.cur {
             Some(c) => c,
-            None => return Ok(self.make_with_span(TokenKind::Eof, self.pos, self.pos)),
+            None => {
+                let tok = self.make_with_span(TokenKind::Eof, self.pos, self.pos);
+                // No need to adjust state for EOF
+                return Ok(tok);
+            }
         };
 
         // IMPORTANT: set `start` to the *beginning* of the current character
         let clen = ch.len_utf8();
         self.start = self.pos - clen;
 
-        match ch {
+        let tok = match ch {
             // --- single-char tokens: make FIRST, advance AFTER ---
-            '(' => { let tok = self.make(TokenKind::LParen);    self.advance(); Ok(tok) }
-            ')' => { let tok = self.make(TokenKind::RParen);    self.advance(); Ok(tok) }
-            ',' => { let tok = self.make(TokenKind::Comma);     self.advance(); Ok(tok) }
-            ';' => { let tok = self.make(TokenKind::Semicolon); self.advance(); Ok(tok) }
-            ':' => { let tok = self.make(TokenKind::Semicolon); self.advance(); Ok(tok) }
-            '+' => { let tok = self.make(TokenKind::Plus);      self.advance(); Ok(tok) }
-            '-' => { let tok = self.make(TokenKind::Minus);     self.advance(); Ok(tok) }
-            '*' => { let tok = self.make(TokenKind::Star);      self.advance(); Ok(tok) }
-            '/' => { let tok = self.make(TokenKind::Slash);     self.advance(); Ok(tok) }
-            '.' => { let tok = self.make(TokenKind::Dot);       self.advance(); Ok(tok) }
+            '(' => { let tok = self.make(TokenKind::LParen);    self.advance(); tok }
+            ')' => { let tok = self.make(TokenKind::RParen);    self.advance(); tok }
+            ',' => { let tok = self.make(TokenKind::Comma);     self.advance(); tok }
+            ';' => { let tok = self.make(TokenKind::Semicolon); self.advance(); tok }
+            ':' => { let tok = self.make(TokenKind::Semicolon); self.advance(); tok }
+            '+' => { let tok = self.make(TokenKind::Plus);      self.advance(); tok }
+            '-' => { let tok = self.make(TokenKind::Minus);     self.advance(); tok }
+            '*' => { let tok = self.make(TokenKind::Star);      self.advance(); tok }
+            '/' => { let tok = self.make(TokenKind::Slash);     self.advance(); tok }
+            '.' => { let tok = self.make(TokenKind::Dot);       self.advance(); tok }
 
             // --- two-char possibilities: keep existing logic ---
             '=' => {
                 self.advance();
-                if self.match_char('=') { Ok(self.make(TokenKind::EqEq)) }
-                else { Ok(self.make(TokenKind::Assign)) }
+                if self.match_char('=') { self.make(TokenKind::EqEq) }
+                else { self.make(TokenKind::Assign) }
             }
             '!' => {
                 self.advance();
-                if self.match_char('=') { Ok(self.make(TokenKind::BangEq)) }
-                else { Err(BasilError("unexpected '!'".into())) }
+                if self.match_char('=') { self.make(TokenKind::BangEq) }
+                else { return Err(BasilError("unexpected '!'".into())); }
             }
             '<' => {
                 self.advance();
-                if self.match_char('=') { Ok(self.make(TokenKind::LtEq)) }
-                else if self.match_char('>') { Ok(self.make(TokenKind::BangEq)) }
-                else { Ok(self.make(TokenKind::Lt)) }
+                if self.match_char('=') { self.make(TokenKind::LtEq) }
+                else if self.match_char('>') { self.make(TokenKind::BangEq) }
+                else { self.make(TokenKind::Lt) }
             }
             '>' => {
                 self.advance();
-                if self.match_char('=') { Ok(self.make(TokenKind::GtEq)) }
-                else { Ok(self.make(TokenKind::Gt)) }
+                if self.match_char('=') { self.make(TokenKind::GtEq) }
+                else { self.make(TokenKind::Gt) }
             }
 
-            '"' => self.string(),
-            c if c.is_ascii_digit() => self.number(),
-            c if is_ident_start(c)  => self.ident_or_kw(),
-            _ => Err(BasilError(format!("unexpected char '{}': pos {}", ch, self.pos))),
+            '"' => self.string()?,
+            c if c.is_ascii_digit() => self.number()?,
+            c if is_ident_start(c)  => self.ident_or_kw()?,
+            _ => return Err(BasilError(format!("unexpected char '{}': pos {}", ch, self.pos))),
+        };
+
+        self.post_emit_adjust(&tok);
+        Ok(tok)
+    }
+
+
+    // Adjust lexer state after emitting a token (track paren depth and continuation contexts)
+    fn post_emit_adjust(&mut self, tok: &Token) {
+        use TokenKind::*;
+        match tok.kind {
+            LParen => { self.paren_depth += 1; self.last_was_continuation = true; },
+            RParen => { if self.paren_depth > 0 { self.paren_depth -= 1; } self.last_was_continuation = false; },
+            // Tokens that require a right operand or continuation
+            Plus | Minus | Star | Slash | Dot | Assign | EqEq | BangEq | Lt | LtEq | Gt | GtEq | And | Or | Comma | Mod | To | Step => {
+                self.last_was_continuation = true;
+            }
+            Semicolon | Eof => { self.last_was_continuation = false; }
+            _ => { self.last_was_continuation = false; }
         }
     }
 
+    // Look ahead after a newline to see if the next non-space char is a continuation operator.
+    // Does not consume any input.
+    fn next_after_nl_is_cont_op(&self) -> bool {
+        let mut it = self.chars.clone(); // starts AFTER current char
+        // skip spaces/tabs/CR
+        while let Some(ch) = it.next() {
+            match ch {
+                ' ' | '\t' | '\r' => continue,
+                // If the line starts with a comment, don't treat as continuation
+                '\'' => return false,
+                '/' => {
+                    if let Some('/') = it.clone().next() { return false; }
+                    return matches!(ch, '+' | '-' | '*' | '/' | '.' | ',');
+                }
+                '#' => return false,
+                '+' | '-' | '*' | '.' | ',' => return true,
+                _ => return false,
+            }
+        }
+        false
+    }
 
     // Build a token using current self.start..self.pos
     fn make(&self, kind: TokenKind) -> Token {
@@ -207,6 +269,52 @@ impl<'a> Lexer<'a> {
             span: Span::new(start, end),
             line: self.tok_line as u32,
         }
+    }
+
+    // Consume whitespace and optional comment to the end of line after a lone '_' ident.
+    // Returns true if a newline (or EOF) was consumed, indicating an explicit continuation.
+    fn consume_explicit_continuation_after_underscore(&mut self) -> bool {
+        // Only allow spaces/tabs/CR before newline or start of a line comment (#, ', //)
+        // Save current position; we are currently positioned just after the '_' and before any trailing spaces.
+        let mut it = self.chars.clone();
+        let mut saw_comment = false;
+        // Check ahead without consuming
+        loop {
+            match it.next() {
+                Some(' ') | Some('\t') | Some('\r') => continue,
+                Some('\n') => break, // ok
+                Some('\'') => { saw_comment = true; break; }
+                Some('#') => { saw_comment = true; break; }
+                Some('/') => {
+                    if let Some('/') = it.next() { saw_comment = true; break; }
+                    // a solitary '/' means next line starts with '/'; treat as not a valid explicit continuation context
+                    return false;
+                }
+                Some(_) => return false, // other non-space content => not explicit continuation
+                None => break, // EOF is acceptable (treat like newline)
+            }
+        }
+        // Now actually consume until newline (and the newline itself if present)
+        loop {
+            match self.cur {
+                Some(' ') | Some('\t') | Some('\r') => { self.advance(); }
+                Some('\'') | Some('#') if saw_comment => {
+                    // consume to newline
+                    while let Some(ch) = self.cur { if ch == '\n' { break; } self.advance(); }
+                }
+                Some('/') if saw_comment && self.peek() == Some('/') => {
+                    // we're at first '/', consume both then to newline
+                    self.advance(); self.advance();
+                    while let Some(ch) = self.cur { if ch == '\n' { break; } self.advance(); }
+                }
+                Some('\n') => { self.advance(); break; }
+                None => break,
+                _ => { // For safety, if non-space content appears, abort (shouldn't happen due to precheck)
+                    break;
+                }
+            }
+        }
+        true
     }
 
     fn string(&mut self) -> Result<Token> {
@@ -483,6 +591,15 @@ impl<'a> Lexer<'a> {
             "MOD"    => TokenKind::Mod,
             _        => TokenKind::Ident,
         };
+
+        // Explicit line continuation: a single '_' followed by optional spaces/comments to end-of-line
+        if matches!(kind, TokenKind::Ident) && lex == "_" {
+            if self.consume_explicit_continuation_after_underscore() {
+                // Return the next real token instead of the '_' token
+                return self.next_token();
+            }
+        }
+
         // Support colon-form labels: IDENT ':' -> Label token with ident as lexeme
         if matches!(kind, TokenKind::Ident) && self.cur == Some(':') {
             // consume ':' and emit a Label token whose lexeme is the identifier
@@ -498,7 +615,11 @@ impl<'a> Lexer<'a> {
             match self.cur {
                 Some(c) if c.is_whitespace() => {
                     if c == '\n' {
-                        self.pending_nl_semi = true;
+                        // implicit continuation rules
+                        let suppress = self.paren_depth > 0
+                            || self.last_was_continuation
+                            || self.next_after_nl_is_cont_op();
+                        if !suppress { self.pending_nl_semi = true; }
                     }
                     self.advance();
                 }
