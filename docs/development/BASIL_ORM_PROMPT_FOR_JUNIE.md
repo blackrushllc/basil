@@ -1,7 +1,3 @@
-Haha, one last sprint before sleep 😄 — here’s a clean, copy-paste **Junie Pro prompt** to implement the **Basil ORM** on top of your SQL connectors. It’s feature-gated, dynamic (no codegen), uses parameterized SQL, and explicitly requires **examples and docs**.
-
----
-
 # Junie Pro task: Basil **ORM** (dynamic Active Record on DB_MYSQL / DB_POSTGRES)
 
 ## Context
@@ -29,8 +25,9 @@ Create a new crate: **`basil-objects-orm/`** with features:
 * `obj-orm-mysql` (enables MySQL adapter; depends on `obj-sql-mysql`)
 * `obj-orm-postgres` (enables Postgres adapter; depends on `obj-sql-postgres`)
 * umbrella `obj-orm-all = ["obj-orm","obj-orm-mysql","obj-orm-postgres"]`
+* `obj-all` includes `obj-orm-all`
 
-Register the ORM object(s) with the global object registry **only** when features are enabled. Reuse the existing SQL connectors; do not duplicate connection logic.
+* Register the ORM object(s) with the global object registry **only** when features are enabled. Reuse the existing SQL connectors; do not duplicate connection logic.
 
 ## Public API (Basil surface)
 
@@ -206,7 +203,7 @@ END TRY
 
 ## Docs (must include)
 
-Create **`docs/integrations/orm/README.md`** with:
+Create **`docs/guides/ORM.md`** with:
 
 * What ORM provides; quickstart.
 * Model registration (explicit vs `ModelFromTable$`).
@@ -259,7 +256,7 @@ orm@.Model("users", ["id%","name$","email$"], "id%")
 DIM u@ = orm@.New("users")
 u@.Name$="Bob": u@.Email$="bob@example.com": u@.Save()
 
-PRINT orm@.Table("users").Where$("name$","LIKE","B%").OrderBy$("id%","ASC").Get().ToJson$()
+PRINTLN orm@.Table("users").Where$("name$","LIKE","B%").OrderBy$("id%","ASC").Get().ToJson$()
 ```
 
 3. **`orm_relations.basil`**
@@ -274,7 +271,7 @@ orm@.HasMany("users","posts","user_id%")
 orm@.BelongsTo("posts","users","user_id%","id%")
 
 DIM u@ = orm@.Table("users").First()
-FOR EACH p@ IN u@.Posts() : PRINT p@.Title$ : NEXT
+FOR EACH p@ IN u@.Posts() : PRINTLN p@.Title$ : NEXT
 ```
 
 4. **`orm_transactions.basil`**
@@ -290,7 +287,7 @@ TRY
   u@.Name$="Txn": u@.Email$="txn@example.com": u@.Save()
   orm@.Commit()
 CATCH e$
-  PRINT "ORM txn error: ", e$
+  PRINTLN "ORM txn error: ", e$
   orm@.Rollback()
 END TRY
 ```

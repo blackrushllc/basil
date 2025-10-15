@@ -129,6 +129,14 @@ pub fn register_objects(_reg: &mut Registry) {
         };
         basil_objects_crypto::register(&mut add);
     }
+    #[cfg(any(feature = "obj-sql-mysql", feature = "obj-sql-postgres"))]
+    {
+        // Bridge registrations from basil-objects-sql crate
+        let mut add = |type_name: &str, info: basil_objects_sql::TypeInfo| {
+            _reg.register(type_name, TypeInfo { factory: info.factory, descriptor: info.descriptor, constants: info.constants });
+        };
+        basil_objects_sql::register(&mut add);
+    }
 }
 
 #[cfg(feature = "obj-base64")]

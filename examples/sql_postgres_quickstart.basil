@@ -1,0 +1,12 @@
+REM Postgres quickstart (adapt host/user/pass/db)
+LET dsn$ = "postgres://user:pass@localhost:5432/test?sslmode=disable"
+DIM db@ AS DB_POSTGRES(dsn$)
+
+TRY
+  PRINTLN db@.Execute("CREATE TABLE IF NOT EXISTS t (id SERIAL PRIMARY KEY, name TEXT)")
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES ($1)", ["Carol"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES ($1)", ["Dave"])
+  PRINTLN db@.Query$("SELECT id, name FROM t WHERE name LIKE $1", ["C%"])
+CATCH e$
+  PRINTLN "Postgres error: ", e$
+END TRY
