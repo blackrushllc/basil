@@ -1,5 +1,6 @@
 REM ELIZA in Basil (no line numbers). Uses INSTR-based rules and reflection.
 REM Port guided by ELIZA.md. Prioritized keyword patterns, pronoun reflection, defaults.
+REM Run tip: use "test" instead of "run" to avoid hanging in interactive loops.
 
 REM --- Globals ---
 LET RP% = 12;            REM reflection pair count
