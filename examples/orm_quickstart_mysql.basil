@@ -1,0 +1,10 @@
+#USE DB_MYSQL, ORM
+DIM db@ AS DB_MYSQL("mysql://user:pass@localhost:3306/app?ssl-mode=DISABLED")
+DIM orm@ AS ORM(db@)
+
+orm@.Model("users", ["id%","name$","email$"], "id%")
+
+DIM u@ = orm@.New("users")
+u@.Name$="Bob": u@.Email$="bob@example.com": u@.Save()
+
+PRINTLN orm@.Table("users").Where$("name$","LIKE","B%").OrderBy$("id%","ASC").ToJson$()

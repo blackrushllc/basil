@@ -1,0 +1,13 @@
+#USE DB_POSTGRES, ORM
+DIM db@ AS DB_POSTGRES("postgres://user:pass@localhost:5432/app?sslmode=disable")
+DIM orm@ AS ORM(db@)
+
+orm@.ModelFromTable$("users")
+orm@.ModelFromTable$("posts")
+orm@.HasMany("users","posts","user_id%")
+orm@.BelongsTo("posts","users","user_id%","id%")
+
+DIM u@ = orm@.Table("users").First()
+IF u@ <> null THEN
+  FOR EACH p@ IN u@.Posts() : PRINTLN p@.Title$ : NEXT
+END IF

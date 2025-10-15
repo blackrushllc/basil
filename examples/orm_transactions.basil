@@ -1,0 +1,13 @@
+#USE DB_MYSQL, ORM
+DIM db@ AS DB_MYSQL("mysql://user:pass@localhost:3306/app?ssl-mode=DISABLED")
+DIM orm@ AS ORM(db@)
+
+TRY
+  orm@.Begin()
+  DIM u@ = orm@.New("users")
+  u@.Name$="Txn": u@.Email$="txn@example.com": u@.Save()
+  orm@.Commit()
+CATCH e$
+  PRINTLN "ORM txn error: ", e$
+  orm@.Rollback()
+END TRY
