@@ -51,7 +51,7 @@ Notes:
 [dependencies]
 # ...unchanged...
 - ureq = { version = "2.9", optional = true, features = ["json", "tls"] }
-+ ureq = { version = "2.9", optional = true, default-features = false, features = ["json", "rustls"] }
++ ureq = { version = "2.9", optional = true, default-features = false, features = ["json", "tls"] }
 ```
 
 This prevents any inadvertent `native-tls` backend.

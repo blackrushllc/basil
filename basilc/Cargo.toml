@@ -57,3 +57,6 @@ obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
 obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all"]
+
+# Enables building a fully static, portable Linux binary when used with the MUSL target
+portable = []
