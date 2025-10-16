@@ -3,10 +3,6 @@ REM Transaction demo (either connector)
 // Read the .env file
 PRINTLN "Read .env file:";
 LET b% = LOADENV%(); // defaults to .env
-
-
-
-
 LET dsn$ = ENV$("DB_DSN")
 DIM db@ AS DB_MYSQL(dsn$)
 
@@ -23,6 +19,5 @@ END TRY
 
 // query the test table and list the results
 PRINTLN "Query the test table and list the results:";
-FOR i% = 1 TO db@.QueryCount()
-  PRINTLN db@.Query$(i%)
-NEXT
+
+  PRINTLN db@.Query$("SELECT * FROM test")

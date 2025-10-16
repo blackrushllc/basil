@@ -62,6 +62,7 @@ impl OrmObj {
             properties: vec![],
             methods: vec![
                 MethodDesc { name: "Model".into(), arity: 3, arg_names: vec!["table$".into(), "cols$[]".into(), "pk$".into()], return_type: "ORM".into() },
+                MethodDesc { name: "ModelCsv$".into(), arity: 3, arg_names: vec!["table$".into(), "cols_csv$".into(), "pk$".into()], return_type: "ORM".into() },
                 MethodDesc { name: "ModelFromTable$".into(), arity: 1, arg_names: vec!["table$".into()], return_type: "Str$".into() },
                 MethodDesc { name: "HasMany".into(), arity: 3, arg_names: vec!["parent$".into(), "child$".into(), "fk$".into()], return_type: "ORM".into() },
                 MethodDesc { name: "BelongsTo".into(), arity: 4, arg_names: vec!["child$".into(), "parent$".into(), "fk$".into(), "pk$".into()], return_type: "ORM".into() },
@@ -83,7 +84,7 @@ impl OrmObj {
         self.models.get(&table.to_string()).cloned().ok_or_else(|| BasilError(format!("ORM.ModelNotFound: {}", table)))
     }
 
-    fn info_schema_sql(&self, table: &str) -> (String, String) {
+    fn info_schema_sql(&self, _table: &str) -> (String, String) {
         if self.dialect == "postgres" {
             (
                 // columns
@@ -129,6 +130,17 @@ impl BasicObject for OrmObj {
                     out
                 }, _=> return Err(BasilError("ORM.Model: cols$[] must be array of strings".into())) };
                 let pk = as_str(&args[2]);
+                let mm = ModelMeta { table: table.clone(), cols, pk: pk.clone(), relations: HashMap::new() };
+                self.models.insert(table, mm);
+                Ok(Value::Object(Rc::new(RefCell::new(self.clone()))))
+            }
+            ,"MODELCSV$" => {
+                if args.len() != 3 { return Err(BasilError("ORM.ModelCsv$ expects (table$, cols_csv$, pk$)".into())); }
+                let table = as_str(&args[0]);
+                let cols_csv = as_str(&args[1]);
+                let pk = as_str(&args[2]);
+                let cols: Vec<String> = cols_csv.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                if cols.is_empty() { return Err(BasilError("ORM.ModelCsv$: cols_csv$ must contain at least one column".into())); }
                 let mm = ModelMeta { table: table.clone(), cols, pk: pk.clone(), relations: HashMap::new() };
                 self.models.insert(table, mm);
                 Ok(Value::Object(Rc::new(RefCell::new(self.clone()))))
@@ -226,7 +238,8 @@ impl BasicObject for OrmObj {
                     let row = RowObj::new(self.db.clone(), self.dialect.clone(), meta, Some(data));
                     return Ok(Value::Object(Rc::new(RefCell::new(row))));
                 }
-                Err(BasilError("ORM.RowFromJson$: JSON disabled (enable obj-orm-*)".into()))
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { return Err(BasilError("ORM.RowFromJson$: JSON disabled (enable obj-orm-*)".into())); }
             }
             ,other => Err(BasilError(format!("Unknown method '{}' on ORM", other)))
         }
@@ -348,9 +361,11 @@ impl BasicObject for QueryObj {
             ,"FIND%" => {
                 if args.len()!=1 { return Err(BasilError("Find%(pk%)".into())); }
                 let pkcol = self.meta.pk.trim_end_matches(['%','$']).to_string();
-                let (mut sql, mut params) = (String::new(), Vec::new());
-                if self.dialect=="postgres" { sql = format!("SELECT * FROM {} WHERE {} = $1 LIMIT 1", self.quote_ident(&self.table), self.quote_ident(&pkcol)); params.push(as_str(&args[0])); }
-                else { sql = format!("SELECT * FROM {} WHERE {} = ? LIMIT 1", self.quote_ident(&self.table), self.quote_ident(&pkcol)); params.push(as_str(&args[0])); }
+                let (sql, params) = if self.dialect=="postgres" {
+                    (format!("SELECT * FROM {} WHERE {} = $1 LIMIT 1", self.quote_ident(&self.table), self.quote_ident(&pkcol)), vec![as_str(&args[0])])
+                } else {
+                    (format!("SELECT * FROM {} WHERE {} = ? LIMIT 1", self.quote_ident(&self.table), self.quote_ident(&pkcol)), vec![as_str(&args[0])])
+                };
                 let mut call_args: Vec<Value> = vec![Value::Str(sql)]; for p in params { call_args.push(Value::Str(p)); }
                 let res = self.db.borrow_mut().call("QUERY$", &call_args)?;
                 if let Value::Str(json) = res {
@@ -486,7 +501,7 @@ impl BasicObject for RowObj {
                         if is_dirty { sets.push(format!("{} = {}", self.quote_ident(&col), self.placeholder(sets.len()+1))); params.push(Value::Str(self.data.get(&col).cloned().unwrap_or_default())); }
                     }
                     if sets.is_empty() { return Ok(Value::Int(1)); }
-                    let mut sql = format!("UPDATE {} SET {} WHERE {} = {}", self.quote_ident(&self.meta.table), sets.join(", "), self.quote_ident(&self.pk_plain()), self.placeholder(sets.len()+1));
+                    let sql = format!("UPDATE {} SET {} WHERE {} = {}", self.quote_ident(&self.meta.table), sets.join(", "), self.quote_ident(&self.pk_plain()), self.placeholder(sets.len()+1));
                     params.push(Value::Str(self.data.get(&pkcol).cloned().unwrap_or_default()));
                     let mut call_args = vec![Value::Str(sql)]; call_args.extend(params);
                     let _ = self.db.borrow_mut().call("EXECUTE", &call_args)?;
@@ -512,9 +527,10 @@ impl BasicObject for RowObj {
                     }
                     return Ok(Value::Str(serde_json::Value::Object(map).to_string()));
                 }
-                Err(BasilError("JSON support disabled; enable obj-orm-*".into()))
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { return Err(BasilError("JSON support disabled; enable obj-orm-*".into())); }
             }
-            ,other => {
+            ,_other => {
                 // relation accessors, e.g., Posts(), User()
                 if method.ends_with("()") || !args.is_empty() { return Err(BasilError(format!("Unknown method '{}' on ORM_ROW", method))); }
                 let name = method; // relation or unknown

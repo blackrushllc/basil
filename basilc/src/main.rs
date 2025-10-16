@@ -157,30 +157,35 @@ fn canonicalize(cmd: &str) -> &str {
 }
 
 fn print_help() {
-    println!("Basil CLI (prototype)\n");
+    println!("Basil CLI (80's version)\n");
     println!("Commands (aliases in parentheses):");
-    println!("  init (seed)        Create a new Basil project");
+    // println!("  init (seed)        Create a new Basil project");
     println!("  run  (sprout)      Parse → compile → run a .basil file");
-    println!("  build (harvest)    Build project (stub)");
+    // println!("  build (harvest)    Build project (stub)");
     println!("  test (cultivate)   Run program in test mode with auto-mocked input");
-    println!("  fmt  (prune)       Format sources (stub)");
-    println!("  add  (infuse)      Add dependency (stub)");
-    println!("  clean (compost)    Remove build artifacts (stub)");
-    println!("  dev  (steep)       Start dev mode (stub)");
-    println!("  serve (greenhouse) Serve local HTTP (stub)");
-    println!("  doc  (bouquet)     Generate docs (stub)\n");
+    //println!("  fmt  (prune)       Format sources (stub)");
+    //println!("  add  (infuse)      Add dependency (stub)");
+    //println!("  clean (compost)    Remove build artifacts (stub)");
+    //println!("  dev  (steep)       Start dev mode (stub)");
+    //println!("  serve (greenhouse) Serve local HTTP (stub)");
+    //println!("  doc  (bouquet)     Generate docs (stub)\n");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
-    println!("  --ai               Start AI REPL (streaming chat)");
+    //println!("  --ai               Start AI REPL (streaming chat)");
     println!("  --analyze <file> [--json]  Run compiler analysis and print diagnostics/symbols");
     println!("  --debug <file>              Run Basil VM with JSON debug events\n");
     println!("Usage:");
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
+    println!("  basilc lex examples/hello.basil");
+    println!("  basilc test testprogs/bigtest.basil");
     println!("  basilc --analyze examples/hello.basil --json");
     println!("  basilc --debug examples/hello.basil");
-    println!("  basilc init myapp");
-    println!("  basilc --ai");
+    //println!("  basilc --ai");
+    println!("");
+    println!("For more information, visit https://github.com/blackrushllc/basil");
+    println!("");
+    println!("");
 
 }
 
@@ -360,6 +365,9 @@ fn cli_main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_help();
+        let path = args.get(0).cloned();
+        let sess = repl::Session::new(repl::SessionSettings::default());
+        repl::start_repl(sess, path);
         return;
     }
     // Early flag handling for analysis/debug modes used by IDE tooling
