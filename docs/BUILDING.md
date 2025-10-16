@@ -19,6 +19,12 @@ rustup target add x86_64-unknown-linux-musl
 cargo build --release -p basilc --target x86_64-unknown-linux-musl --features portable
 ```
 
+Recommended for portable builds: use the `obj-safe` umbrella to include only safe modules (excludes SFTP and audio/MIDI/DAW):
+
+```
+cargo build --release -p basilc --target x86_64-unknown-linux-musl --features portable,obj-safe
+```
+
 3) Optional: reduce size by stripping symbols:
 
 ```
