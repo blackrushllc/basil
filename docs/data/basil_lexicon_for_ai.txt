@@ -1,0 +1,95 @@
+Basil Language Lexicon for AI Code Generation
+
+Purpose: Provide an accurate, compact, self-contained reference for generating Basil programs, including Object feature modules. Prefer concrete code examples and canonical names. Keep outputs in plain Basil with Windows-friendly paths when relevant.
+
+Official reference for full details: https://yobasic.com/basil/reference.html
+
+Core concepts
+- Case-insensitive keywords; identifiers are typically uppercase by convention in docs but not required.
+- Scalar types: Int (integer, % suffix), Float (double), String ($ suffix), Object (@ suffix for object refs), Boolean (use 0/1; IF conditions treat 0 as false).
+- Variables: LET x = 1, or x = 1; Suffix indicates type if used: i% (Int), s$ (String), o@ (Object). Arrays: DIM a(10), DIM nums%(100), DIM vec[](16). 1-based or 0-based depending on allocation; examples below assume 0-based.
+- Blocks: BEGIN ... END. Control flow: IF/ELSE/END IF, FOR ... NEXT, WHILE ... WEND, DO ... LOOP UNTIL.
+- Functions/Procedures: FUNC name% (args...) BEGIN ... END FUNCTION; RETURN value via function name assignment or implicit last.
+- Printing: PRINT, PRINTLN. Comma concatenates with default separator, semicolon suppresses separator.
+- Comments: REM, or // (line), and ' (apostrophe) line comment supported in examples.
+- Strings: double quotes; concatenation uses + or comma in PRINT; length via LEN(s$), substrings via MID$(s$, start%, len%).
+
+File I/O (core builtins)
+- FOPEN(path$, mode$) → handle% where mode$ in {"r","w","a"}; returns -1 on failure.
+- FWRITE(h%, text$) → BOOL (writes text as-is).
+- FWRITELN(h%, text$) → BOOL (writes text + newline).
+- FREADLINE$(h%) → line$ (without trailing newline) or "" at EOF; use FEOF%(h%) to detect end.
+- FEOF%(h%) → 0 or 1.
+- FSEEK%(h%, offset%) → 0 on success.
+- FCLOSE(h%) → 0 on success.
+- MKDIRS%(path$) → Int 1 on success, 0 on failure (creates directories recursively).
+
+Paths
+- Use backslashes on Windows in examples: "examples\\hello.basil".
+
+Program structure example
+PRINTLN "Hello";
+FOR I% = 1 TO 3 BEGIN PRINTLN "i=", I%; END NEXT
+
+User input
+- INPUT "Prompt: ", var$  (reads a line into var$)
+- Alternatively, use GETS$() if available; otherwise emulate by reading from STDIN via FOPEN("CON","r"). For interactive CLI, INPUT is typical.
+
+Objects (feature-gated modules)
+- Feature flags enable object libraries (mods). Build with cargo features, e.g.: cargo run -q -p basilc --features obj-all -- run examples\\objects.basil
+- Methods are called as GLOBAL.METHOD or via instance if type is registered to allow DIM a@ AS AI(). Most provided objects are exposed as global functions (e.g., AI.CHAT$).
+
+AI (obj-ai)
+- AI.CHAT$(prompt$, [opts$]) → String. Synchronous chat completion. Test mode returns deterministic string like "[[TEST]] abcd1234".
+- AI.STREAM(prompt$, [opts$]) → String. Streams tokens to console; returns full string.
+- AI.EMBED(text$, [opts$]) → Float[]. Returns embedding vector.
+- AI.MODERATE%(text$, [opts$]) → Int. 0=ok; 1=flagged (test mode flags if contains "FLAG_ME").
+- AI.LAST_ERROR$() → String. Last error message.
+- AI.KNOWLEDGE$(path$, [opts$]) → String. Reads a text/markdown file from disk and returns its contents for inclusion in prompts. On failure returns "" and sets LAST_ERROR$().
+
+HTTP/REST (obj-net-http)
+- HTTP.GET$(url$, [headersJson$]) → String
+- HTTP.POST$(url$, body$, [headersJson$]) → String
+
+SMTP/SFTP (obj-net-smtp / obj-net-sftp)
+- SMTP.SEND%(host$, port%, user$, pass$, from$, to$, subject$, body$) → Int
+- SFTP.PUT%(host$, port%, user$, pass$, localPath$, remotePath$) → Int
+
+ZIP/Base64 (obj-zip / obj-base64)
+- ZIP.ZIP_DIR%(dir$, zipPath$) → Int
+- BASE64.ENCODE$(text$) → String; BASE64.DECODE$(b64$) → String
+
+CSV/JSON (obj-csv / obj-json)
+- CSV.PARSE2D$(text$) → String[][]
+- JSON.PARSE$(text$) → dynamic JSON string (or use feature docs). Often prompts use JSON in opts.
+
+SQLite (obj-sqlite)
+- SQLITE_OPEN%(path$) → handle%; SQLITE_EXEC%(db%, sql$) → Int; SQLITE_QUERY2D$(db%, sql$) → String[][]; SQLITE_CLOSE%(db%) → Int
+
+ORM (obj-orm)
+- Enables higher-level data mapping. See docs/guides/ORM.md for patterns.
+
+Audio/MIDI/DAW (obj-audio/obj-midi/obj-daw)
+- AUDIO_OPEN_OUT@(name$) → handle@; AUDIO_OPEN_IN@(name$) → handle@; WAV_WRITER_OPEN@(path$, rate%, ch%) → handle@
+- MIDI_OPEN_IN@(name$) → handle@
+
+Terminal (obj-term)
+- CLS, CLEAR, HOME, LOCATE(x%, y%), COLOR(fg, bg), ATTR(...), TERM_COLS%(), TERM_ROWS%(), CURSOR_HIDE, CURSOR_SHOW
+
+CLI Patterns
+- Ask questions with PRINT/INPUT. Normalize answers; validate and re-prompt if needed.
+- Show a summary plan, ask for Y/N confirmation.
+- Generate code using AI.CHAT$; if AI.KNOWLEDGE$ file contents are available, prepend to system prompt (see below).
+
+Prompt construction tips
+- Provide a strict system prompt that presents the Basil lexicon first, then task-specific requirements. Ask for plain Basil program text only; the host tool will write it to disk.
+- Limit scope, specify file paths, and request no extra commentary.
+- Generate the final target program itself (no meta-generators). Do not include AI.* calls in the output. Avoid file I/O unless the user explicitly requests it.
+
+Example: Knowledge-primed codegen system prompt (pseudo)
+LET lex$ = AI.KNOWLEDGE$("docs\\data\\basil_lexicon_for_ai.txt")
+LET sys$ = "You are an expert Basil code generator. Follow Basil syntax and use only enabled modules.\n" +
+           "Basil reference follows:\n" + lex$ + "\nEND OF REFERENCE\n\n" +
+           "Task: Generate a Basil program as specified. Output only Basil code."
+
+End of Lexicon.

@@ -779,6 +779,26 @@ cargo run -q -p basilc --features obj-ai -- --test run examples/obj-ai/00_smoke_
 # Phase 3: Tool/Function-calling (later)
 
 
+See AI_PHASE_3_WIP.md for details.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Phase 4: AI-powered music generation (AI.MUSIC + DAWG - ClipSpec schema + validators + demos)
 
@@ -1116,18 +1136,5 @@ Include:
 ---
 
 > Build this now. Ensure the model never emits code fences or commentary—ClipSpec JSON only. If anything is invalid, repair once; otherwise use a fallback pattern. Keep the UX snappy and deterministic in test mode.
-
-
-
-# Phase 3: Tool/Function-calling (later)
-
-
-
-# Phase 4: AI-powered music generation (AI.MUSIC + DAWG - ClipSpec schema + validators + demos)
-
-
-
-
-
 
 

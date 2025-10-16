@@ -723,6 +723,7 @@ dependencies = [
  "basil-objects-aws",
  "basil-objects-crypto",
  "basil-objects-net",
+ "basil-objects-orm",
  "basil-objects-sql",
  "cpal",
  "crossterm",
@@ -785,6 +786,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "basil-objects-orm"
+version = "0.1.0"
+dependencies = [
+ "basil-bytecode",
+ "basil-common",
+ "basil-objects-sql",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "basil-objects-sql"
 version = "0.1.0"
 dependencies = [
@@ -835,9 +847,11 @@ dependencies = [
  "basil-lexer",
  "basil-parser",
  "basil-vm",
+ "once_cell",
  "rustyline",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

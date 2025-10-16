@@ -16,6 +16,9 @@ basil-ast = { workspace = true }
 rustyline = "13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Tokio runtime for global context
+once_cell = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [features]
 obj-bmx = ["basil-vm/obj-bmx"]
@@ -27,6 +30,10 @@ obj-curl = ["basil-vm/obj-curl", "basil-compiler/obj-curl"]
 obj-json = ["basil-vm/obj-json", "basil-compiler/obj-json"]
 obj-csv = ["basil-vm/obj-csv", "basil-compiler/obj-csv"]
 obj-sqlite = ["basil-vm/obj-sqlite", "basil-compiler/obj-sqlite"]
+# SQL connectors (network)
+obj-sql-mysql = ["basil-vm/obj-sql-mysql"]
+obj-sql-postgres = ["basil-vm/obj-sql-postgres"]
+obj-sql = ["basil-vm/obj-sql"]
 # New audio/MIDI/DAW features forwarded to VM and compiler
 obj-audio = ["basil-vm/obj-audio", "basil-compiler/obj-audio", "basil-vm/obj-daw", "basil-compiler/obj-daw"]
 obj-midi  = ["basil-vm/obj-midi",  "basil-compiler/obj-midi"]
@@ -42,6 +49,11 @@ obj-aws     = ["basil-vm/obj-aws", "obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
 obj-net-sftp = ["basil-vm/obj-net-sftp"]
 obj-net-smtp = ["basil-vm/obj-net-smtp"]
 obj-net      = ["basil-vm/obj-net", "obj-net-smtp", "obj-net-sftp"]
+# ORM features forwarded to VM and compiler
+obj-orm = ["basil-vm/obj-orm", "basil-compiler/obj-orm"]
+obj-orm-mysql = ["basil-vm/obj-orm-mysql", "basil-compiler/obj-orm-mysql"]
+obj-orm-postgres = ["basil-vm/obj-orm-postgres", "basil-compiler/obj-orm-postgres"]
+obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all"]

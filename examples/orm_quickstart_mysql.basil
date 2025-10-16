@@ -1,0 +1,33 @@
+#USE DB_MYSQL, ORM
+
+REM  Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+
+REM  Get the DSN from the environment and create a DB and ORM objects
+
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+DIM orm@ AS ORM(db@)
+
+DIM A$(2);
+
+REM  Create a model
+LET A$(0)="id%";
+LET A$(1)="name$";
+LET A$(2)="email$";
+
+REM We don't support this syntax yet :(
+REM orm@.Model("users", ["id%","name$","email$"], "id%")
+
+REM Instantiate the model
+orm@.Model("users", A$, "id%")
+
+REM Set values and save the model
+LET u@ = orm@.New("users")
+LET u@.Name$="Bob"
+LET u@.Email$="bob@example.com"
+u@.Save()
+
+REM  Query the database
+PRINTLN orm@.Table("users").Where$("name$","LIKE","B%").OrderBy$("id%","ASC").ToJson$()

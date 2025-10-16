@@ -231,6 +231,10 @@ pub enum Op {
     CallMember      = 103, // alias of CallMethod
     DestroyInstance = 104, // hint GC/no-op for now
 
+    // dynamic code execution
+    ExecString      = 105, // pop string: Basil statements; parse+compile+run (no value pushed)
+    EvalString      = 106, // pop string: Basil expression; parse+compile+run; push value
+
     // enumeration
     EnumNew      = 90,  // expects iterable (array or object) on stack; pushes enumerator handle (object) or error
     EnumMoveNext = 91,  // moves enumerator; pushes Bool

@@ -57,6 +57,7 @@ use serde_json;
 
 mod template;
 mod repl;
+mod runtime;
 use template::{precompile_template, parse_directives_and_bom, Directives};
 
 fn cmd_analyze(path: String, json: bool) {
@@ -156,30 +157,35 @@ fn canonicalize(cmd: &str) -> &str {
 }
 
 fn print_help() {
-    println!("Basil CLI (prototype)\n");
+    println!("Basil CLI (80's version)\n");
     println!("Commands (aliases in parentheses):");
-    println!("  init (seed)        Create a new Basil project");
+    // println!("  init (seed)        Create a new Basil project");
     println!("  run  (sprout)      Parse → compile → run a .basil file");
-    println!("  build (harvest)    Build project (stub)");
+    // println!("  build (harvest)    Build project (stub)");
     println!("  test (cultivate)   Run program in test mode with auto-mocked input");
-    println!("  fmt  (prune)       Format sources (stub)");
-    println!("  add  (infuse)      Add dependency (stub)");
-    println!("  clean (compost)    Remove build artifacts (stub)");
-    println!("  dev  (steep)       Start dev mode (stub)");
-    println!("  serve (greenhouse) Serve local HTTP (stub)");
-    println!("  doc  (bouquet)     Generate docs (stub)\n");
+    //println!("  fmt  (prune)       Format sources (stub)");
+    //println!("  add  (infuse)      Add dependency (stub)");
+    //println!("  clean (compost)    Remove build artifacts (stub)");
+    //println!("  dev  (steep)       Start dev mode (stub)");
+    //println!("  serve (greenhouse) Serve local HTTP (stub)");
+    //println!("  doc  (bouquet)     Generate docs (stub)\n");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
-    println!("  --ai               Start AI REPL (streaming chat)");
+    //println!("  --ai               Start AI REPL (streaming chat)");
     println!("  --analyze <file> [--json]  Run compiler analysis and print diagnostics/symbols");
     println!("  --debug <file>              Run Basil VM with JSON debug events\n");
     println!("Usage:");
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
+    println!("  basilc lex examples/hello.basil");
+    println!("  basilc test testprogs/bigtest.basil");
     println!("  basilc --analyze examples/hello.basil --json");
     println!("  basilc --debug examples/hello.basil");
-    println!("  basilc init myapp");
-    println!("  basilc --ai");
+    //println!("  basilc --ai");
+    println!("");
+    println!("For more information, visit https://github.com/blackrushllc/basil");
+    println!("");
+    println!("");
 
 }
 
@@ -231,14 +237,18 @@ fn cmd_run(path: Option<String>) {
         std::process::exit(2);
     }
 
-    // Resolve absolute path and set process CWD to the script directory so relative I/O works like PHP/Python.
+    // Resolve absolute path for reading/caching, but set CWD using the user-provided path to avoid Windows \\?\ prefixes.
     let abs_path: PathBuf = match fs::canonicalize(&input_path) {
         Ok(p) => p,
         Err(_) => PathBuf::from(&input_path),
     };
-    let script_dir = abs_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
-    if let Err(e) = env::set_current_dir(&script_dir) {
-        eprintln!("warning: failed to set current dir to script dir ({}): {}", script_dir.display(), e);
+    // IMPORTANT (Windows): Do not use canonicalized path for CWD, because it may contain the \\?\ prefix that cmd.exe rejects.
+    let script_dir_for_cwd = Path::new(&input_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    if let Err(e) = env::set_current_dir(&script_dir_for_cwd) {
+        eprintln!("warning: failed to set current dir to script dir ({}): {}", script_dir_for_cwd.display(), e);
     }
 
     // Read the source once, with good error messages (use absolute path to avoid cwd side-effects)
@@ -355,6 +365,9 @@ fn cli_main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_help();
+        let path = args.get(0).cloned();
+        let sess = repl::Session::new(repl::SessionSettings::default());
+        repl::start_repl(sess, path);
         return;
     }
     // Early flag handling for analysis/debug modes used by IDE tooling
@@ -582,6 +595,8 @@ fn resolve_script_path() -> Option<String> {
 /// --- New: tiny dispatcher ---
 
 fn main() {
+    // Ensure the entire CLI runs within a Tokio runtime context
+    let _rt_guard = crate::runtime::TOKIO_MAIN_RT.enter();
     // Explicit escape hatch for any subprocess we spawn:
     if env::var("BASIL_FORCE_MODE").ok().as_deref() == Some("cli") {
         cli_main();

@@ -1088,6 +1088,35 @@ impl VM {
                     // Hint to GC; currently a no-op
                 }
 
+                Op::ExecString => {
+                    let code_v = self.pop()?;
+                    let code = match code_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("EXEC expects a STRING, got {}", self.type_of(&other)))) };
+                    let ast = parse_basil(&code)?;
+                    let prog = compile_basil(&ast)?;
+                    let mut child = VM::new(prog.clone());
+                    if let Some(sp) = &self.script_path { child.set_script_path(sp.clone()); }
+                    child.run()?;
+                    // no value pushed
+                }
+                Op::EvalString => {
+                    let expr_v = self.pop()?;
+                    let expr = match expr_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("EVAL expects a STRING, got {}", self.type_of(&other)))) };
+                    let src = format!("LET __EVAL_RES = ({});", expr);
+                    let ast = parse_basil(&src)?;
+                    let prog = compile_basil(&ast)?;
+                    let mut child = VM::new(prog.clone());
+                    if let Some(sp) = &self.script_path { child.set_script_path(sp.clone()); }
+                    child.run()?;
+                    // locate result global
+                    let mut idx_opt: Option<usize> = None;
+                    for (i, name) in prog.globals.iter().enumerate() {
+                        if name == "__EVAL_RES" { idx_opt = Some(i); break; }
+                    }
+                    let idx = idx_opt.ok_or_else(|| BasilError("EVAL internal error: result not found".into()))?;
+                    let val = child.globals.get(idx).cloned().unwrap_or(Value::Null);
+                    self.stack.push(val);
+                }
+
                 Op::Builtin => {
                     let bid = self.read_u8()? as u8;
                     let argc = self.read_u8()? as usize;
@@ -1502,11 +1531,18 @@ impl VM {
                             else if m.starts_with('w') { writable = true; opts.write(true).create(true).truncate(true); if plus { readable = true; opts.read(true); } }
                             else if m.starts_with('a') { writable = true; opts.append(true).create(true); if plus { readable = true; opts.read(true); opts.write(true); } }
                             else { return Err(BasilError(format!("FOPEN: invalid mode '{}'; expected r/w/a variants", mode))); }
-                            let file = opts.open(&path).map_err(|e| BasilError(format!("FOPEN {}: {}", path, e)))?;
-                            let fh = self.next_fh; self.next_fh += 1;
-                            let entry = FileHandleEntry { file, text, readable, writable, owner_depth: self.frames.len() };
-                            self.file_table.insert(fh, entry);
-                            self.stack.push(Value::Int(fh));
+                            match opts.open(&path) {
+                                Ok(file) => {
+                                    let fh = self.next_fh; self.next_fh += 1;
+                                    let entry = FileHandleEntry { file, text, readable, writable, owner_depth: self.frames.len() };
+                                    self.file_table.insert(fh, entry);
+                                    self.stack.push(Value::Int(fh));
+                                }
+                                Err(_e) => {
+                                    // Non-throwing failure: return -1 to signal open error
+                                    self.stack.push(Value::Int(-1));
+                                }
+                            }
                         }
                         41 => { // FCLOSE fh%
                             if argc != 1 { return Err(BasilError("FCLOSE expects 1 argument".into())); }
@@ -1678,6 +1714,57 @@ impl VM {
                             if argc != 1 { return Err(BasilError("EXIT expects 1 argument".into())); }
                             let code = self.to_i64(&args[0])? as i32;
                             std::process::exit(code);
+                        }
+                        62 => { // MKDIRS%(path$) -> Int (1=ok,0=fail)
+                            if argc != 1 { return Err(BasilError("MKDIRS% expects 1 argument".into())); }
+                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            match fs::create_dir_all(&path) {
+                                Ok(_) => self.stack.push(Value::Int(1)),
+                                Err(_e) => self.stack.push(Value::Int(0)),
+                            }
+                        }
+                        63 => { // LOADENV%(filename$?) -> Int (1=ok,0=fail)
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("LOADENV% expects 0 or 1 argument".into())); }
+                            let default_name = ".env".to_string();
+                            let file = if argc == 0 {
+                                default_name
+                            } else {
+                                let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                                let t = s.trim();
+                                if t.is_empty() { ".env".to_string() } else { t.to_string() }
+                            };
+                            match fs::read_to_string(&file) {
+                                Ok(contents) => {
+                                    for (i, line) in contents.lines().enumerate() {
+                                        let trimmed = line.trim();
+                                        if trimmed.is_empty() { continue; }
+                                        if trimmed.starts_with('#') || trimmed.starts_with(';') { continue; }
+                                        match trimmed.find('=') {
+                                            Some(eq) => {
+                                                let key = trimmed[..eq].trim();
+                                                let val_raw = trimmed[eq+1..].trim();
+                                                if key.is_empty() {
+                                                    eprintln!("warning: LOADENV% {}:{}: missing key before '='", file, i + 1);
+                                                    continue;
+                                                }
+                                                let unquoted = if (val_raw.starts_with('"') && val_raw.ends_with('"') && val_raw.len() >= 2) ||
+                                                                (val_raw.starts_with('\'') && val_raw.ends_with('\'') && val_raw.len() >= 2) {
+                                                    val_raw[1..val_raw.len()-1].to_string()
+                                                } else { val_raw.to_string() };
+                                                env::set_var(key, unquoted);
+                                            }
+                                            None => {
+                                                eprintln!("warning: LOADENV% {}:{}: invalid line (expected name=value or comment)", file, i + 1);
+                                            }
+                                        }
+                                    }
+                                    self.stack.push(Value::Int(1));
+                                }
+                                Err(e) => {
+                                    eprintln!("warning: LOADENV% could not read {}: {}", file, e);
+                                    self.stack.push(Value::Int(0));
+                                }
+                            }
                         }
                         #[cfg(feature = "obj-base64")]
                         90 => { // BASE64_ENCODE$(text$)
@@ -2419,6 +2506,7 @@ impl VM {
             80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
             100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
+            105=>Op::ExecString, 106=>Op::EvalString,
             110=>Op::Gosub, 111=>Op::GosubBack, 112=>Op::GosubRet, 113=>Op::GosubPop,
             120=>Op::TryPush, 121=>Op::TryPop, 122=>Op::Raise, 123=>Op::Reraise,
             255=>Op::Halt,

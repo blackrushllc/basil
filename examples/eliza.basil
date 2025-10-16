@@ -1,5 +1,7 @@
 REM ELIZA in Basil (no line numbers). Uses INSTR-based rules and reflection.
 REM Port guided by ELIZA.md. Prioritized keyword patterns, pronoun reflection, defaults.
+REM Based on the original ELIZA in BASIC by Joseph Weizenbaum, 1966.
+REM See also https://en.wikipedia.org/wiki/ELIZA for some history.
 
 REM --- Globals ---
 LET RP% = 12;            REM reflection pair count
