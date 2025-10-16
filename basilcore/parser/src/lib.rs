@@ -117,7 +117,7 @@ impl Parser {
                         // 'IS' comparator form
                         if self.match_k(TokenKind::Is) {
                             let op = match self.peek_kind() {
-                                Some(TokenKind::EqEq) => { let _ = self.next(); BinOp::Eq },
+                                Some(TokenKind::EqEq) | Some(TokenKind::Assign) => { let _ = self.next(); BinOp::Eq },
                                 Some(TokenKind::BangEq) => { let _ = self.next(); BinOp::Ne },
                                 Some(TokenKind::Lt) => { let _ = self.next(); BinOp::Lt },
                                 Some(TokenKind::LtEq) => { let _ = self.next(); BinOp::Le },
@@ -422,6 +422,15 @@ impl Parser {
             return Ok(Stmt::Describe { target });
         }
 
+        // EXEC(code$)
+        if self.match_k(TokenKind::Exec) {
+            self.expect(TokenKind::LParen)?;
+            let code = self.parse_expr_bp(0)?;
+            self.expect(TokenKind::RParen)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Exec { code });
+        }
+
         if self.match_k(TokenKind::Return) {
             // Distinguish GOSUB-return forms and function-return
             // RETURN TO <label> ;
@@ -701,19 +710,65 @@ impl Parser {
             }
         }
 
-        // Fallback: either member property assignment (without LET) or expression statement
-        let e = self.parse_expr_bp(0)?;
-        if self.check(TokenKind::Assign) {
-            // Only allow assignment without LET for member property targets: obj.Prop = expr
-            if let Expr::MemberGet { target, name } = e.clone() {
-                let _ = self.next(); // consume '='
-                let value = self.parse_expr_bp(0)?;
-                self.terminate_stmt()?;
-                return Ok(Stmt::SetProp { target: *target, prop: name, value });
-            } else {
-                return Err(BasilError(format!("parse error at line {}: assignment without LET is only allowed for object properties (obj.Prop = expr)", self.peek_line())));
+        // Fallback: detect assignment-like forms first to enforce LET for variable assignment,
+        // while still allowing obj.Prop = expr without LET. Otherwise, parse an expression statement.
+        let save_i = self.i;
+        // Probe a potential left-hand chain: prefix + postfix (calls and member access only)
+        let lhs_probe = (|| {
+            let mut lhs = self.parse_prefix()?;
+            loop {
+                if self.match_k(TokenKind::LParen) {
+                    let mut args = Vec::new();
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr_bp(0)?);
+                            if !self.match_k(TokenKind::Comma) { break; }
+                        }
+                    }
+                    self.expect(TokenKind::RParen)?;
+                    lhs = Expr::Call { callee: Box::new(lhs), args };
+                    continue;
+                }
+                if self.match_k(TokenKind::Dot) {
+                    let name = self.expect_member_name()?;
+                    if self.match_k(TokenKind::LParen) {
+                        let mut args = Vec::new();
+                        if !self.check(TokenKind::RParen) {
+                            loop {
+                                args.push(self.parse_expr_bp(0)?);
+                                if !self.match_k(TokenKind::Comma) { break; }
+                            }
+                        }
+                        self.expect(TokenKind::RParen)?;
+                        lhs = Expr::MemberCall { target: Box::new(lhs), method: name, args };
+                    } else {
+                        lhs = Expr::MemberGet { target: Box::new(lhs), name };
+                    }
+                    continue;
+                }
+                break;
             }
+            Ok::<Expr, BasilError>(lhs)
+        })();
+        if let Ok(lhs) = lhs_probe {
+            if self.check(TokenKind::Assign) {
+                // Only allow assignment without LET for member property targets: obj.Prop = expr
+                if let Expr::MemberGet { target, name } = lhs {
+                    let _ = self.next(); // consume '='
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::SetProp { target: *target, prop: name, value });
+                } else {
+                    return Err(BasilError("Use LET for assignment; '=' in expressions tests equality.".into()));
+                }
+            }
+            // Not an assignment pattern; reset before parsing general expression
+            self.i = save_i;
+        } else {
+            // If probe failed, reset and proceed to parse expression normally (will error if invalid)
+            self.i = save_i;
         }
+        let e = self.parse_expr_bp(0)?;
         self.terminate_stmt()?;
         Ok(Stmt::ExprStmt(e))
     }
@@ -849,6 +904,14 @@ impl Parser {
                 self.expect(TokenKind::RParen)?;
                 Ok(Expr::NewClass { filename: Box::new(fname) })
             }
+            Some(TokenKind::Eval) => {
+                // EVAL(expr)
+                let _ = self.next().unwrap();
+                self.expect(TokenKind::LParen)?;
+                let inner = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::Eval(Box::new(inner)))
+            }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
         }
@@ -896,8 +959,8 @@ impl Parser {
             // logical (lowest precedence)
             TokenKind::Or => Some((BinOp::Or, 20, 21)),
             TokenKind::And => Some((BinOp::And, 30, 31)),
-            // comparisons
-            TokenKind::EqEq => Some((BinOp::Eq, 40, 41)),
+            // comparisons (allow '=' as alias of '==')
+            TokenKind::EqEq | TokenKind::Assign => Some((BinOp::Eq, 40, 41)),
             TokenKind::BangEq => Some((BinOp::Ne, 40, 41)),
             TokenKind::Lt => Some((BinOp::Lt, 50, 51)),
             TokenKind::LtEq => Some((BinOp::Le, 50, 51)),
@@ -985,7 +1048,9 @@ impl Parser {
             | Some(TokenKind::Label)
             | Some(TokenKind::Goto)
             | Some(TokenKind::Gosub)
-            | Some(TokenKind::Mod) => {
+            | Some(TokenKind::Mod)
+            | Some(TokenKind::Exec)
+            | Some(TokenKind::Eval) => {
                 Ok(self.next().unwrap().lexeme)
             }
             _ => Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))),

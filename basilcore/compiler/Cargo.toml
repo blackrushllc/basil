@@ -37,3 +37,8 @@ obj-net      = ["obj-net-sftp", "obj-net-smtp"]
 # CRYPTO feature gates (no deps here)
 obj-crypto-pgp = []
 obj-crypto     = ["obj-crypto-pgp"]
+# ORM feature gates (no deps here)
+obj-orm = []
+obj-orm-mysql = []
+obj-orm-postgres = []
+obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]

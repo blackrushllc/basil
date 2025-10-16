@@ -14,6 +14,7 @@ members = [
     "basil-objects-net",
     "basil-objects-crypto",
     "basil-objects-sql",
+    "basil-objects-orm",
     "crates/basil-frontend",
     "crates/basil-ir",
     "crates/backend-rs",
@@ -42,6 +43,7 @@ basil-objects-crypto = { path = "basil-objects-crypto" }
 basil-objects-sql = { path = "basil-objects-sql" }
 basil-common    = { path = "basilcore/common" }
 basil-bytecode  = { path = "basilcore/bytecode" }
+basil-objects-orm = { path = "basil-objects-orm" }
 
 [profile.dev]
 debug = 0            # disable PDBs to avoid MSVC LNK1318 on large workspaces

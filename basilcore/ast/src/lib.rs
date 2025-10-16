@@ -60,6 +60,8 @@ pub enum Expr {
     NewObject { type_name: String, args: Vec<Expr> },
     // CLASS("filename") expression
     NewClass { filename: Box<Expr> },
+    // EVAL("expr") expression: parse+compile at runtime and push result
+    Eval(Box<Expr>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +86,8 @@ pub enum Stmt {
     // DESCRIBE obj or array
     Describe { target: Expr },
     Print { expr: Expr },
+    // EXEC statement: EXEC("...basil code...")
+    Exec { code: Expr },
     // SETENV/EXPORTENV statements
     SetEnv { name: String, value: Expr, export: bool },
     // SHELL statement

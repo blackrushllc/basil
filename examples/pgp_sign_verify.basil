@@ -1,3 +1,5 @@
+// TODO: This hasn't been tested :/
+
 REM Detached sign & verify
 
 LET pub$ = READFILE$("pub.asc")

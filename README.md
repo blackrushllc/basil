@@ -1,18 +1,35 @@
 # Basil 🌿
 
-🌱 A Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform Compiler** with lots of Rad Mods 
-such as AI, AWS, Zip, Crypt (Base64, PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), SQL(MySQL/RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode (Jolt Cola not included)
+## This is the Basil Programming Language
+> ### This is what first year students should learn.
+> ### This is what hobbyists should learn.
+> ### This is what professionals should learn.
+> ### This is the only programming language you need.
 
-### Complete Online Reference: https://yobasic.com/basil/reference.html
+>
+>Invite link to Blackrush Slack (Expires 11/13/25)
+>
+>https://join.slack.com/t/blackrushworkspace/shared_invite/zt-3g33s1rxc-9wWmCfggBEzInblqjzsn1A
+>
 
-### Look at the /docs/ folder for guides, development notes, and more.
+
+🌱 A Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform
+Compiler** with lots of Rad Mods
+such as AI, AWS, Zip, Crypt (Base64, PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), SQL(MySQL/Postgres, RDS,
+Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode (Jolt Cola not included)
+
+>
+> ### Complete Online Reference: https://yobasic.com/basil/reference.html
+>
+>### Look at the /docs/ folder for guides, development notes, and more.
+>
 
 🌱 Basil is the first high level interpreted and compiled language designed with AI in mind, from code generation, module building, and even adding features or fixing bugs in itself!
 
 🌱 Basil programs can be compiled to native binaries for Windows, Linux, and MacOS. Basil can also run as a CGI script templating engine
 using \<?basil .. ?> tags like Php.  
 
-🌱 Basil is easier to use, and much faster than Python or Php.
+🌱 Basil is easier learn and to use, and much faster than Python or Php.
 
 🌱 Basil has all of the simplicity of old BASIC, but with all of the features of modern languages like Python or Go, plus the power of AI.
 
@@ -27,6 +44,8 @@ using \<?basil .. ?> tags like Php.
 🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library Objects ("Mods") and write Basil code.
 
 🌱 Read the previous line again
+
+🌱 Basil has a built-in ORM (Object Relational Mapping) for SQL databases.
 
 🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Classes for manual testing, enter a program (with line numbers!) and run it, save it, load it, list it, and more. Cowabunga!
 
@@ -76,23 +95,6 @@ cargo run -q -p basilc --features "obj-curl obj-zip obj-base64" -- run examples/
 cargo run -q -p basilc --features obj-all -- run examples/objects.basil
 ```
 
-Terminal control (obj-term):
-
-- Enable the terminal feature and run examples:
-  cargo run -q -p basilc --features obj-term -- run examples/term/01_colors_and_cls.basil
-
-- New commands when enabled:
-  CLS, CLEAR, HOME, LOCATE(x%, y%), COLOR(fg, bg), COLOR_RESET, ATTR(bold%, underline%, reverse%), ATTR_RESET,
-  CURSOR_SAVE, CURSOR_RESTORE, TERM_COLS%(), TERM_ROWS%(), CURSOR_HIDE, CURSOR_SHOW, TERM_ERR$()
-
-Color values for COLOR can be 0..15 or names (case-insensitive):
-  0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White, 8=Grey,
-  9=BrightRed, 10=BrightGreen, 11=BrightYellow, 12=BrightBlue, 13=BrightMagenta, 14=BrightCyan, 15=BrightWhite
-  Names: "black","red","green","yellow","blue","magenta","cyan","white","grey",
-         "brightred","brightgreen","brightyellow","brightblue","brightmagenta","brightcyan","brightwhite"
-
-Examples are in examples/term/.
-
 See:
  + docs - all the docs, guides, development, etc
  + examples - lots of Basil program examples
@@ -120,6 +122,8 @@ A minimal, public‑ready blueprint for a modern BASIC‑flavored language focus
 
 ---
 
+
+
 ## 0) High‑level goals
 
 * 🌱 **Developer joy**: BASIC warmth + modern features (expressions, async later, modules).
@@ -131,7 +135,7 @@ A minimal, public‑ready blueprint for a modern BASIC‑flavored language focus
 
 ## 1) 🌱 Repository layout (Rust host)
 
-(needs to be updated)
+(BADLY needs to be updated)
 
 ```
 basil/
@@ -158,3 +162,60 @@ basil/
    └─ e2e.rs
 ```
 
+>
+> Terminal control (obj-term):
+>
+> - Enable the terminal feature and run examples:
+    >  cargo run -q -p basilc --features obj-term -- run examples/term/01_colors_and_cls.basil
+>
+> - New commands when enabled:
+    >  CLS, CLEAR, HOME, LOCATE(x%, y%), COLOR(fg, bg), COLOR_RESET, ATTR(bold%, underline%, reverse%), ATTR_RESET,
+    >  CURSOR_SAVE, CURSOR_RESTORE, TERM_COLS%(), TERM_ROWS%(), CURSOR_HIDE, CURSOR_SHOW, TERM_ERR$()
+>
+> Color values for COLOR can be 0..15 or names (case-insensitive):
+> 
+> 0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White, 8=Grey,
+> 9=BrightRed, 10=BrightGreen, 11=BrightYellow, 12=BrightBlue, 13=BrightMagenta, 14=BrightCyan, 15=BrightWhite
+>
+> Names: "black","red","green","yellow","blue","magenta","cyan","white","grey",
+"brightred","brightgreen","brightyellow","brightblue","brightmagenta","brightcyan","brightwhite"
+>
+> Examples are in examples/term/.
+>
+
+### Complete list of Basil Feature Objects (Mods). You can link them individually or all at once with --features obj-all (Recommended)
+
+At build time, you can enable any of the following mods.  You can also enable all of them at once with --features obj-all.
+
+Enabling more mods will increase the size of the Basil binary, but will give you more functionality.
+
+Enabling mods will add new commands and functions to Basil.
+
+Some mods are automatically bundled with other mods when there is interoperability, such as obj-orm requires obj-sql, etc 
+
++ obj-ai - Enable AI commands and functions in Basil
++ obj-audio - Audio playback and recording (Alone)
++ obj-aws - S3, SES, SQS, etc
++ obj-base64 - Base64 encoding and decoding
++ obj-bmx - An example set of Basil Modules for you to use as a starting point.
++ obj-crypto - PGP, other encryption and decryption tools
++ obj-csv - CSV
++ obj-curl - Curl client
++ obj-daw - All Midi and Audio related objects
++ obj-inet - Internet client (HTTP, FTP, SMTP, REST, etc)
++ obj-json - JSON utilities
++ obj-midi - MIDI audio playback and recording (Alone)
++ obj-mysql - MySQL
++ obj-net - SFTP, SMTP, REST, etc
++ obj-orm - Object Relational Model
++ obj-pgp - PGP encryption and decryption (alone)
++ obj-postgres - Postgres
++ obj-rds - RDS
++ obj-rest - REST API client
++ obj-sftp - SFTP client (alone)
++ obj-smtp - SMTP client (alone)
++ obj-sql - SQL (MySQL, Postgres, RDS, etc)
++ obj-sqlite - SQLite
++ obj-term - Terminal control using CrossTerm
++ obj-zip - Zip file compression and decompression
++ **obj-all - Enable all of the above (Recommended)**

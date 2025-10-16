@@ -1,0 +1,25 @@
+[package]
+name = "basil-objects-orm"
+version = "0.1.0"
+authors = ["Blackrush LLC"]
+edition = "2021"
+
+[lib]
+name = "basil_objects_orm"
+path = "src/lib.rs"
+
+[features]
+# Core ORM surface (object registration & basic plumbing)
+obj-orm = []
+# Dialect adapters (depend on existing SQL connectors)
+obj-orm-mysql = ["basil-objects-sql/obj-sql-mysql", "dep:serde", "dep:serde_json"]
+obj-orm-postgres = ["basil-objects-sql/obj-sql-postgres", "dep:serde", "dep:serde_json"]
+# Umbrella
+obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+
+[dependencies]
+basil-common = { workspace = true }
+basil-bytecode = { workspace = true }
+basil-objects-sql = { workspace = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }

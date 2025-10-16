@@ -5,9 +5,10 @@ use std::time::Duration;
 
 use basil_common::{BasilError, Result};
 use basil_bytecode::{ArrayObj, BasicObject, ElemType, MethodDesc, ObjectDescriptor, PropDesc, Value};
-use sqlx::{Executor, Row};
+use sqlx::{Row, Column};
 
 use crate::runtime::TOKIO_RT;
+use base64::Engine;
 
 fn make_str_array(items: Vec<String>) -> Value {
     let dims = vec![items.len()];
@@ -22,7 +23,6 @@ fn bad_arity(name: &str, expect: usize, got: usize) -> BasilError { BasilError(f
 
 fn err(op: &str, e: impl std::fmt::Display) -> BasilError { BasilError(format!("SQL(Postgres) {}: {}", op, e)) }
 
-#[derive(Clone)]
 pub struct PgObj {
     dsn: Option<String>,
     pool_max: u32,
@@ -120,7 +120,7 @@ impl PgObj {
         Ok(ExecutorEither::Pool(pool))
     }
 
-    fn bind_pg<'q>(mut qb: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>, params: &[String]) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn bind_pg<'q>(mut qb: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>, params: &'q [String]) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
         for p in params { qb = qb.bind(p); }
         qb
     }
@@ -137,7 +137,7 @@ impl PgObj {
                 else if let Ok(v) = row.try_get::<f64, _>(name.as_str()) { J::from(v) }
                 else if let Ok(v) = row.try_get::<bool, _>(name.as_str()) { J::from(v) }
                 else if let Ok(v) = row.try_get::<String, _>(name.as_str()) { J::from(v) }
-                else if let Ok(v) = row.try_get::<Vec<u8>, _>(name.as_str()) { J::from(base64::encode(v)) }
+                else if let Ok(v) = row.try_get::<Vec<u8>, _>(name.as_str()) { J::from(base64::engine::general_purpose::STANDARD.encode(v)) }
                 else { J::Null };
                 m.insert(name, jv);
             }
@@ -170,13 +170,19 @@ impl PgObj {
     }
 
     fn parse_params(args: &[Value]) -> Vec<String> {
-        if args.len()<2 { return Vec::new(); }
+        if args.len() < 2 { return Vec::new(); }
         match &args[1] {
             Value::Array(arr) => {
                 let data = arr.data.borrow();
                 data.iter().map(|v| match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=>n.to_string(), Value::Bool(b)=>b.to_string(), _=> String::new() }).collect()
             }
-            _ => Vec::new()
+            _ => {
+                if args.len() == 2 {
+                    vec![str_arg(&args[1])]
+                } else {
+                    args[1..].iter().map(str_arg).collect()
+                }
+            }
         }
     }
 }
@@ -186,11 +192,6 @@ enum ExecutorEither<'a> {
     Txn(&'a mut sqlx::pool::PoolConnection<sqlx::Postgres>),
 }
 
-impl<'a> Executor<'a> for ExecutorEither<'a> {
-    type Database = sqlx::Postgres;
-    fn fetch_many<'e, 'q: 'e, E>(self, query: E) -> <Self::Database as sqlx::database::HasExecutor<'e>>::FetchMany where E: sqlx::Execute<'q, Self::Database> { match self { ExecutorEither::Pool(p)=> p.fetch_many(query), ExecutorEither::Txn(c)=> c.fetch_many(query) } }
-    fn fetch_optional<'e, 'q: 'e, E>(self, query: E) -> <Self::Database as sqlx::database::HasExecutor<'e>>::FetchOptional where E: sqlx::Execute<'q, Self::Database> { match self { ExecutorEither::Pool(p)=> p.fetch_optional(query), ExecutorEither::Txn(c)=> c.fetch_optional(query) } }
-}
 
 impl BasicObject for PgObj {
     fn type_name(&self) -> &str { "DB_POSTGRES" }
@@ -229,7 +230,7 @@ impl BasicObject for PgObj {
                 let pass = str_arg(&args[3]);
                 let db = str_arg(&args[4]);
                 let ssl = str_arg(&args[5]);
-                let dsn = format!("postgres://{}:{}@{}:{}/{}?sslmode={}", user, pass, host, port, db, if ssl.is_empty(){"require"} else {ssl});
+                let dsn = format!("postgres://{}:{}@{}:{}/{}?sslmode={}", user, pass, host, port, db, if ssl.is_empty(){"require"} else {&ssl});
                 self.dsn = Some(dsn);
                 self.pool = None;
                 let ok = self.ensure_pool().is_ok();
@@ -248,13 +249,15 @@ impl BasicObject for PgObj {
                         ExecutorEither::Pool(pool) => {
                             let fut = qb.execute(&pool);
                             let res = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
-                                .map_err(|_| err("Execute(Timeout)", "command timeout"))??;
+                                .map_err(|_| err("Execute(Timeout)", "command timeout"))?
+                                .map_err(|e| err("Execute", e))?;
                             Ok(res.rows_affected())
                         }
                         ExecutorEither::Txn(conn) => {
-                            let fut = qb.execute(conn);
+                            let fut = qb.execute(conn.as_mut());
                             let res = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
-                                .map_err(|_| err("Execute(Timeout)", "command timeout"))??;
+                                .map_err(|_| err("Execute(Timeout)", "command timeout"))?
+                                .map_err(|e| err("Execute", e))?;
                             Ok(res.rows_affected())
                         }
                     }
@@ -274,13 +277,15 @@ impl BasicObject for PgObj {
                         ExecutorEither::Pool(pool) => {
                             let fut = qb.fetch_all(&pool);
                             let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
-                                .map_err(|_| err("Query(Timeout)", "command timeout"))??;
+                                .map_err(|_| err("Query(Timeout)", "command timeout"))?
+                                .map_err(|e| err("Query", e))?;
                             Ok(Self::to_json_rows(rows))
                         }
                         ExecutorEither::Txn(conn) => {
-                            let fut = qb.fetch_all(conn);
+                            let fut = qb.fetch_all(conn.as_mut());
                             let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
-                                .map_err(|_| err("Query(Timeout)", "command timeout"))??;
+                                .map_err(|_| err("Query(Timeout)", "command timeout"))?
+                                .map_err(|e| err("Query", e))?;
                             Ok(Self::to_json_rows(rows))
                         }
                     }
@@ -300,13 +305,15 @@ impl BasicObject for PgObj {
                         ExecutorEither::Pool(pool) => {
                             let fut = qb.fetch_all(&pool);
                             let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
-                                .map_err(|_| err("QueryTable(Timeout)", "command timeout"))??;
+                                .map_err(|_| err("QueryTable(Timeout)", "command timeout"))?
+                                .map_err(|e| err("QueryTable", e))?;
                             Ok(Self::to_table_lines(rows))
                         }
                         ExecutorEither::Txn(conn) => {
-                            let fut = qb.fetch_all(conn);
+                            let fut = qb.fetch_all(conn.as_mut());
                             let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
-                                .map_err(|_| err("QueryTable(Timeout)", "command timeout"))??;
+                                .map_err(|_| err("QueryTable(Timeout)", "command timeout"))?
+                                .map_err(|e| err("QueryTable", e))?;
                             Ok(Self::to_table_lines(rows))
                         }
                     }
@@ -318,21 +325,29 @@ impl BasicObject for PgObj {
                 let pool = self.ensure_pool()?;
                 let mut conn = TOKIO_RT.block_on(async move { pool.acquire().await }).map_err(|e| err("Begin(Acquire)", e))?;
                 // BEGIN
-                TOKIO_RT.block_on(async { sqlx::query("BEGIN").execute(&mut conn).await }).map_err(|e| err("Begin", e))?;
+                TOKIO_RT.block_on(async { sqlx::query("BEGIN").execute(conn.as_mut()).await }).map_err(|e| err("Begin", e))?;
                 self.txn_conn = Some(conn);
                 Ok(Value::Int(1))
             }
             ,"COMMIT" => {
                 if let Some(mut conn) = self.txn_conn.take() {
-                    let res = TOKIO_RT.block_on(async { sqlx::query("COMMIT").execute(&mut conn).await });
-                    drop(conn);
+                    let res = TOKIO_RT.block_on(async move {
+                        let r = sqlx::query("COMMIT").execute(conn.as_mut()).await;
+                        // Drop the connection inside the Tokio context to avoid runtime panic
+                        drop(conn);
+                        r
+                    });
                     match res { Ok(_)=> Ok(Value::Int(1)), Err(e)=> Err(err("Commit", e)) }
                 } else { Ok(Value::Int(1)) }
             }
             ,"ROLLBACK" => {
                 if let Some(mut conn) = self.txn_conn.take() {
-                    let res = TOKIO_RT.block_on(async { sqlx::query("ROLLBACK").execute(&mut conn).await });
-                    drop(conn);
+                    let res = TOKIO_RT.block_on(async move {
+                        let r = sqlx::query("ROLLBACK").execute(conn.as_mut()).await;
+                        // Drop the connection inside the Tokio context to avoid runtime panic
+                        drop(conn);
+                        r
+                    });
                     match res { Ok(_)=> Ok(Value::Int(1)), Err(e)=> Err(err("Rollback", e)) }
                 } else { Ok(Value::Int(1)) }
             }
@@ -352,4 +367,19 @@ pub fn register<F: FnMut(&str, crate::TypeInfo)>(reg: &mut F) {
     let descriptor = || PgObj::descriptor_static();
     let constants = || Vec::<(String, Value)>::new();
     reg("DB_POSTGRES", crate::TypeInfo { factory, descriptor, constants });
+}
+
+
+// Ensure any outstanding SQLx resources are released inside Tokio runtime
+impl Drop for PgObj {
+    fn drop(&mut self) {
+        // Drop any in-progress transaction connection inside Tokio
+        if let Some(conn) = self.txn_conn.take() {
+            let _ = TOKIO_RT.block_on(async move { drop(conn); });
+        }
+        // Also drop the pool inside Tokio to avoid runtime-context panics during shutdown
+        if let Some(pool) = self.pool.take() {
+            let _ = TOKIO_RT.block_on(async move { drop(pool); });
+        }
+    }
 }

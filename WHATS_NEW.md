@@ -5,17 +5,16 @@
 + Stand-alone IDE
 + Distribution of binary (apt-get, etc)
 + Distribution of compiler (CARGO.IO)
-+ MySQL Mod
-+ PostgreSQL Mod
 + Updated guides and docs
-+ ORM Mod (this will be insane!)
 + Bigger demo website that lets you compile and run Basil code online
 + Game Mod (the first one will be gay)
 
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
 ### 🌿 New stuff just added:
- 
++ 
++ ORM Mod (this is insane!) 
++ MySQL / PostgreSQL Mod
 + SMTP/SFTP Mod
 + PGP Mod
 + TRY/CATCH/FINALLY with RAISE ["message"]

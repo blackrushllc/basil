@@ -1,0 +1,20 @@
+REM Transaction demo (either connector)
+
+// Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+
+
+LET dsn$ = "mysql://user:pass@localhost:3306/test?ssl-mode=DISABLED"
+DIM db@ AS DB_MYSQL(dsn$)
+
+TRY
+  db@.Begin()
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Txn1"])
+  PRINTLN db@.Execute("INSERT INTO t (name) VALUES (?)", ["Txn2"])
+  db@.Commit()
+  PRINTLN db@.Query$("SELECT COUNT(*) AS cnt FROM t")
+CATCH e$
+  PRINTLN "SQL error: ", e$
+  db@.Rollback()
+END TRY
