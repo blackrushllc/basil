@@ -57,6 +57,7 @@ use serde_json;
 
 mod template;
 mod repl;
+mod runtime;
 use template::{precompile_template, parse_directives_and_bom, Directives};
 
 fn cmd_analyze(path: String, json: bool) {
@@ -586,6 +587,8 @@ fn resolve_script_path() -> Option<String> {
 /// --- New: tiny dispatcher ---
 
 fn main() {
+    // Ensure the entire CLI runs within a Tokio runtime context
+    let _rt_guard = crate::runtime::TOKIO_MAIN_RT.enter();
     // Explicit escape hatch for any subprocess we spawn:
     if env::var("BASIL_FORCE_MODE").ok().as_deref() == Some("cli") {
         cli_main();

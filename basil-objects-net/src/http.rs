@@ -10,6 +10,7 @@ use basil_common::{BasilError, Result};
 use basil_bytecode::{BasicObject, MethodDesc, ObjectDescriptor, PropDesc, Value};
 
 use crate::runtime::TOKIO_RT;
+use base64::Engine;
 
 #[derive(Clone)]
 struct HttpObj {
@@ -67,7 +68,7 @@ impl HttpObj {
                     hdrs.insert(reqwest::header::AUTHORIZATION, v);
                 }
             } else if let Some((u,p)) = &self.auth_basic {
-                let cred = base64::encode(format!("{}:{}", u, p));
+                let cred = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", u, p));
                 let v = reqwest::header::HeaderValue::from_str(&format!("Basic {}", cred)).map_err(|e| err("Auth(Basic)", e))?;
                 hdrs.insert(reqwest::header::AUTHORIZATION, v);
             }

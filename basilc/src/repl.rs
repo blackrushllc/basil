@@ -180,6 +180,8 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
     println!("BASIL - A BASIC Bytecode Interpreter and Compiler");
     println!("Copyright (C) Blackrush LLC - All Rights Reserved.");
     println!("Open Source Software under MIT License");
+    println!("");
+    println!("Enter a command or :help or quit");
 
     // Line-numbered program buffer and last-used filename
     let mut program_buf: BTreeMap<usize, String> = BTreeMap::new();
