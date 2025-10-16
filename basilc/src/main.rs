@@ -185,7 +185,7 @@ fn print_help() {
     println!("");
     println!("For more information and lots of docs, visit https://github.com/blackrushllc/basil");
     println!("");
-    println!("Type 'status' for build information and to see your objects, or try PRINT \"Hello, World!\"");
+    println!("Type 'status' for build information and to see your objects, or try PRINT \"Hello, World!\";;");
     println!("");
 
 
