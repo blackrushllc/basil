@@ -422,6 +422,15 @@ impl Parser {
             return Ok(Stmt::Describe { target });
         }
 
+        // EXEC(code$)
+        if self.match_k(TokenKind::Exec) {
+            self.expect(TokenKind::LParen)?;
+            let code = self.parse_expr_bp(0)?;
+            self.expect(TokenKind::RParen)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Exec { code });
+        }
+
         if self.match_k(TokenKind::Return) {
             // Distinguish GOSUB-return forms and function-return
             // RETURN TO <label> ;
@@ -895,6 +904,14 @@ impl Parser {
                 self.expect(TokenKind::RParen)?;
                 Ok(Expr::NewClass { filename: Box::new(fname) })
             }
+            Some(TokenKind::Eval) => {
+                // EVAL(expr)
+                let _ = self.next().unwrap();
+                self.expect(TokenKind::LParen)?;
+                let inner = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::Eval(Box::new(inner)))
+            }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
         }
@@ -1031,7 +1048,9 @@ impl Parser {
             | Some(TokenKind::Label)
             | Some(TokenKind::Goto)
             | Some(TokenKind::Gosub)
-            | Some(TokenKind::Mod) => {
+            | Some(TokenKind::Mod)
+            | Some(TokenKind::Exec)
+            | Some(TokenKind::Eval) => {
                 Ok(self.next().unwrap().lexeme)
             }
             _ => Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))),

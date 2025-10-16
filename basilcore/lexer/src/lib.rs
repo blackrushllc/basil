@@ -74,6 +74,8 @@ pub enum TokenKind {
     Setenv, Exportenv, Shell, Exit,
     // Unstructured control flow
     Label, Goto, Gosub,
+    // Dynamic code execution
+    Exec, Eval,
     Eof,
 }
 
@@ -589,6 +591,8 @@ impl<'a> Lexer<'a> {
             "GOTO"   => TokenKind::Goto,
             "GOSUB"  => TokenKind::Gosub,
             "MOD"    => TokenKind::Mod,
+            "EXEC"   => TokenKind::Exec,
+            "EVAL"   => TokenKind::Eval,
             _        => TokenKind::Ident,
         };
 

@@ -1088,6 +1088,35 @@ impl VM {
                     // Hint to GC; currently a no-op
                 }
 
+                Op::ExecString => {
+                    let code_v = self.pop()?;
+                    let code = match code_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("EXEC expects a STRING, got {}", self.type_of(&other)))) };
+                    let ast = parse_basil(&code)?;
+                    let prog = compile_basil(&ast)?;
+                    let mut child = VM::new(prog.clone());
+                    if let Some(sp) = &self.script_path { child.set_script_path(sp.clone()); }
+                    child.run()?;
+                    // no value pushed
+                }
+                Op::EvalString => {
+                    let expr_v = self.pop()?;
+                    let expr = match expr_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("EVAL expects a STRING, got {}", self.type_of(&other)))) };
+                    let src = format!("LET __EVAL_RES = ({});", expr);
+                    let ast = parse_basil(&src)?;
+                    let prog = compile_basil(&ast)?;
+                    let mut child = VM::new(prog.clone());
+                    if let Some(sp) = &self.script_path { child.set_script_path(sp.clone()); }
+                    child.run()?;
+                    // locate result global
+                    let mut idx_opt: Option<usize> = None;
+                    for (i, name) in prog.globals.iter().enumerate() {
+                        if name == "__EVAL_RES" { idx_opt = Some(i); break; }
+                    }
+                    let idx = idx_opt.ok_or_else(|| BasilError("EVAL internal error: result not found".into()))?;
+                    let val = child.globals.get(idx).cloned().unwrap_or(Value::Null);
+                    self.stack.push(val);
+                }
+
                 Op::Builtin => {
                     let bid = self.read_u8()? as u8;
                     let argc = self.read_u8()? as usize;
@@ -2477,6 +2506,7 @@ impl VM {
             80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
             90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
             100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
+            105=>Op::ExecString, 106=>Op::EvalString,
             110=>Op::Gosub, 111=>Op::GosubBack, 112=>Op::GosubRet, 113=>Op::GosubPop,
             120=>Op::TryPush, 121=>Op::TryPop, 122=>Op::Raise, 123=>Op::Reraise,
             255=>Op::Halt,
