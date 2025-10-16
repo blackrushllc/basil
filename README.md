@@ -7,21 +7,23 @@
 > ### This is the only programming language you need.
 
 >
->Invite link to Blackrush Slack (Expires 11/13/25)
+> Invite link to Blackrush Slack (Expires 11/13/25)
 >
->https://join.slack.com/t/blackrushworkspace/shared_invite/zt-3g33s1rxc-9wWmCfggBEzInblqjzsn1A
+> https://join.slack.com/t/blackrushworkspace/shared_invite/zt-3g33s1rxc-9wWmCfggBEzInblqjzsn1A
+>
+> Join the Blackrush Slack Community for daily builds, discussions, lols
 >
 
 
-🌱 A Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform
-Compiler** with lots of Rad Mods
-such as AI, AWS, Zip, Crypt (Base64, PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), SQL(MySQL/Postgres, RDS,
-Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode (Jolt Cola not included)
+🌱 Basil is a Modern, Mod-able, AI-aware, Object Oriented (or not) BASIC language Bytecode Interpreter and **Cross-Platform
+Compiler** with lots of Rad Mods such as AI, AWS, Zip, Crypt (Base64, PGP) CrossTerm, Inet (SMTP, FTP, Json, Curl, REST, etc), 
+SQL(MySQL/Postgres, RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totally Tubular "OK Prompt" CLI mode 
+(Jolt Cola not included)
 
 >
-> ### Complete Online Reference: https://yobasic.com/basil/reference.html
+> Complete Online Reference: https://yobasic.com/basil/reference.html
 >
->### Look at the /docs/ folder for guides, development notes, and more.
+> Look at the /docs/ folder for guides, development notes, and more.
 >
 
 🌱 Basil is the first high level interpreted and compiled language designed with AI in mind, from code generation, module building, and even adding features or fixing bugs in itself!
