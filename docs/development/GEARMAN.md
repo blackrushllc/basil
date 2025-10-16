@@ -1,4 +1,5 @@
-love this idea. here’s a crisp, end-to-end plan for an **obj-gearman** Feature Object that gives Basil first-class client + worker support for Gearman clusters, with clean Basil APIs, async Rust under the hood, and nice DX.
+🌿 love this idea. here’s a crisp, end-to-end plan for an **obj-gearman** Feature Object that gives Basil first-class
+client + worker support for Gearman clusters, with clean Basil APIs, async Rust under the hood, and nice DX.
 
 # Goals
 
@@ -279,6 +280,3 @@ Acceptance:
 * `cargo run -p basilc --features obj-gearman -- run examples/gearman/client_sync.basil` works against `docker compose` gearmand.
 * Worker demo processes a job and returns a string; status polling reflects progress.
 
----
-
-If you want, I can also draft the `protocol.rs` packet structs + a minimal encoder/decoder to kickstart Junie’s implementation.
