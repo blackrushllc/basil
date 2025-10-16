@@ -170,13 +170,19 @@ impl MySqlObj {
     }
 
     fn parse_params(args: &[Value]) -> Vec<String> {
-        if args.len()<2 { return Vec::new(); }
+        if args.len() < 2 { return Vec::new(); }
         match &args[1] {
             Value::Array(arr) => {
                 let data = arr.data.borrow();
                 data.iter().map(|v| match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=>n.to_string(), Value::Bool(b)=>b.to_string(), _=> String::new() }).collect()
             }
-            _ => Vec::new()
+            _ => {
+                if args.len() == 2 {
+                    vec![str_arg(&args[1])]
+                } else {
+                    args[1..].iter().map(str_arg).collect()
+                }
+            }
         }
     }
 }

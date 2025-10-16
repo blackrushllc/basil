@@ -49,6 +49,11 @@ obj-aws     = ["basil-vm/obj-aws", "obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
 obj-net-sftp = ["basil-vm/obj-net-sftp"]
 obj-net-smtp = ["basil-vm/obj-net-smtp"]
 obj-net      = ["basil-vm/obj-net", "obj-net-smtp", "obj-net-sftp"]
+# ORM features forwarded to VM and compiler
+obj-orm = ["basil-vm/obj-orm", "basil-compiler/obj-orm"]
+obj-orm-mysql = ["basil-vm/obj-orm-mysql", "basil-compiler/obj-orm-mysql"]
+obj-orm-postgres = ["basil-vm/obj-orm-postgres", "basil-compiler/obj-orm-postgres"]
+obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all"]
