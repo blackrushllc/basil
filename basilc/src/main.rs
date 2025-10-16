@@ -159,20 +159,20 @@ fn canonicalize(cmd: &str) -> &str {
 fn print_help() {
     println!("Basil CLI (80's version)\n");
     println!("Commands (aliases in parentheses):");
-    // println!("  init (seed)        Create a new Basil project");
     println!("  run  (sprout)      Parse → compile → run a .basil file");
-    // println!("  build (harvest)    Build project (stub)");
     println!("  test (cultivate)   Run program in test mode with auto-mocked input");
+    println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
+    //println!("  init (seed)        Create a new Basil project");
+    //println!("  build (harvest)    Build project (stub)");
     //println!("  fmt  (prune)       Format sources (stub)");
     //println!("  add  (infuse)      Add dependency (stub)");
     //println!("  clean (compost)    Remove build artifacts (stub)");
     //println!("  dev  (steep)       Start dev mode (stub)");
     //println!("  serve (greenhouse) Serve local HTTP (stub)");
     //println!("  doc  (bouquet)     Generate docs (stub)\n");
-    println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
     //println!("  --ai               Start AI REPL (streaming chat)");
     println!("  --analyze <file> [--json]  Run compiler analysis and print diagnostics/symbols");
-    println!("  --debug <file>              Run Basil VM with JSON debug events\n");
+    println!("  --debug <file>             Run Basil VM with JSON debug events\n");
     println!("Usage:");
     println!("  basilc <command> [args]\n");
     println!("Examples:");
@@ -183,9 +183,11 @@ fn print_help() {
     println!("  basilc --debug examples/hello.basil");
     //println!("  basilc --ai");
     println!("");
-    println!("For more information, visit https://github.com/blackrushllc/basil");
+    println!("For more information and lots of docs, visit https://github.com/blackrushllc/basil");
     println!("");
+    println!("Type 'status' for build information and to see your objects, or try PRINT \"Hello, World!\";;");
     println!("");
+
 
 }
 
