@@ -1121,9 +1121,9 @@ Include:
 
 # Phase 3: Tool/Function-calling (later)
 
+### Todo
 
-
-# Phase 4: AI-powered music generation (AI.MUSIC + DAWG - ClipSpec schema + validators + demos)
+# Phase 4: - (see above Phase 3)
 
 
 

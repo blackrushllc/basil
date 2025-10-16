@@ -124,6 +124,7 @@ fn expr_contains_sub_call(routines: &HashMap<String, RoutineInfo>, e: &Expr) -> 
         }
         Expr::NewObject { args, .. } => args.iter().any(|a| expr_contains_sub_call(routines, a)),
         Expr::NewClass { filename } => expr_contains_sub_call(routines, filename),
+        Expr::Eval(inner) => expr_contains_sub_call(routines, inner),
         _ => false,
     }
 }
@@ -251,6 +252,12 @@ impl C {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 self.emit_expr_in(&mut chunk, expr, None)?;
                 chunk.push_op(Op::Print);
+                self.chunk = chunk;
+            }
+            Stmt::Exec { code } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, code, None)?;
+                chunk.push_op(Op::ExecString);
                 self.chunk = chunk;
             }
             Stmt::Describe { target } => {
@@ -799,6 +806,10 @@ impl C {
             Stmt::Print { expr } => {
                 self.emit_expr_in(chunk, expr, Some(env))?;
                 chunk.push_op(Op::Print);
+            }
+            Stmt::Exec { code } => {
+                self.emit_expr_in(chunk, code, Some(env))?;
+                chunk.push_op(Op::ExecString);
             }
             Stmt::Describe { target } => {
                 self.emit_expr_in(chunk, target, Some(env))?;
@@ -1612,6 +1623,10 @@ impl C {
                 self.emit_expr_in(chunk, filename, env)?;
                 chunk.push_op(Op::NewClass);
             }
+            Expr::Eval(inner) => {
+                self.emit_expr_in(chunk, inner, env)?;
+                chunk.push_op(Op::EvalString);
+            }
             Expr::ImplicitThis => {
                 // Load the current WITH target (local inside functions, global at top level)
                 match env {
@@ -1825,6 +1840,10 @@ impl C {
             Stmt::Print { expr } => {
                 self.emit_expr_in(chunk, expr, None)?;
                 chunk.push_op(Op::Print);
+            }
+            Stmt::Exec { code } => {
+                self.emit_expr_in(chunk, code, None)?;
+                chunk.push_op(Op::ExecString);
             }
             Stmt::Describe { target } => {
                 self.emit_expr_in(chunk, target, None)?;
