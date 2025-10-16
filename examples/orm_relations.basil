@@ -1,13 +1,29 @@
-#USE DB_POSTGRES, ORM
-DIM db@ AS DB_POSTGRES("postgres://user:pass@localhost:5432/app?sslmode=disable")
+// TODO: This isn't working yet. but close.
+// The tables exist with data, but the ORM is not parsing the data.
+#USE DB_MYSQL, ORM
+
+REM  Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+
+REM  Get the DSN from the environment and create a DB and ORM objects
+
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
 DIM orm@ AS ORM(db@)
+
 
 orm@.ModelFromTable$("users")
 orm@.ModelFromTable$("posts")
 orm@.HasMany("users","posts","user_id%")
 orm@.BelongsTo("posts","users","user_id%","id%")
 
-DIM u@ = orm@.Table("users").First()
-IF u@ <> null THEN
-  FOR EACH p@ IN u@.Posts() : PRINTLN p@.Title$ : NEXT
-END IF
+LET u@ = orm@.Table("users").First()
+
+// IF u@ <> null THEN //  parse error: unexpected token in expression: Some(Null) :/
+
+  FOR EACH p@ IN u@.Posts()
+   PRINTLN p@.Title$
+  NEXT p@
+
+// END IF
