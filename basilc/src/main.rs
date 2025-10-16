@@ -231,14 +231,18 @@ fn cmd_run(path: Option<String>) {
         std::process::exit(2);
     }
 
-    // Resolve absolute path and set process CWD to the script directory so relative I/O works like PHP/Python.
+    // Resolve absolute path for reading/caching, but set CWD using the user-provided path to avoid Windows \\?\ prefixes.
     let abs_path: PathBuf = match fs::canonicalize(&input_path) {
         Ok(p) => p,
         Err(_) => PathBuf::from(&input_path),
     };
-    let script_dir = abs_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
-    if let Err(e) = env::set_current_dir(&script_dir) {
-        eprintln!("warning: failed to set current dir to script dir ({}): {}", script_dir.display(), e);
+    // IMPORTANT (Windows): Do not use canonicalized path for CWD, because it may contain the \\?\ prefix that cmd.exe rejects.
+    let script_dir_for_cwd = Path::new(&input_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    if let Err(e) = env::set_current_dir(&script_dir_for_cwd) {
+        eprintln!("warning: failed to set current dir to script dir ({}): {}", script_dir_for_cwd.display(), e);
     }
 
     // Read the source once, with good error messages (use absolute path to avoid cwd side-effects)
