@@ -44,7 +44,7 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     // Single-char
-    LParen, RParen, Comma, Semicolon,
+    LParen, RParen, LBrace, RBrace, Comma, Semicolon,
     Plus, Minus, Star, Slash,
     Dot,
     Mod,
@@ -179,6 +179,8 @@ impl<'a> Lexer<'a> {
             // --- single-char tokens: make FIRST, advance AFTER ---
             '(' => { let tok = self.make(TokenKind::LParen);    self.advance(); tok }
             ')' => { let tok = self.make(TokenKind::RParen);    self.advance(); tok }
+            '{' => { let tok = self.make(TokenKind::LBrace);    self.advance(); tok }
+            '}' => { let tok = self.make(TokenKind::RBrace);    self.advance(); tok }
             ',' => { let tok = self.make(TokenKind::Comma);     self.advance(); tok }
             ';' => { let tok = self.make(TokenKind::Semicolon); self.advance(); tok }
             ':' => { let tok = self.make(TokenKind::Semicolon); self.advance(); tok }
