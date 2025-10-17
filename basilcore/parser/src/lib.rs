@@ -921,18 +921,30 @@ impl Parser {
                     }
                     continue;
                 }
+                if self.match_k(TokenKind::LBracket) {
+                    let idx = self.parse_expr_bp(0)?;
+                    self.expect(TokenKind::RBracket)?;
+                    lhs = Expr::IndexSquare { target: Box::new(lhs), index: Box::new(idx) };
+                    continue;
+                }
                 break;
             }
             Ok::<Expr, BasilError>(lhs)
         })();
         if let Ok(lhs) = lhs_probe {
             if self.check(TokenKind::Assign) {
-                // Only allow assignment without LET for member property targets: obj.Prop = expr
+                // Allow assignment without LET for member property targets: obj.Prop = expr
+                // and for list/dict square-bracket indexing: obj[expr] = value
                 if let Expr::MemberGet { target, name } = lhs {
                     let _ = self.next(); // consume '='
                     let value = self.parse_expr_bp(0)?;
                     self.terminate_stmt()?;
                     return Ok(Stmt::SetProp { target: *target, prop: name, value });
+                } else if let Expr::IndexSquare { target, index } = lhs {
+                    let _ = self.next(); // consume '='
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::SetIndexSquare { target: *target, index: *index, value });
                 } else {
                     return Err(BasilError("Use LET for assignment; '=' in expressions tests equality.".into()));
                 }
@@ -952,14 +964,14 @@ impl Parser {
     fn terminate_stmt(&mut self) -> Result<()> {
         if self.match_k(TokenKind::Semicolon) { return Ok(()); }
         if self.check(TokenKind::Eof) { return Ok(()); }
-        Err(BasilError(format!("parse error at line {}: expected Semicolon", self.peek_line())))
+        Err(BasilError(format!("parse error at line {}: expected Semicolon or Colon", self.peek_line())))
     }
 
     // Pratt parser with postfix call and comparisons
     fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr> {
         let mut lhs = self.parse_prefix()?;
 
-        // postfix calls and member access (highest precedence)
+        // postfix calls, member access, and square-bracket indexing (highest precedence)
         loop {
             if self.match_k(TokenKind::LParen) {
                 let mut args = Vec::new();
@@ -971,6 +983,12 @@ impl Parser {
                 }
                 self.expect(TokenKind::RParen)?;
                 lhs = Expr::Call { callee: Box::new(lhs), args };
+                continue;
+            }
+            if self.match_k(TokenKind::LBracket) {
+                let idx = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RBracket)?;
+                lhs = Expr::IndexSquare { target: Box::new(lhs), index: Box::new(idx) };
                 continue;
             }
             if self.match_k(TokenKind::Dot) {
@@ -1086,6 +1104,52 @@ impl Parser {
                 let inner = self.parse_expr_bp(0)?;
                 self.expect(TokenKind::RParen)?;
                 Ok(Expr::Eval(Box::new(inner)))
+            }
+            Some(TokenKind::LBracket) => {
+                // List literal: [ expr (, expr)* ,? ] with optional newlines/semicolons between elements
+                let _ = self.next(); // consume '['
+                let mut items: Vec<Expr> = Vec::new();
+                // allow stray semicolons/newlines
+                while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                if !self.check(TokenKind::RBracket) {
+                    loop {
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        items.push(self.parse_expr_bp(0)?);
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        if self.match_k(TokenKind::Comma) { continue; }
+                        break;
+                    }
+                    // optional trailing comma
+                    let _ = self.match_k(TokenKind::Comma);
+                }
+                self.expect(TokenKind::RBracket)?;
+                Ok(Expr::List(items))
+            }
+            Some(TokenKind::LBrace) => {
+                // Dict literal: { "key": expr (, "key": expr)* ,? }
+                let _ = self.next(); // consume '{'
+                let mut entries: Vec<(String, Expr)> = Vec::new();
+                // allow stray semicolons/newlines
+                while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                if !self.check(TokenKind::RBrace) {
+                    loop {
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        // key must be string literal
+                        let key_tok = self.expect(TokenKind::String)?;
+                        let key = if let Some(basil_lexer::Literal::Str(s)) = key_tok.literal { s } else { return Err(BasilError("Dictionary key must be a quoted string literal".into())); };
+                        // colon separator
+                        self.expect(TokenKind::Colon)?;
+                        let value = self.parse_expr_bp(0)?;
+                        entries.push((key, value));
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        if self.match_k(TokenKind::Comma) { continue; }
+                        break;
+                    }
+                    // optional trailing comma
+                    let _ = self.match_k(TokenKind::Comma);
+                }
+                self.expect(TokenKind::RBrace)?;
+                Ok(Expr::Dict(entries))
             }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
@@ -1244,7 +1308,11 @@ impl Parser {
         }
     }
     fn check(&self, k: TokenKind) -> bool { self.peek_kind() == Some(k) }
-    fn match_k(&mut self, k: TokenKind) -> bool { if self.check(k) { self.next(); true } else { false } }
+    fn match_k(&mut self, k: TokenKind) -> bool {
+        if self.check(k.clone()) { self.next(); true }
+        else if matches!(k, TokenKind::Semicolon) && self.check(TokenKind::Colon) { self.next(); true }
+        else { false }
+    }
     fn peek_kind(&self) -> Option<TokenKind> { self.tokens.get(self.i).map(|t| t.kind.clone()) }
     fn peek_line(&self) -> u32 { self.tokens.get(self.i).map(|t| t.line).unwrap_or(0) }
     fn next(&mut self) -> Option<Token> { let t = self.tokens.get(self.i).cloned(); if t.is_some() { self.i+=1; } t }

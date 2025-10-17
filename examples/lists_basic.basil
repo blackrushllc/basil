@@ -1,0 +1,8 @@
+DIM a% = [1,2,3]
+PRINT a%(1); ", "; a%(2); ", "; a%(3)
+
+DIM mixed@ = [1, "two", 3.0]
+PRINT mixed[2]
+LET mixed[2] = "TWO"
+PRINT mixed[2]
+PRINT "len mixed = ", LEN(mixed)

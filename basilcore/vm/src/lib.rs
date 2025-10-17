@@ -111,6 +111,22 @@ fn value_to_jvalue(v: &Value) -> Result<JValue> {
             }
             Ok(JValue::Object(map))
         }
+        Value::List(items) => {
+            let v = items.borrow();
+            let mut out = Vec::with_capacity(v.len());
+            for it in v.iter() {
+                out.push(value_to_jvalue(it)?);
+            }
+            Ok(JValue::Array(out))
+        }
+        Value::Dict(map) => {
+            let m = map.borrow();
+            let mut obj = Map::new();
+            for (k, v) in m.iter() {
+                obj.insert(k.clone(), value_to_jvalue(v)?);
+            }
+            Ok(JValue::Object(obj))
+        }
         Value::StrArray2D { rows, cols, data } => {
             let mut out: Vec<JValue> = Vec::with_capacity(*rows);
             for r in 0..*rows {
@@ -335,6 +351,8 @@ impl basil_bytecode::BasicObject for ClassInstance {
                 Value::Bool(_) => props.push(PropDesc { name: n.clone(), type_name: "BOOL".to_string(), readable: true, writable: true }),
                 Value::Object(_) => props.push(PropDesc { name: n.clone(), type_name: "OBJECT".to_string(), readable: true, writable: true }),
                 Value::Null => props.push(PropDesc { name: n.clone(), type_name: "NULL".to_string(), readable: true, writable: true }),
+                Value::List(_) => props.push(PropDesc { name: n.clone(), type_name: "LIST".to_string(), readable: true, writable: true }),
+                Value::Dict(_) => props.push(PropDesc { name: n.clone(), type_name: "DICT".to_string(), readable: true, writable: true }),
                 Value::StrArray2D { .. } => props.push(PropDesc { name: n.clone(), type_name: "STRARRAY2D".to_string(), readable: true, writable: true }),
             }
         }
@@ -897,6 +915,28 @@ impl VM {
                             self.enums.push(ArrEnum { arr: rc, cur: -1, total });
                             self.stack.push(Value::Int(handle as i64));
                         }
+                        Value::List(items_rc) => {
+                            // Enumerate list elements by materializing a temporary 1-D array view
+                            let items = items_rc.borrow();
+                            let mut data: Vec<Value> = Vec::with_capacity(items.len());
+                            for v in items.iter() { data.push(v.clone()); }
+                            let arr = Rc::new(ArrayObj { elem: ElemType::Obj(None), dims: vec![data.len()], data: std::cell::RefCell::new(data) });
+                            let total = arr.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
+                            let handle = self.enums.len();
+                            self.enums.push(ArrEnum { arr, cur: -1, total });
+                            self.stack.push(Value::Int(handle as i64));
+                        }
+                        Value::Dict(map_rc) => {
+                            // Enumerate dictionary keys (strings) by materializing a temporary 1-D array of keys
+                            let map = map_rc.borrow();
+                            let mut data: Vec<Value> = Vec::with_capacity(map.len());
+                            for k in map.keys() { data.push(Value::Str(k.clone())); }
+                            let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims: vec![data.len()], data: std::cell::RefCell::new(data) });
+                            let total = arr.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
+                            let handle = self.enums.len();
+                            self.enums.push(ArrEnum { arr, cur: -1, total });
+                            self.stack.push(Value::Int(handle as i64));
+                        }
                         Value::Object(_) => {
                             let ty = self.type_of(&it);
                             return Err(BasilError(format!("FOR EACH expects an array or iterable object after IN (got TYPE={}).", ty)));
@@ -1138,6 +1178,14 @@ impl VM {
                                     let mut total: usize = 1;
                                     for d in &arr.dims { total = total.saturating_mul(*d); }
                                     self.stack.push(Value::Int(total as i64));
+                                }
+                                Value::List(rc) => {
+                                    let n = rc.borrow().len() as i64;
+                                    self.stack.push(Value::Int(n));
+                                }
+                                Value::Dict(rc) => {
+                                    let n = rc.borrow().len() as i64;
+                                    self.stack.push(Value::Int(n));
                                 }
                                 other => {
                                     // Fallback: coerce to string via Display and count chars
@@ -2441,6 +2489,68 @@ impl VM {
                             let s = basil_objects::term::term_pollkey_s();
                             self.stack.push(Value::Str(s));
                         }
+                        251 => { // MAKE_LIST([...])
+                            // args are already in call order
+                            let list = Rc::new(std::cell::RefCell::new(args));
+                            self.stack.push(Value::List(list));
+                        }
+                        252 => { // MAKE_DICT({key: val, ...})
+                            if argc % 2 != 0 { return Err(BasilError("MAKE_DICT expects an even number of arguments (key,value pairs)".into())); }
+                            let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                            let mut i = 0usize;
+                            while i < args.len() {
+                                let key = match &args[i] { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
+                                let val = args[i+1].clone();
+                                map.insert(key, val);
+                                i += 2;
+                            }
+                            self.stack.push(Value::Dict(Rc::new(std::cell::RefCell::new(map))));
+                        }
+                        253 => { // INDEX GET: obj[idx]
+                            if argc != 2 { return Err(BasilError("INDEX[] get expects 2 arguments".into())); }
+                            let target = &args[0];
+                            let index = &args[1];
+                            match target {
+                                Value::List(rc) => {
+                                    let idx = self.to_i64(index)?;
+                                    if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    let idx0 = (idx - 1) as usize;
+                                    let v = rc.borrow();
+                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    self.stack.push(v[idx0].clone());
+                                }
+                                Value::Dict(rc) => {
+                                    let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
+                                    let m = rc.borrow();
+                                    if let Some(v) = m.get(&key) { self.stack.push(v.clone()); }
+                                    else { return Err(BasilError(format!("Dictionary missing key: \"{}\"", key))); }
+                                }
+                                _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
+                            }
+                        }
+                        254 => { // INDEX SET: obj[idx] = value
+                            if argc != 3 { return Err(BasilError("INDEX[] set expects 3 arguments".into())); }
+                            let target = &args[0];
+                            let index = &args[1];
+                            let value = args[2].clone();
+                            match target {
+                                Value::List(rc) => {
+                                    let idx = self.to_i64(index)?;
+                                    if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    let idx0 = (idx - 1) as usize;
+                                    let mut v = rc.borrow_mut();
+                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    v[idx0] = value;
+                                    self.stack.push(Value::Null);
+                                }
+                                Value::Dict(rc) => {
+                                    let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
+                                    rc.borrow_mut().insert(key, value);
+                                    self.stack.push(Value::Null);
+                                }
+                                _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
+                            }
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -2480,6 +2590,8 @@ impl VM {
                 Value::Func(_) => "FUNCTION".to_string(),
                 Value::Array(_) => "ARRAY".to_string(),
                 Value::Object(_) => "OBJECT".to_string(),
+                Value::List(_) => "LIST".to_string(),
+                Value::Dict(_) => "DICT".to_string(),
                 Value::StrArray2D { .. } => "STRARRAY2D".to_string(),
             };
             globals.push(debug::Variable { name: name.clone(), value: format!("{}", v), type_name: tn });
@@ -2592,6 +2704,8 @@ impl VM {
                 format!("{}[]", base)
             }
             Value::Object(rc) => rc.borrow().type_name().to_string(),
+            Value::List(_) => "LIST".to_string(),
+            Value::Dict(_) => "DICT".to_string(),
             Value::StrArray2D { .. } => "STRING[][]".to_string(),
         }
     }
@@ -2666,6 +2780,8 @@ fn is_truthy(v: &Value) -> bool {
         Value::Array(_) => true,
         Value::Object(_) => true,
         Value::StrArray2D { rows, cols, data } => (*rows > 0) && (*cols > 0) && (!data.is_empty()),
+        Value::List(rc) => !rc.borrow().is_empty(),
+        Value::Dict(rc) => !rc.borrow().is_empty(),
     }
 }
 
