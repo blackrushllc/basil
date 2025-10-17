@@ -10,7 +10,7 @@
  ░    ░   ░ ░    ░   ▒   ░        ░ ░░ ░   ░░   ░  ░░░ ░ ░ ░  ░  ░   ░  ░░ ░
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
-Copyright (C) 2026, Blackrush LLC, All Rights Reserved
+Copyright (C) 2026, Blackrush LLC
 Created by Erik Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 

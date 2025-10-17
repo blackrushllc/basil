@@ -178,7 +178,7 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
 
     // Old-school banner
     println!("BASIL - A BASIC Bytecode Interpreter and Compiler");
-    println!("Copyright (C) Blackrush LLC - All Rights Reserved.");
+    println!("Copyright (C) Blackrush LLC .");
     println!("Open Source Software under MIT License");
     println!("");
     println!("Enter a command or :help or quit");
