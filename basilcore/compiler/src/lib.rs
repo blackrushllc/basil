@@ -130,6 +130,7 @@ fn expr_contains_sub_call(routines: &HashMap<String, RoutineInfo>, e: &Expr) -> 
 }
 
 struct C {
+    cur_line: u32,
     chunk: Chunk,
     globals: Vec<String>,
     gmap: HashMap<String, u8>,
@@ -140,6 +141,8 @@ struct C {
     with_counter: u32,
     with_stack_tl: Vec<String>,
     with_stack_fn: Vec<String>,
+    // Explicit tracking of active WITH target names (stack)
+    with_current_stack: Vec<String>,
     // Label/GOTO support (top-level)
     tl_labels: HashMap<String, usize>,
     tl_goto_fixups: Vec<(usize, usize, String)>, // (op_pos, u16_pos, label)
@@ -153,7 +156,9 @@ struct C {
 impl C {
     fn new() -> Self {
         Self {
+            cur_line: 0,
             chunk: Chunk::default(),
+            with_current_stack: Vec::new(),
             globals: Vec::new(),
             gmap: HashMap::new(),
             fn_names: HashSet::new(),
@@ -275,7 +280,9 @@ impl C {
                 let g = self.gslot(&name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.with_stack_tl.push(name.clone());
+                self.with_current_stack.push(name.clone());
                 for s2 in body { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                self.with_current_stack.pop();
                 self.with_stack_tl.pop();
                 self.chunk = chunk;
             }
@@ -497,6 +504,7 @@ impl C {
                 self.chunk = chunk;
             }
             Stmt::Line(line) => {
+                self.cur_line = *line;
                 let mut chunk = std::mem::take(&mut self.chunk);
                 chunk.push_op(Op::SetLine);
                 chunk.push_u16((*line as u16).min(u16::MAX));
@@ -832,7 +840,9 @@ impl C {
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
                 self.with_stack_fn.push(name.clone());
+                self.with_current_stack.push(name.clone());
                 for s2 in body { self.emit_stmt_func(chunk, s2, env)?; }
+                self.with_current_stack.pop();
                 self.with_stack_fn.pop();
             }
             Stmt::Raise(expr_opt) => {
@@ -1020,6 +1030,7 @@ impl C {
                 chunk.push_op(Op::Pop);
             }
             Stmt::Line(line) => {
+                self.cur_line = *line;
                 chunk.push_op(Op::SetLine);
                 chunk.push_u16((*line as u16).min(u16::MAX));
             }
@@ -1662,27 +1673,44 @@ impl C {
                 chunk.push_op(Op::EvalString);
             }
             Expr::ImplicitThis => {
-                // Load the current WITH target (local inside functions, global at top level)
-                match env {
-                    Some(env) => {
-                        if let Some(nm) = self.with_stack_fn.last().cloned() {
+                // Prefer explicit current WITH target if present
+                if let Some(nm) = self.with_current_stack.last().cloned() {
+                    match env {
+                        Some(env) => {
                             if let Some(slot) = env.lookup(&nm) {
                                 chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
                             } else {
-                                // Fallback to global if somehow not found locally
                                 let g = self.gslot(&nm);
                                 chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                             }
-                        } else {
-                            return Err(BasilError("Leading '.' member requires a WITH block.".into()));
                         }
-                    }
-                    None => {
-                        if let Some(nm) = self.with_stack_tl.last().cloned() {
+                        None => {
                             let g = self.gslot(&nm);
                             chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
-                        } else {
-                            return Err(BasilError("Leading '.' member requires a WITH block.".into()));
+                        }
+                    }
+                } else {
+                    // Load the current WITH target from legacy stacks as fallback; if none, error at compile time
+                    match env {
+                        Some(env) => {
+                            if let Some(nm) = self.with_stack_fn.last().cloned() {
+                                if let Some(slot) = env.lookup(&nm) {
+                                    chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                                } else {
+                                    let g = self.gslot(&nm);
+                                    chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                                }
+                            } else {
+                                return Err(BasilError(format!("Leading '.' member requires a WITH block (at line {})", self.cur_line)));
+                            }
+                        }
+                        None => {
+                            if let Some(nm) = self.with_stack_tl.last().cloned() {
+                                let g = self.gslot(&nm);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            } else {
+                                return Err(BasilError(format!("Leading '.' member requires a WITH block (at line {})", self.cur_line)));
+                            }
                         }
                     }
                 }
@@ -2054,6 +2082,7 @@ impl C {
                 chunk.push_op(Op::Pop);
             }
             Stmt::Line(line) => {
+                self.cur_line = *line;
                 chunk.push_op(Op::SetLine);
                 chunk.push_u16((*line as u16).min(u16::MAX));
             }
@@ -2132,7 +2161,9 @@ impl C {
                 let g = self.gslot(&name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.with_stack_tl.push(name.clone());
+                self.with_current_stack.push(name.clone());
                 for s2 in body { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                self.with_current_stack.pop();
                 self.with_stack_tl.pop();
             }
             Stmt::For { var, start, end, step, body } => {

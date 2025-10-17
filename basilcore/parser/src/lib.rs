@@ -447,6 +447,15 @@ impl Parser {
             }
 
             let name = self.expect_ident()?;
+            // Optional square-bracket indexing for list/dict: LET name '[' expr ']' = value
+            if self.match_k(TokenKind::LBracket) {
+                let idx = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RBracket)?;
+                self.expect(TokenKind::Assign)?;
+                let value = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::SetIndexSquare { target: Expr::Var(name), index: idx, value });
+            }
             // Optional indices for array element assignment: name '(' exprlist ')'
             let indices = if self.match_k(TokenKind::LParen) {
                 let mut idxs = Vec::new();
@@ -716,7 +725,10 @@ impl Parser {
                         while self.match_k(TokenKind::Semicolon) {}
                         if self.match_k(TokenKind::End) { break; }
                         if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH BEGIN/END", self.peek_line()))); }
-                        inner.push(self.parse_stmt()?);
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        inner.push(Stmt::Line(line));
+                        inner.push(s);
                     }
                     Stmt::Block(inner)
                 } else if self.match_k(TokenKind::LBrace) {
@@ -725,7 +737,10 @@ impl Parser {
                         while self.match_k(TokenKind::Semicolon) {}
                         if self.check(TokenKind::RBrace) { let _ = self.next(); break; }
                         if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH {{ ... }}", self.peek_line()))); }
-                        inner.push(self.parse_stmt()?);
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        inner.push(Stmt::Line(line));
+                        inner.push(s);
                     }
                     Stmt::Block(inner)
                 } else {
@@ -839,6 +854,33 @@ impl Parser {
                 }
                 self.terminate_stmt()?;
                 return Ok(Stmt::DimObject { name, type_name: tname, args });
+            } else if self.match_k(TokenKind::Assign) {
+                // Support: DIM name = expr
+                let init_expr = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                match init_expr {
+                    Expr::List(items) => {
+                        // If variable is a primitive-typed array (name suffix '%' or '$'),
+                        // desugar to: DIM name(upper=n) + element assignments name(1..n) = items.
+                        // Otherwise (e.g., name ends with '@' or no suffix), treat as simple LET of a dynamic list.
+                        if name.ends_with('%') || name.ends_with('$') {
+                            let n = items.len();
+                            let mut stmts: Vec<Stmt> = Vec::new();
+                            stmts.push(Stmt::Dim { name: name.clone(), dims: vec![Expr::Number(n as f64)] });
+                            for (i, it) in items.into_iter().enumerate() {
+                                let idx_expr = Expr::Number((i as f64) + 1.0);
+                                stmts.push(Stmt::Let { name: name.clone(), indices: Some(vec![idx_expr]), init: it });
+                            }
+                            return Ok(Stmt::Block(stmts));
+                        } else {
+                            return Ok(Stmt::Let { name, indices: None, init: Expr::List(items) });
+                        }
+                    }
+                    other => {
+                        // Fallback: treat as LET name = expr
+                        return Ok(Stmt::Let { name, indices: None, init: other });
+                    }
+                }
             } else {
                 return Err(BasilError(format!("parse error at line {}: expected '(' or AS after DIM name", self.peek_line())));
             }
@@ -1034,10 +1076,8 @@ impl Parser {
         }
         match self.peek_kind() {
             Some(TokenKind::Dot) => {
-                // Leading '.' only allowed inside a WITH block
-                if self.with_depth == 0 {
-                    return Err(BasilError("Leading '.' member requires a WITH block.".into()));
-                }
+                // Leading '.' parsed as ImplicitThis member access; validity (WITH scope) is enforced during compilation.
+                // This avoids false parse errors when newline continuation or formatting places '.' at line start.
                 let _ = self.next(); // consume '.'
                 let name = self.expect_member_name()?;
                 if self.match_k(TokenKind::LParen) {
