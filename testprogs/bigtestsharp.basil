@@ -1,0 +1,420 @@
+rem Big combined test of most examples (excludes my_class.basil and bad/CGI templates)
+
+#USE BMX_RIDER, BMX_TEAM
+
+println "--------------------";
+println "and_or.basil";
+println "--------------------";
+
+print "AND/OR demo";
+
+let a = 1;
+let b = 0;
+
+if a and b then print "a AND b is TRUE"; else print "a AND b is FALSE";
+if a or b then print "a OR b is TRUE"; else print "a OR b is FALSE";
+
+if (a == 1 and b == 0) or (a + b == 2) then print "complex condition is TRUE"; else print "complex condition is FALSE";
+
+if (a + 1) and (b + 3) {
+  print "truthy arithmetic works: (a+1) AND (b+3) are both nonzero";
+} else {
+  print "this should not print";
+}
+
+if true and not false then print "booleans and NOT work";
+
+' AND has higher precedence than OR
+if true or false and false then print "precedence: TRUE OR (FALSE AND FALSE) = TRUE"; else print "precedence error";
+if (true or false) and false then print "precedence error"; else print "with parens: (TRUE OR FALSE) AND FALSE = FALSE";
+
+if (1-1) or (2-2) then print "0 OR 0 is TRUE? (should be FALSE)"; else print "0 OR 0 is FALSE";
+
+println "\n--------------------";
+println "arrays.basil";
+println "--------------------";
+
+rem Arrays example for BASIL
+rem Demonstrates DIM for string ($), integer (%), and float arrays, with up to 2 dimensions
+
+println "Arrays demo";
+println "Arrays demo";
+println "Arrays demo";
+
+rem --- 1D integer array (0..5 inclusive => length 6) ---
+println "41";
+dim xn%(5);
+println "43";
+println "LEN(xN%)=", LEN(xn%);
+println "45";
+let xn%(0) = 10;
+println "47";
+let xn%(5) = 99;
+println "49";
+println "xN%(0)=", xn%(0), ", xN%(5)=", xn%(5);
+
+
+
+rem --- 1D float array (0..3 inclusive => length 4) ---
+
+
+println "57";
+dim xx(3);
+println "59";
+println "LEN(X)=", LEN(xx);
+let xx(0) = 1.5;
+let xx(3) = 2.5;
+println "xX(0)=", xx(0), ", xX(3)=", xx(3);
+println "64";
+
+rem --- 2D string array (0..2 by 0..1 => 3 x 2 = 6 elements) ---
+dim xs$(2,1);
+let xs$(0,0) = "Hello";
+let xs$(2,1) = "World";
+println "xS$(0,0)=", xs$(0,0), ", xS$(2,1)=", xs$(2,1);
+println "LEN(xS$)=", LEN(xs$);
+
+rem Show that re-DIM resets the array
+dim xs$(1,0); rem now capacity is 2 x 1 = 2 elements, previous contents cleared
+let xs$(1,0) = "Reset";
+println "After re-DIM, LEN(xS$)=", LEN(xs$), "; xS$(1,0)=", xs$(1,0);
+
+println "\n--------------------";
+println "classes.basil";
+println "--------------------";
+
+rem Demo: Using CLASS to instantiate and interact with a class instance
+
+dim user@ as class("my_class.basil");
+
+rem Access and modify a public variable
+println "Initial description:", user@.Description$;
+let user@.Description$ = "These are my favorite users.";
+println "Updated description:", user@.Description$;
+
+rem Call public functions
+user@.AddUser("Erik");
+user@.AddUser("Junie");
+user@.AddUser("ChatGPT");
+
+println "User count:", user@.CountMyUsers%();
+
+println "\n--------------------";
+println "else.basil";
+println "--------------------";
+
+let ans$="Y";
+
+if ans$ == "Y" {
+  print "\n--- YES ---";
+} else {
+    print "\n--- NO ---";
+}
+
+println "\n--------------------";
+println "expr.basil";
+println "--------------------";
+
+let a = 2 + 3 * 4;
+print a; // 14
+let b = (2 + 3) * 4;
+print b; // 20
+
+let a$ = "Hello\nWorld\n";
+print a$;
+
+let a% = 10.1;
+print "A% IS ",a%, "\n";
+
+let b = 10.1;
+print b;
+
+print a% + 20;
+
+print b + 20;
+
+println "\n--------------------";
+println "fib.basil";
+println "--------------------";
+
+func fib(n)
+{
+if n < 2 then return n;
+return fib(n - 1) + fib(n - 2);
+}
+
+print fib(10); // 55
+
+println "\n--------------------";
+println "for.basil";
+println "--------------------";
+
+for i = 1 to 5
+    println i;
+next i;
+
+for j = 5 to 1 step -1
+    {
+        print j;
+        for i = 1 to 5
+            println i;
+        next i;
+    }
+next j;
+
+println "\n--------------------";
+println "hello.basil";
+println "--------------------";
+
+rem Simple Hello World
+println "Hello World!";
+    for i% = 1 to 5
+        {
+        println "This is loop number ", i%;
+        }
+    next
+print "Goodbye!";
+
+println "\n--------------------";
+println "input.basil";
+println "--------------------";
+
+// Demo of INPUT$ and IF statements.
+let a$ = INPUT$("\nEnter your name:");
+
+print "\nHello, "+a$+"!";
+
+let ans$ = UCASE$(INPUTC$("\nDo you want to do something else? (Y/N): "));
+
+// Block IF:
+
+if ans$ == "Y" {
+    print "\nWinken";
+    print "\nBLinken";
+    print "\nNod";
+} else
+    print "\nOkay, I'll skip that.";
+
+// Immediate IF:
+if ans$ == "Y" then print "You said yes"; else print "You did not say Yes";
+print "\nGoodbye!";
+
+println "\n--------------------";
+println "objects.basil";
+println "--------------------";
+
+rem Objects demo: BMX_RIDER and BMX_TEAM
+rem This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+
+
+rem --- Create riders ---
+dim r1@ as BMX_RIDER("Alice", 17, "Expert", 12, 3);
+dim r2@ as BMX_RIDER("Bob", 21, "Intermediate", 5, 10);
+dim r3@ as BMX_RIDER("Carol", 19, "Pro", 30, 4);
+
+rem Change a few properties after construction
+r2@.SkillLevel$ = "Expert";
+r2@.Wins% = 8;
+r2@.Losses% = 9;
+
+rem --- Create a team (PRO flag available when BMX_TEAM is compiled) ---
+dim t@ as BMX_TEAM("Rocket Foxes", 2015, PRO);
+
+rem Set some team stats
+t@.TeamWins% = 12;
+t@.TeamLosses% = 3;
+
+rem Add riders to the team
+t@.AddRider(r1@);
+t@.AddRider(r2@);
+t@.AddRider(r3@);
+
+rem --- Show team summary and rider list ---
+println "Team:", t@.Info$();
+println "WinPct:", t@.WinPct();
+
+let names$ = t@.RiderNames$();
+println "Riders (", LEN(names$), "):";
+for i% = 0 to LEN(names$)-1
+  println "  - ", names$(i%);
+next i%
+
+rem Also PRINTLN descriptions from the riders for variety
+let descs$ = t@.RiderDescriptions$();
+println "Descriptions:";
+for i% = 0 to LEN(descs$)-1
+  println "  ", descs$(i%);
+next i%
+
+rem --- Optionally show full object descriptors ---
+rem let ans$ = INPUT$("Show object DESCRIBE info for BMX_RIDER and BMX_TEAM? (Y/N): ");
+let ans$2 = "Y"; rem auto-answer yes for automated testing
+if ans$2 == "Y" {
+  println "\n--- DESCRIBE$(r1@) ---";
+  println DESCRIBE$(r1@);
+  println "\n--- DESCRIBE t@ ---";
+  DESCRIBE t@;
+}
+
+println "\n--------------------";
+println "objects_arrays.basil";
+println "--------------------";
+
+rem Objects demo: BMX_RIDER and BMX_TEAM
+rem This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+
+
+dim riders@(2) as BMX_RIDER;
+let riders@(0) = new BMX_RIDER("Alice", 17, "Expert", 12, 3);
+let riders@(1) = new BMX_RIDER("Bob",   21, "Expert",  8, 9);
+let riders@(2) = new BMX_RIDER("Carol", 19, "Pro",    30, 4);
+
+for each r@ in riders@
+  print "Rider - ",r@.Describe$();
+next
+
+dim nums%(4);
+for each n% in nums%
+  let nums%(n%) = n% * n%;
+next
+
+dim t2@ as BMX_TEAM("Rocket Foxes", 2015, PRO);
+t2@.AddRider(riders@(0)); t2@.AddRider(riders@(1)); t2@.AddRider(riders@(2));
+
+for each name$ in t2@.RiderNames$()
+  println name$;
+next
+
+for each desc$ in t2@.RiderDescriptions$()
+  println desc$;
+next
+
+println "\n--------------------";
+println "objects_no_use.basil";
+println "--------------------";
+
+rem Objects demo: BMX_RIDER and BMX_TEAM
+rem This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+
+
+rem --- Create riders ---
+dim r1b@ as BMX_RIDER("Alice", 17, "Expert", 12, 3);
+dim r2b@ as BMX_RIDER("Bob", 21, "Intermediate", 5, 10);
+dim r3b@ as BMX_RIDER("Carol", 19, "Pro", 30, 4);
+
+rem Change a few properties after construction
+r2b@.SkillLevel$ = "Expert";
+r2b@.Wins% = 8;
+r2b@.Losses% = 9;
+
+rem --- Create a team (PRO flag available when BMX_TEAM is compiled) ---
+dim t3@ as BMX_TEAM("Rocket Foxes", 2015, PRO);
+
+rem Set some team stats
+t3@.TeamWins% = 12;
+t3@.TeamLosses% = 3;
+
+rem Add riders to the team
+t3@.AddRider(r1b@);
+t3@.AddRider(r2b@);
+t3@.AddRider(r3b@);
+
+rem --- Show team summary and rider list ---
+print "Team:", t3@.Info$();
+print "WinPct:", t3@.WinPct();
+
+let names2$ = t3@.RiderNames$();
+print "Riders (", LEN(names2$), "):";
+for i% = 0 to LEN(names2$)-1
+  print "  - ", names2$(i%);
+next i%
+
+rem Also print descriptions from the riders for variety
+let descs2$ = t3@.RiderDescriptions$();
+print "Descriptions:";
+for i% = 0 to LEN(descs2$)-1
+  print "  ", descs2$(i%);
+next i%
+
+rem --- Optionally show full object descriptors ---
+let ans$3 = "N"; rem keep non-interactive here
+if ans$3 == "Y" {
+  print "\n--- DESCRIBE$(r1b@) ---";
+  print DESCRIBE$(r1b@);
+  print "\n--- DESCRIBE t3@ ---";
+  DESCRIBE t3@;
+}
+
+println "\n--------------------";
+println "strings.basil";
+println "--------------------";
+
+let a1$ = "Hi";
+let b1$ = "There";
+let c1$ = a1$ + b1$;
+println c1$; // expected HiThere
+println a1$, b1$; // expected Hi	There
+
+println LEN(c1$); // expected 7
+println MID$(c1$, 3, 4); // expected Ther
+println MID$(c1$, 3); // expected There
+println LEFT$(c1$, 2); // expected Hi
+println RIGHT$(c1$, 5); // expected There
+println INSTR(c1$, "e"); // expected 4
+println INSTR(c1$, "e", 5); // expected 6
+println INSTR(c1$, "x"); // expected 0
+
+println "\n--------------------";
+println "while.basil";
+println "--------------------";
+
+let x = 0;
+while x < 3 {
+    print x;
+    let x = x + 1;
+}
+
+' Infinite loop with BREAK (will break at 3)
+let i = 0;
+while true {
+    let i = i + 1;
+    if i == 3 { // Block IF
+        break;
+    }
+    print i;
+}
+
+' Using CONTINUE (skip 3)
+let j = 0;
+while j < 5 {
+    let j = j + 1;
+    if j == 3 {
+        continue;
+    }
+    print j;
+}
+
+' Infinite loop with BREAK (will break at 3)
+let i = 0;
+while true {
+    let i = i + 1;
+    if i == 3 then break; // Immediate IF
+    print i;
+}
+
+' Using CONTINUE (skip 3)
+let j = 0;
+while j < 5 {
+    let j = j + 1;
+    if j == 3 then  continue;
+    print j;
+}
+
+
+' FALSE as never-enter condition
+while false {
+    print "You should never see this";
+}
