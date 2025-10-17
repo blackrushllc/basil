@@ -62,6 +62,10 @@ pub enum Expr {
     NewClass { filename: Box<Expr> },
     // EVAL("expr") expression: parse+compile at runtime and push result
     Eval(Box<Expr>),
+    // New: list and dictionary literals, and square-bracket indexing
+    List(Vec<Expr>),
+    Dict(Vec<(String, Expr)>),
+    IndexSquare { target: Box<Expr>, index: Box<Expr> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +87,8 @@ pub enum Stmt {
     DimObjectArray { name: String, dims: Vec<Expr>, type_name: Option<String> },
     // Property set: obj.Prop = expr (without LET)
     SetProp { target: Expr, prop: String, value: Expr },
+    // Square-bracket index set: list[i] = expr or dict["k"] = expr
+    SetIndexSquare { target: Expr, index: Expr, value: Expr },
     // DESCRIBE obj or array
     Describe { target: Expr },
     Print { expr: Expr },

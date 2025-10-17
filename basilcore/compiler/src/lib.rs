@@ -452,6 +452,14 @@ impl C {
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
                 self.chunk = chunk;
             }
+            Stmt::SetIndexSquare { target, index, value } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, target, None)?;
+                self.emit_expr_in(&mut chunk, index, None)?;
+                self.emit_expr_in(&mut chunk, value, None)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
+                self.chunk = chunk;
+            }
             Stmt::ExprStmt(e) => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 // Special-case: direct SUB call as a statement: NAME(args...);
@@ -976,6 +984,12 @@ impl C {
                 let pci = chunk.add_const(Value::Str(prop.clone()));
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
+            Stmt::SetIndexSquare { target, index, value } => {
+                self.emit_expr_in(chunk, target, Some(env))?;
+                self.emit_expr_in(chunk, index, Some(env))?;
+                self.emit_expr_in(chunk, value, Some(env))?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
+            }
             Stmt::ExprStmt(e) => {
                 // Special-case: direct SUB call as a statement
                 if let Expr::Call { callee, args } = e {
@@ -1260,6 +1274,26 @@ impl C {
             Expr::Bool(b) => {
                 let idx = chunk.add_const(Value::Bool(*b));
                 chunk.push_op(Op::Const); chunk.push_u16(idx);
+            }
+            Expr::List(items) => {
+                // Evaluate items left-to-right, then call MAKE_LIST builtin with argc
+                for it in items { self.emit_expr_in(chunk, it, env)?; }
+                chunk.push_op(Op::Builtin); chunk.push_u8(251u8); chunk.push_u8(items.len() as u8);
+            }
+            Expr::Dict(entries) => {
+                // Push key (string const) then value expr for each entry; call MAKE_DICT with 2*len args
+                for (k, v) in entries {
+                    let ki = chunk.add_const(Value::Str(k.clone()));
+                    chunk.push_op(Op::Const); chunk.push_u16(ki);
+                    self.emit_expr_in(chunk, v, env)?;
+                }
+                let argc = (entries.len() * 2) as u8;
+                chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
+            }
+            Expr::IndexSquare { target, index } => {
+                self.emit_expr_in(chunk, target, env)?;
+                self.emit_expr_in(chunk, index, env)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(253u8); chunk.push_u8(2u8);
             }
             Expr::Var(name) => {
                 // Minimal constants for object features
@@ -2008,6 +2042,12 @@ impl C {
                 self.emit_expr_in(chunk, value, None)?;
                 let pci = chunk.add_const(Value::Str(prop.clone()));
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
+            }
+            Stmt::SetIndexSquare { target, index, value } => {
+                self.emit_expr_in(chunk, target, None)?;
+                self.emit_expr_in(chunk, index, None)?;
+                self.emit_expr_in(chunk, value, None)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
             }
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, None)?;

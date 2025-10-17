@@ -305,6 +305,8 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                             Value::Func(f) => { let _ = f; "FUNCTION" },
                             Value::Array(_) => "ARRAY",
                             Value::Object(obj) => { let _ = obj; "OBJECT" },
+                            Value::List(_) => "LIST",
+                            Value::Dict(_) => "DICT",
                             Value::StrArray2D { .. } => "STRARRAY2D",
                         };
                         let origins = sess.origins.get(name).cloned().unwrap_or_default();
@@ -343,6 +345,8 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                                 Value::Func(_) => "FUNCTION",
                                 Value::Array(_) => "ARRAY",
                                 Value::Object(_) => "OBJECT",
+                                Value::List(_) => "LIST",
+                                Value::Dict(_) => "DICT",
                                 Value::StrArray2D { .. } => "STRARRAY2D",
                             };
                             println!("{} : {}", name, ty);

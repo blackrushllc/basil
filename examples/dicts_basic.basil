@@ -1,0 +1,5 @@
+DIM pet@ = { "name": "Fido", "species": "dog", "age": 7 }
+PRINT pet["name"]
+LET pet["age"] = pet["age"] + 1
+PRINT "age = ", pet["age"]
+PRINT "keys = ", LEN(pet)
