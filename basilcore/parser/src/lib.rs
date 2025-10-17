@@ -1105,12 +1105,18 @@ impl Parser {
         self.expect(TokenKind::RParen)?;
         // allow optional semicolons/newlines before body
         while self.match_k(TokenKind::Semicolon) {}
-        // Function body: either BEGIN ... END, or an implicit block terminated by END [FUNC]
-        let has_begin = self.match_k(TokenKind::Begin);
+        // Function body forms supported:
+        // 1) BEGIN ... END [FUNC]
+        // 2) { ... }
+        // 3) Implicit body terminated by END [FUNC]
+        let is_brace_body = if self.match_k(TokenKind::LBrace) { true } else { false };
+        let has_begin = if !is_brace_body && self.match_k(TokenKind::Begin) { true } else { false };
         let mut body = Vec::new();
         loop {
             while self.match_k(TokenKind::Semicolon) {}
-            if has_begin {
+            if is_brace_body {
+                if self.check(TokenKind::RBrace) { let _ = self.next(); break; }
+            } else if has_begin {
                 if self.match_k(TokenKind::End) { self.consume_optional_end_suffix(); break; }
             } else {
                 if self.check(TokenKind::End) {
@@ -1120,7 +1126,13 @@ impl Parser {
                     break;
                 }
             }
-            if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated function body", self.peek_line()))); }
+            if self.check(TokenKind::Eof) {
+                return Err(BasilError(match (is_brace_body, has_begin) {
+                    (true, _) => format!("parse error at line {}: unterminated function body: expected '}}'", self.peek_line()),
+                    (_, true) => format!("parse error at line {}: unterminated function body: expected 'END'", self.peek_line()),
+                    _ => format!("parse error at line {}: unterminated function body", self.peek_line()),
+                }));
+            }
             let line = self.peek_line();
             let stmt = self.parse_stmt()?;
             body.push(Stmt::Line(line));
