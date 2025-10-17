@@ -997,7 +997,7 @@ impl VM {
                             let v = rc.borrow().get_prop(&prop)?;
                             self.stack.push(v);
                         }
-                        _ => return Err(BasilError("GETPROP on non-object".into())),
+                        other => { let ty = self.type_of(&other); return Err(BasilError(format!("GETPROP on non-object (got TYPE={})", ty))); }, 
                     }
                 }
                 Op::SetProp => {
@@ -1091,7 +1091,7 @@ impl VM {
                             let v = rc.borrow().get_prop(&prop)?;
                             self.stack.push(v);
                         }
-                        _ => return Err(BasilError("GETMEMBER on non-object".into())),
+                        _ => return Err(BasilError("GETMEMBER on non-object".into())), 
                     }
                 }
                 Op::SetMember => {
