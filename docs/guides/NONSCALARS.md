@@ -9,13 +9,11 @@ This guide introduces Basil’s non‑scalar data structures:
 
 You’ll see both classic BASIC syntax and “Basil#” brace/block forms side‑by‑side. Don’t worry about using one style exclusively — they can be mixed based on taste and context.
 
-> Status notes for this build
+> Status note — unsupported features
 >
-> - Lists and dictionaries are fully supported, including `[]` indexing, mutation, and `FOR EACH`.
-> - TYPE…END TYPE parsing and dot member access are supported; instances are represented as dictionaries at runtime in this build.
-> - Arrays of TYPE (structs) are supported by using typed object arrays; new elements are default‑initialized as empty records (dictionaries).
-> - Fixed‑length string syntax is parsed (both `DIM A$ AS STRING * N` and `DIM A$[N]`) but full truncate/pad semantics may still be evolving. Treat them as regular strings for now unless otherwise noted.
-> - LEN: Strings → character count; Arrays/Lists/Dictionaries → element/key count; Struct byte sizing for fixed records will be documented once full fixed‑size semantics ship.
+> - Lists and dictionaries are supported, including `[]` indexing, mutation, and `FOR EACH`.
+> - The following are NOT supported in this build: `TYPE … END TYPE` structures (including arrays of structs and dot member access), fixed‑length strings (`DIM A$ AS STRING * N` or `A$[N]`), `LEN` over structs or struct type names, and struct↔string pack/unpack for binary I/O.
+> - The sections below describe intended design and examples for upcoming releases; some examples may not run in this build.
 
 
 ## Quick cheat‑sheet
@@ -160,6 +158,7 @@ LET cfg@ = { "host": "localhost", "port": 8080 }   ' dict literal in expression 
 
 
 ## TYPE Structures (records)
+> Not supported yet in this build. The syntax and examples below describe planned behavior and may not run.
 
 BASIC’s `TYPE … END TYPE` defines a record (similar to C’s `struct`). Basil supports two body styles: classic and brace‑body. Fields are declared with `DIM` inside the type.
 
@@ -206,6 +205,7 @@ Nested struct access chains with `.` as expected: `rec.Child.Label$`.
 > In this build, struct instances are represented as dictionaries under the hood, enabling `p.Field` reads/writes. This is transparent to you; just use dot syntax.
 
 ### Arrays of structures
+> Not supported yet in this build.
 
 Arrays of structs are powerful for table‑like data and binary I/O layouts.
 

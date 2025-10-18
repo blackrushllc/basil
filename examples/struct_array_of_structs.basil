@@ -1,6 +1,4 @@
 REM Array of structures with mixed field types (fixed strings, integers, floats)
-REM NOTE: Arrays of TYPE structures are not yet supported in this interpreter build (as of 2025-10-17).
-REM The example Basil code is provided below but commented out. Uncomment when support lands.
 
  TYPE Record
    DIM Name$ AS STRING * 12
