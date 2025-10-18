@@ -10,7 +10,7 @@
  ░    ░   ░ ░    ░   ▒   ░        ░ ░░ ░   ░░   ░  ░░░ ░ ░ ░  ░  ░   ░  ░░ ░
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
-Copyright (C) 2026, Blackrush LLC, All Rights Reserved
+Copyright (C) 2026, Blackrush LLC
 Created by Erik Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 
@@ -42,6 +42,7 @@ SOFTWARE.
 use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use basil_common::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +103,9 @@ pub enum Value {
     Func(Rc<Function>),
     Array(Rc<ArrayObj>),
     Object(ObjectRef),
+    // Dynamic containers
+    List(Rc<RefCell<Vec<Value>>>),
+    Dict(Rc<RefCell<HashMap<String, Value>>>),
     // Special runtime-only value: 2-D string array, row-major order.
     // Used as RHS for whole-array assignment (auto-redimensioning target array).
     StrArray2D { rows: usize, cols: usize, data: Vec<String> },
@@ -118,6 +122,19 @@ impl PartialEq for Value {
             (Value::Func(a), Value::Func(b)) => Rc::ptr_eq(a, b),
             (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
             (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
+            (Value::List(a), Value::List(b)) => {
+                let av = a.borrow();
+                let bv = b.borrow();
+                if av.len() != bv.len() { return false; }
+                for (i, v) in av.iter().enumerate() { if *v != bv[i] { return false; } }
+                true
+            }
+            (Value::Dict(a), Value::Dict(b)) => {
+                let av = a.borrow();
+                let bv = b.borrow();
+                if av.len() != bv.len() { return false; }
+                av.iter().all(|(k, v)| bv.get(k).map(|w| v == w).unwrap_or(false))
+            }
             _ => false,
         }
     }
@@ -144,6 +161,26 @@ impl fmt::Display for Value {
                 let obj = obj_rc.borrow();
                 write!(f, "<{}>", obj.type_name())
             }
+            Value::List(items) => {
+                write!(f, "[")?;
+                let v = items.borrow();
+                for (i, it) in v.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", it)?;
+                }
+                write!(f, "]")
+            }
+            Value::Dict(map) => {
+                write!(f, "{{")?;
+                let mut first = true;
+                let m = map.borrow();
+                for (k, v) in m.iter() {
+                    if !first { write!(f, ", ")?; } else { first = false; }
+                    // keys are strings; print quoted for clarity
+                    write!(f, "\"{}\": {}", k, v)?;
+                }
+                write!(f, "}}")
+            }
             Value::StrArray2D { rows, cols, .. } => {
                 write!(f, "<StrArray2D {}x{}>", rows, cols)
             }
@@ -164,6 +201,25 @@ impl fmt::Debug for Value {
             Value::Object(obj_rc) => {
                 let obj = obj_rc.borrow();
                 write!(f, "Object(<{}>)", obj.type_name())
+            }
+            Value::List(items) => {
+                write!(f, "List(")?;
+                let v = items.borrow();
+                for (i, it) in v.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{:?}", it)?;
+                }
+                write!(f, ")")
+            }
+            Value::Dict(map) => {
+                write!(f, "Dict{{")?;
+                let mut first = true;
+                let m = map.borrow();
+                for (k, v) in m.iter() {
+                    if !first { write!(f, ", ")?; } else { first = false; }
+                    write!(f, "{}: {:?}", k, v)?;
+                }
+                write!(f, "}}")
             }
             Value::StrArray2D { rows, cols, data } => {
                 write!(f, "StrArray2D(rows={}, cols={}, data_len={})", rows, cols, data.len())
@@ -312,6 +368,8 @@ pub fn serialize_program(p: &Program) -> Vec<u8> {
             Value::Array(_) => { w_u8(b,250); } // unsupported in consts
             Value::Object(_) => { w_u8(b,251); }
             Value::StrArray2D { .. } => { w_u8(b,252); }
+            Value::List(_) => { w_u8(b,253); }
+            Value::Dict(_) => { w_u8(b,254); }
         }
     }
     fn ser_chunk(b: &mut Vec<u8>, c: &Chunk) {
@@ -357,6 +415,7 @@ pub fn deserialize_program(data: &[u8]) -> basil_common::Result<Program> {
                 Value::Func(Rc::new(Function { arity: ar, name, chunk: std::rc::Rc::new(chunk) }))
             }
             250|251|252 => Value::Null, // placeholder for unsupported in consts
+            253|254 => Value::Null,
             _ => return Err(BasilError("bad const tag".into())),
         })
     }

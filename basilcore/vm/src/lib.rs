@@ -10,7 +10,7 @@
  ░    ░   ░ ░    ░   ▒   ░        ░ ░░ ░   ░░   ░  ░░░ ░ ░ ░  ░  ░   ░  ░░ ░
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
-Copyright (C) 2026, Blackrush LLC, All Rights Reserved
+Copyright (C) 2026, Blackrush LLC
 Created by Erik Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 
@@ -47,7 +47,7 @@ use std::env;
 use std::time::Duration;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
 use crossterm::event::poll;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 
@@ -110,6 +110,22 @@ fn value_to_jvalue(v: &Value) -> Result<JValue> {
                 }
             }
             Ok(JValue::Object(map))
+        }
+        Value::List(items) => {
+            let v = items.borrow();
+            let mut out = Vec::with_capacity(v.len());
+            for it in v.iter() {
+                out.push(value_to_jvalue(it)?);
+            }
+            Ok(JValue::Array(out))
+        }
+        Value::Dict(map) => {
+            let m = map.borrow();
+            let mut obj = Map::new();
+            for (k, v) in m.iter() {
+                obj.insert(k.clone(), value_to_jvalue(v)?);
+            }
+            Ok(JValue::Object(obj))
         }
         Value::StrArray2D { rows, cols, data } => {
             let mut out: Vec<JValue> = Vec::with_capacity(*rows);
@@ -203,6 +219,16 @@ struct FileHandleEntry {
 
 struct HandlerEntry { handler_ip: usize }
 
+// --- Struct type descriptors for pack/unpack ---
+#[derive(Clone)]
+enum VMFieldKind { Int32, Float64, VarString, FixedString(usize), Struct(String) }
+
+#[derive(Clone)]
+struct VMFieldDesc { name: String, kind: VMFieldKind }
+
+#[derive(Clone)]
+struct VMTypeDesc { fields: Vec<VMFieldDesc> }
+
 pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
@@ -236,6 +262,8 @@ pub struct VM {
     // Exceptions
     _handlers: Vec<HandlerEntry>,
     current_exception: Option<String>,
+    // Struct type descriptor registry
+    struct_types: HashMap<String, VMTypeDesc>,
 }
 
 // --- Lightweight Class Instance object ---
@@ -335,6 +363,8 @@ impl basil_bytecode::BasicObject for ClassInstance {
                 Value::Bool(_) => props.push(PropDesc { name: n.clone(), type_name: "BOOL".to_string(), readable: true, writable: true }),
                 Value::Object(_) => props.push(PropDesc { name: n.clone(), type_name: "OBJECT".to_string(), readable: true, writable: true }),
                 Value::Null => props.push(PropDesc { name: n.clone(), type_name: "NULL".to_string(), readable: true, writable: true }),
+                Value::List(_) => props.push(PropDesc { name: n.clone(), type_name: "LIST".to_string(), readable: true, writable: true }),
+                Value::Dict(_) => props.push(PropDesc { name: n.clone(), type_name: "DICT".to_string(), readable: true, writable: true }),
                 Value::StrArray2D { .. } => props.push(PropDesc { name: n.clone(), type_name: "STRARRAY2D".to_string(), readable: true, writable: true }),
             }
         }
@@ -376,6 +406,7 @@ impl VM {
             debugger: None,
             _handlers: Vec::new(),
             current_exception: None,
+            struct_types: HashMap::new(),
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -455,6 +486,144 @@ impl VM {
             }
         }
         out
+    }
+
+    // --- Struct registry helpers ---
+    fn struct_reg(&mut self, name: &str, spec: &str) -> Result<()> {
+        let mut fields: Vec<VMFieldDesc> = Vec::new();
+        for part in spec.split(';') {
+            if part.trim().is_empty() { continue; }
+            let mut it = part.split('|');
+            let fname = it.next().unwrap_or("").to_string();
+            let ktag = it.next().unwrap_or("");
+            let kind = match ktag {
+                "I" => VMFieldKind::Int32,
+                "F" => VMFieldKind::Float64,
+                "S" => VMFieldKind::VarString,
+                "X" => {
+                    let nstr = it.next().ok_or_else(|| BasilError("STRUCT_REG: missing length for FixedString".into()))?;
+                    let n: usize = nstr.parse().map_err(|_| BasilError("STRUCT_REG: bad FixedString length".into()))?;
+                    VMFieldKind::FixedString(n)
+                }
+                "T" => {
+                    let tname = it.next().ok_or_else(|| BasilError("STRUCT_REG: missing nested type name".into()))?;
+                    VMFieldKind::Struct(tname.to_string())
+                }
+                other => return Err(BasilError(format!("STRUCT_REG: unknown field kind '{}'", other))),
+            };
+            fields.push(VMFieldDesc { name: fname, kind });
+        }
+        self.struct_types.insert(name.to_ascii_uppercase(), VMTypeDesc { fields });
+        Ok(())
+    }
+
+    fn sizeof_struct(&self, name: &str) -> Option<usize> {
+        fn inner(vm: &VM, tname: &str, seen: &mut HashSet<String>) -> Option<usize> {
+            let key = tname.to_ascii_uppercase();
+            let td = vm.struct_types.get(&key)?;
+            if seen.contains(&key) { return None; }
+            seen.insert(key.clone());
+            let mut total: usize = 0;
+            for f in &td.fields {
+                match &f.kind {
+                    VMFieldKind::Int32 => total += 4,
+                    VMFieldKind::Float64 => total += 8,
+                    VMFieldKind::FixedString(n) => total += *n,
+                    VMFieldKind::VarString => return None,
+                    VMFieldKind::Struct(nm) => {
+                        let sz = inner(vm, nm, seen)?;
+                        total += sz;
+                    }
+                }
+            }
+            Some(total)
+        }
+        let mut seen = HashSet::new();
+        inner(self, name, &mut seen)
+    }
+
+    fn pack_struct_bytes(&self, dict_rc: &std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>, name: &str) -> Result<Vec<u8>> {
+        fn enforce_len(s: &str, n: usize) -> String {
+            let bytes = s.as_bytes();
+            if bytes.len() == n { return s.to_string(); }
+            if bytes.len() > n {
+                let mut cut = n; while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 { cut -= 1; }
+                return std::str::from_utf8(&bytes[..cut]).unwrap_or("").to_string();
+            }
+            let mut out = s.to_string(); let pad = n - bytes.len(); if pad > 0 { out.push_str(&" ".repeat(pad)); } out
+        }
+        let key = name.to_ascii_uppercase();
+        let td = self.struct_types.get(&key).ok_or_else(|| BasilError(format!("STRUCT_PACK: unknown struct type '{}'", name)))?;
+        let fixed = self.sizeof_struct(&key).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+        let mut out: Vec<u8> = Vec::with_capacity(fixed);
+        let map = dict_rc.borrow();
+        for f in &td.fields {
+            match &f.kind {
+                VMFieldKind::Int32 => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Int(0));
+                    let i = match v { Value::Int(i)=> i as i32, Value::Num(n)=> n.trunc() as i32, Value::Str(ref s)=> s.parse::<i32>().unwrap_or(0), _=>0 };
+                    out.extend_from_slice(&i.to_le_bytes());
+                }
+                VMFieldKind::Float64 => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Num(0.0));
+                    let x = match v { Value::Num(n)=> n, Value::Int(i)=> i as f64, Value::Str(ref s)=> s.parse::<f64>().unwrap_or(0.0), _=>0.0 };
+                    out.extend_from_slice(&x.to_le_bytes());
+                }
+                VMFieldKind::FixedString(n) => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Str(String::new()));
+                    let s = match v { Value::Str(s)=>s, other=> format!("{}", other) };
+                    let s2 = enforce_len(&s, *n);
+                    out.extend_from_slice(s2.as_bytes());
+                }
+                VMFieldKind::VarString => {
+                    return Err(BasilError("Struct contains variable-length fields; size is not fixed.".into()));
+                }
+                VMFieldKind::Struct(nm) => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Dict(std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()))));
+                    let drc = match v { Value::Dict(rc)=> rc, _ => std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())) };
+                    let nested = self.pack_struct_bytes(&drc, nm)?;
+                    out.extend_from_slice(&nested);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn unpack_struct_from(&self, buf: &[u8], name: &str) -> Result<Value> {
+        let key = name.to_ascii_uppercase();
+        let td = self.struct_types.get(&key).ok_or_else(|| BasilError(format!("STRUCT_UNPACK: unknown struct type '{}'", name)))?;
+        let fixed = self.sizeof_struct(&key).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+        if buf.len() != fixed { return Err(BasilError(format!("Unpack: expected {} bytes, got {}.", fixed, buf.len()))); }
+        let mut offset = 0usize;
+        let mut map: HashMap<String, Value> = HashMap::new();
+        for f in &td.fields {
+            match &f.kind {
+                VMFieldKind::Int32 => {
+                    let mut arr = [0u8;4]; arr.copy_from_slice(&buf[offset..offset+4]); offset += 4;
+                    let i = i32::from_le_bytes(arr) as i64; map.insert(f.name.clone(), Value::Int(i));
+                }
+                VMFieldKind::Float64 => {
+                    let mut arr = [0u8;8]; arr.copy_from_slice(&buf[offset..offset+8]); offset += 8;
+                    let x = f64::from_le_bytes(arr); map.insert(f.name.clone(), Value::Num(x));
+                }
+                VMFieldKind::FixedString(n) => {
+                    let slice = &buf[offset..offset+*n]; offset += *n;
+                    let s = match std::str::from_utf8(slice) {
+                        Ok(s) => s.to_string(),
+                        Err(_) => String::from_utf8_lossy(slice).to_string(),
+                    };
+                    map.insert(f.name.clone(), Value::Str(s));
+                }
+                VMFieldKind::VarString => { return Err(BasilError("Struct contains variable-length fields; size is not fixed.".into())); }
+                VMFieldKind::Struct(nm) => {
+                    let sz = self.sizeof_struct(nm).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+                    let slice = &buf[offset..offset+sz]; offset += sz;
+                    let v = self.unpack_struct_from(slice, nm)?;
+                    map.insert(f.name.clone(), v);
+                }
+            }
+        }
+        Ok(Value::Dict(std::rc::Rc::new(std::cell::RefCell::new(map))))
     }
     fn parse_pairs(&self, s: &str) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
@@ -806,7 +975,8 @@ impl VM {
                         ElemType::Num => Value::Num(0.0),
                         ElemType::Int => Value::Int(0),
                         ElemType::Str => Value::Str(String::new()),
-                        ElemType::Obj(_) => Value::Null,
+                        ElemType::Obj(Some(_)) => Value::Dict(Rc::new(std::cell::RefCell::new(HashMap::new()))),
+                        ElemType::Obj(None) => Value::Null,
                     };
                     let mut data = Vec::with_capacity(total);
                     data.resize(total, defv);
@@ -897,6 +1067,28 @@ impl VM {
                             self.enums.push(ArrEnum { arr: rc, cur: -1, total });
                             self.stack.push(Value::Int(handle as i64));
                         }
+                        Value::List(items_rc) => {
+                            // Enumerate list elements by materializing a temporary 1-D array view
+                            let items = items_rc.borrow();
+                            let mut data: Vec<Value> = Vec::with_capacity(items.len());
+                            for v in items.iter() { data.push(v.clone()); }
+                            let arr = Rc::new(ArrayObj { elem: ElemType::Obj(None), dims: vec![data.len()], data: std::cell::RefCell::new(data) });
+                            let total = arr.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
+                            let handle = self.enums.len();
+                            self.enums.push(ArrEnum { arr, cur: -1, total });
+                            self.stack.push(Value::Int(handle as i64));
+                        }
+                        Value::Dict(map_rc) => {
+                            // Enumerate dictionary keys (strings) by materializing a temporary 1-D array of keys
+                            let map = map_rc.borrow();
+                            let mut data: Vec<Value> = Vec::with_capacity(map.len());
+                            for k in map.keys() { data.push(Value::Str(k.clone())); }
+                            let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims: vec![data.len()], data: std::cell::RefCell::new(data) });
+                            let total = arr.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
+                            let handle = self.enums.len();
+                            self.enums.push(ArrEnum { arr, cur: -1, total });
+                            self.stack.push(Value::Int(handle as i64));
+                        }
                         Value::Object(_) => {
                             let ty = self.type_of(&it);
                             return Err(BasilError(format!("FOR EACH expects an array or iterable object after IN (got TYPE={}).", ty)));
@@ -957,7 +1149,12 @@ impl VM {
                             let v = rc.borrow().get_prop(&prop)?;
                             self.stack.push(v);
                         }
-                        _ => return Err(BasilError("GETPROP on non-object".into())),
+                        Value::Dict(map_rc) => {
+                            let m = map_rc.borrow();
+                            if let Some(v) = m.get(&prop) { self.stack.push(v.clone()); }
+                            else { return Err(BasilError(format!("Dictionary missing key: \"{}\"", prop))); }
+                        }
+                        other => { let ty = self.type_of(&other); return Err(BasilError(format!("GETPROP on non-object/dict (got TYPE={})", ty))); }, 
                     }
                 }
                 Op::SetProp => {
@@ -970,7 +1167,10 @@ impl VM {
                         Value::Object(rc) => {
                             rc.borrow_mut().set_prop(&prop, val)?;
                         }
-                        _ => return Err(BasilError("SETPROP on non-object".into())),
+                        Value::Dict(map_rc) => {
+                            map_rc.borrow_mut().insert(prop, val);
+                        }
+                        _ => return Err(BasilError("SETPROP on non-object/dict".into())),
                     }
                 }
                 Op::CallMethod => {
@@ -1051,7 +1251,7 @@ impl VM {
                             let v = rc.borrow().get_prop(&prop)?;
                             self.stack.push(v);
                         }
-                        _ => return Err(BasilError("GETMEMBER on non-object".into())),
+                        _ => return Err(BasilError("GETMEMBER on non-object".into())), 
                     }
                 }
                 Op::SetMember => {
@@ -1139,6 +1339,14 @@ impl VM {
                                     for d in &arr.dims { total = total.saturating_mul(*d); }
                                     self.stack.push(Value::Int(total as i64));
                                 }
+                                Value::List(rc) => {
+                                    let n = rc.borrow().len() as i64;
+                                    self.stack.push(Value::Int(n));
+                                }
+                                Value::Dict(rc) => {
+                                    let n = rc.borrow().len() as i64;
+                                    self.stack.push(Value::Int(n));
+                                }
                                 other => {
                                     // Fallback: coerce to string via Display and count chars
                                     let s = format!("{}", other);
@@ -1146,6 +1354,70 @@ impl VM {
                                     self.stack.push(Value::Int(n));
                                 }
                             }
+                        }
+                        160 => { // FIXSTR_ENFORCE(value, n)
+                            if argc != 2 { return Err(BasilError("FIXSTR_ENFORCE expects 2 arguments (value, N)".into())); }
+                            // Coerce first arg to string if not already
+                            let s0 = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            };
+                            // N as integer
+                            let mut n_i: i64 = match &args[1] {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => n.trunc() as i64,
+                                other => return Err(BasilError(format!("FIXSTR_ENFORCE: N must be numeric, got {}", self.type_of(other)))),
+                            };
+                            if n_i < 0 { n_i = 0; }
+                            let n = n_i as usize;
+                            let bytes = s0.as_bytes();
+                            let res = if bytes.len() == n {
+                                s0
+                            } else if bytes.len() > n {
+                                // Truncate at last UTF-8 boundary <= n
+                                let mut cut = n;
+                                while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 { cut -= 1; }
+                                let slice = &bytes[..cut];
+                                match std::str::from_utf8(slice) {
+                                    Ok(s) => s.to_string(),
+                                    Err(_) => String::new(),
+                                }
+                            } else {
+                                // Pad with ASCII spaces to reach exactly n bytes
+                                let pad = n - bytes.len();
+                                let mut s = s0.clone();
+                                if pad > 0 { s.push_str(&" ".repeat(pad)); }
+                                s
+                            };
+                            self.stack.push(Value::Str(res));
+                        }
+                        161 => { // STRUCT_REG(name$, spec$)
+                            if argc != 2 { return Err(BasilError("STRUCT_REG expects 2 arguments (name$, spec$)".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_REG: name must be string, got {}", self.type_of(other)))) };
+                            let spec = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_REG: spec must be string, got {}", self.type_of(other)))) };
+                            self.struct_reg(&name, &spec)?;
+                            self.stack.push(Value::Null);
+                        }
+                        162 => { // STRUCT_SIZEOF(name$)
+                            if argc != 1 { return Err(BasilError("STRUCT_SIZEOF expects 1 argument (name$)".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_SIZEOF: name must be string, got {}", self.type_of(other)))) };
+                            let sz = self.sizeof_struct(&name).unwrap_or(0);
+                            self.stack.push(Value::Int(sz as i64));
+                        }
+                        163 => { // STRUCT_PACK(value, type$)
+                            if argc != 2 { return Err(BasilError("STRUCT_PACK expects 2 arguments (value, typeName)".into())); }
+                            let tname = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_PACK: type name must be string, got {}", self.type_of(other)))) };
+                            let dict_rc = match &args[0] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("STRUCT_PACK: value must be a struct/dict".into())) };
+                            let bytes = self.pack_struct_bytes(&dict_rc, &tname)?;
+                            let s = String::from_utf8_lossy(&bytes).to_string();
+                            self.stack.push(Value::Str(s));
+                        }
+                        164 => { // STRUCT_UNPACK(str, type$)
+                            if argc != 2 { return Err(BasilError("STRUCT_UNPACK expects 2 arguments (buffer$, typeName)".into())); }
+                            let tname = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_UNPACK: type name must be string, got {}", self.type_of(other)))) };
+                            let buf = match &args[0] { Value::Str(s)=> s.as_bytes().to_vec(), other=> return Err(BasilError(format!("STRUCT_UNPACK: buffer must be string, got {}", self.type_of(other)))) };
+                            let v = self.unpack_struct_from(&buf, &tname)?;
+                            self.stack.push(v);
                         }
                         2 => { // MID$(s, start [,len]) -- start is 1-based
                             if !(argc == 2 || argc == 3) { return Err(BasilError("MID$ expects 2 or 3 arguments".into())); }
@@ -2441,6 +2713,68 @@ impl VM {
                             let s = basil_objects::term::term_pollkey_s();
                             self.stack.push(Value::Str(s));
                         }
+                        251 => { // MAKE_LIST([...])
+                            // args are already in call order
+                            let list = Rc::new(std::cell::RefCell::new(args));
+                            self.stack.push(Value::List(list));
+                        }
+                        252 => { // MAKE_DICT({key: val, ...})
+                            if argc % 2 != 0 { return Err(BasilError("MAKE_DICT expects an even number of arguments (key,value pairs)".into())); }
+                            let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                            let mut i = 0usize;
+                            while i < args.len() {
+                                let key = match &args[i] { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
+                                let val = args[i+1].clone();
+                                map.insert(key, val);
+                                i += 2;
+                            }
+                            self.stack.push(Value::Dict(Rc::new(std::cell::RefCell::new(map))));
+                        }
+                        253 => { // INDEX GET: obj[idx]
+                            if argc != 2 { return Err(BasilError("INDEX[] get expects 2 arguments".into())); }
+                            let target = &args[0];
+                            let index = &args[1];
+                            match target {
+                                Value::List(rc) => {
+                                    let idx = self.to_i64(index)?;
+                                    if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    let idx0 = (idx - 1) as usize;
+                                    let v = rc.borrow();
+                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    self.stack.push(v[idx0].clone());
+                                }
+                                Value::Dict(rc) => {
+                                    let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
+                                    let m = rc.borrow();
+                                    if let Some(v) = m.get(&key) { self.stack.push(v.clone()); }
+                                    else { return Err(BasilError(format!("Dictionary missing key: \"{}\"", key))); }
+                                }
+                                _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
+                            }
+                        }
+                        254 => { // INDEX SET: obj[idx] = value
+                            if argc != 3 { return Err(BasilError("INDEX[] set expects 3 arguments".into())); }
+                            let target = &args[0];
+                            let index = &args[1];
+                            let value = args[2].clone();
+                            match target {
+                                Value::List(rc) => {
+                                    let idx = self.to_i64(index)?;
+                                    if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    let idx0 = (idx - 1) as usize;
+                                    let mut v = rc.borrow_mut();
+                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    v[idx0] = value;
+                                    self.stack.push(Value::Null);
+                                }
+                                Value::Dict(rc) => {
+                                    let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
+                                    rc.borrow_mut().insert(key, value);
+                                    self.stack.push(Value::Null);
+                                }
+                                _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
+                            }
+                        }
                         _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
                 }
@@ -2480,6 +2814,8 @@ impl VM {
                 Value::Func(_) => "FUNCTION".to_string(),
                 Value::Array(_) => "ARRAY".to_string(),
                 Value::Object(_) => "OBJECT".to_string(),
+                Value::List(_) => "LIST".to_string(),
+                Value::Dict(_) => "DICT".to_string(),
                 Value::StrArray2D { .. } => "STRARRAY2D".to_string(),
             };
             globals.push(debug::Variable { name: name.clone(), value: format!("{}", v), type_name: tn });
@@ -2592,6 +2928,8 @@ impl VM {
                 format!("{}[]", base)
             }
             Value::Object(rc) => rc.borrow().type_name().to_string(),
+            Value::List(_) => "LIST".to_string(),
+            Value::Dict(_) => "DICT".to_string(),
             Value::StrArray2D { .. } => "STRING[][]".to_string(),
         }
     }
@@ -2666,6 +3004,8 @@ fn is_truthy(v: &Value) -> bool {
         Value::Array(_) => true,
         Value::Object(_) => true,
         Value::StrArray2D { rows, cols, data } => (*rows > 0) && (*cols > 0) && (!data.is_empty()),
+        Value::List(rc) => !rc.borrow().is_empty(),
+        Value::Dict(rc) => !rc.borrow().is_empty(),
     }
 }
 

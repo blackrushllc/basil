@@ -10,7 +10,7 @@
  ░    ░   ░ ░    ░   ▒   ░        ░ ░░ ░   ░░   ░  ░░░ ░ ░ ░  ░  ░   ░  ░░ ░
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
-Copyright (C) 2026, Blackrush LLC, All Rights Reserved
+Copyright (C) 2026, Blackrush LLC
 Created by Erik Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 
@@ -447,6 +447,15 @@ impl Parser {
             }
 
             let name = self.expect_ident()?;
+            // Optional square-bracket indexing for list/dict: LET name '[' expr ']' = value
+            if self.match_k(TokenKind::LBracket) {
+                let idx = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RBracket)?;
+                self.expect(TokenKind::Assign)?;
+                let value = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::SetIndexSquare { target: Expr::Var(name), index: idx, value });
+            }
             // Optional indices for array element assignment: name '(' exprlist ')'
             let indices = if self.match_k(TokenKind::LParen) {
                 let mut idxs = Vec::new();
@@ -457,6 +466,15 @@ impl Parser {
                     }
                 }
                 self.expect(TokenKind::RParen)?;
+                // Support LET arr(i).Prop = expr by detecting a following '.'
+                if self.match_k(TokenKind::Dot) {
+                    let prop = self.expect_member_name()?;
+                    self.expect(TokenKind::Assign)?;
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    let call = Expr::Call { callee: Box::new(Expr::Var(name)), args: idxs };
+                    return Ok(Stmt::SetProp { target: call, prop, value });
+                }
                 Some(idxs)
             } else { None };
             self.expect(TokenKind::Assign)?;
@@ -702,6 +720,40 @@ impl Parser {
             return Ok(Stmt::Block(inner));
         }
 
+        // TYPE ... END TYPE (struct definition) or TYPE Name { ... }
+        if self.match_k(TokenKind::Type) {
+            let type_name = self.expect_ident()?;
+            // Optional brace body
+            let mut fields: Vec<basil_ast::StructField> = Vec::new();
+            if self.match_k(TokenKind::LBrace) {
+                loop {
+                    while self.match_k(TokenKind::Semicolon) {}
+                    if self.check(TokenKind::RBrace) { let _ = self.next(); break; }
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated TYPE {{ ... }}", self.peek_line()))); }
+                    // Expect field declaration starting with DIM
+                    if !self.match_k(TokenKind::Dim) { return Err(BasilError(format!("parse error at line {}: expected DIM in TYPE body", self.peek_line()))); }
+                    let (fname, fkind) = self.parse_struct_field()?;
+                    fields.push(basil_ast::StructField { name: fname, kind: fkind });
+                }
+            } else {
+                // Classic TYPE ... END TYPE form
+                loop {
+                    while self.match_k(TokenKind::Semicolon) {}
+                    if self.check(TokenKind::End) {
+                        let _ = self.next(); // consume END
+                        if !self.match_k(TokenKind::Type) { return Err(BasilError(format!("parse error at line {}: expected 'END TYPE'", self.peek_line()))); }
+                        break;
+                    }
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated TYPE ... END TYPE", self.peek_line()))); }
+                    if !self.match_k(TokenKind::Dim) { return Err(BasilError(format!("parse error at line {}: expected DIM in TYPE body", self.peek_line()))); }
+                    let (fname, fkind) = self.parse_struct_field()?;
+                    fields.push(basil_ast::StructField { name: fname, kind: fkind });
+                }
+            }
+            self.terminate_stmt().ok(); // tolerate optional terminator
+            return Ok(Stmt::TypeDef { name: type_name, fields });
+        }
+
         if self.match_k(TokenKind::For) {
             // Check FOR EACH form first
             if self.match_k(TokenKind::Each) {
@@ -716,7 +768,10 @@ impl Parser {
                         while self.match_k(TokenKind::Semicolon) {}
                         if self.match_k(TokenKind::End) { break; }
                         if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH BEGIN/END", self.peek_line()))); }
-                        inner.push(self.parse_stmt()?);
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        inner.push(Stmt::Line(line));
+                        inner.push(s);
                     }
                     Stmt::Block(inner)
                 } else if self.match_k(TokenKind::LBrace) {
@@ -725,7 +780,10 @@ impl Parser {
                         while self.match_k(TokenKind::Semicolon) {}
                         if self.check(TokenKind::RBrace) { let _ = self.next(); break; }
                         if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH {{ ... }}", self.peek_line()))); }
-                        inner.push(self.parse_stmt()?);
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        inner.push(Stmt::Line(line));
+                        inner.push(s);
                     }
                     Stmt::Block(inner)
                 } else {
@@ -793,6 +851,15 @@ impl Parser {
 
         if self.match_k(TokenKind::Dim) {
             let name = self.expect_ident()?;
+            // Fixed-length string bracket form: DIM name$[N]
+            if name.ends_with('$') && self.match_k(TokenKind::LBracket) {
+                // Expect integer literal for N
+                let n_tok = self.expect(TokenKind::Number)?;
+                let n = if let Some(basil_lexer::Literal::Num(v)) = n_tok.literal { v as usize } else { 0usize };
+                self.expect(TokenKind::RBracket)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::DimFixedStr { name, len: n });
+            }
             if self.match_k(TokenKind::LParen) {
                 let mut dims = Vec::new();
                 if !self.check(TokenKind::RParen) {
@@ -826,6 +893,29 @@ impl Parser {
                     self.terminate_stmt()?;
                     return Ok(Stmt::Let { name, indices: None, init: Expr::NewClass { filename: Box::new(fname) } });
                 }
+                // Support: DIM name$ AS STRING * N  (fixed-length string)
+                if self.check(TokenKind::Ident) {
+                    // Peek without consuming to check for STRING
+                    let t = self.tokens.get(self.i).unwrap();
+                    if t.lexeme.eq_ignore_ascii_case("STRING") {
+                        let _ = self.next(); // consume IDENT("STRING")
+                        if self.match_k(TokenKind::Star) {
+                            let n_tok = self.expect(TokenKind::Number)?;
+                            let n = if let Some(basil_lexer::Literal::Num(v)) = n_tok.literal { v as usize } else { 0usize };
+                            self.terminate_stmt()?;
+                            return Ok(Stmt::DimFixedStr { name, len: n });
+                        } else {
+                            return Err(BasilError(format!("parse error at line {}: expected '*' and length after STRING", self.peek_line())));
+                        }
+                    }
+                }
+                // Support: DIM name AS TYPE TypeName
+                if self.match_k(TokenKind::Type) {
+                    let tname = self.expect_ident()?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::DimObject { name, type_name: tname, args: Vec::new() });
+                }
+                // Default: DIM name AS TypeName [(args)] — object/struct scalar
                 let tname = self.expect_ident()?;
                 let mut args = Vec::new();
                 if self.match_k(TokenKind::LParen) {
@@ -839,6 +929,33 @@ impl Parser {
                 }
                 self.terminate_stmt()?;
                 return Ok(Stmt::DimObject { name, type_name: tname, args });
+            } else if self.match_k(TokenKind::Assign) {
+                // Support: DIM name = expr
+                let init_expr = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                match init_expr {
+                    Expr::List(items) => {
+                        // If variable is a primitive-typed array (name suffix '%' or '$'),
+                        // desugar to: DIM name(upper=n) + element assignments name(1..n) = items.
+                        // Otherwise (e.g., name ends with '@' or no suffix), treat as simple LET of a dynamic list.
+                        if name.ends_with('%') || name.ends_with('$') {
+                            let n = items.len();
+                            let mut stmts: Vec<Stmt> = Vec::new();
+                            stmts.push(Stmt::Dim { name: name.clone(), dims: vec![Expr::Number(n as f64)] });
+                            for (i, it) in items.into_iter().enumerate() {
+                                let idx_expr = Expr::Number((i as f64) + 1.0);
+                                stmts.push(Stmt::Let { name: name.clone(), indices: Some(vec![idx_expr]), init: it });
+                            }
+                            return Ok(Stmt::Block(stmts));
+                        } else {
+                            return Ok(Stmt::Let { name, indices: None, init: Expr::List(items) });
+                        }
+                    }
+                    other => {
+                        // Fallback: treat as LET name = expr
+                        return Ok(Stmt::Let { name, indices: None, init: other });
+                    }
+                }
             } else {
                 return Err(BasilError(format!("parse error at line {}: expected '(' or AS after DIM name", self.peek_line())));
             }
@@ -921,18 +1038,30 @@ impl Parser {
                     }
                     continue;
                 }
+                if self.match_k(TokenKind::LBracket) {
+                    let idx = self.parse_expr_bp(0)?;
+                    self.expect(TokenKind::RBracket)?;
+                    lhs = Expr::IndexSquare { target: Box::new(lhs), index: Box::new(idx) };
+                    continue;
+                }
                 break;
             }
             Ok::<Expr, BasilError>(lhs)
         })();
         if let Ok(lhs) = lhs_probe {
             if self.check(TokenKind::Assign) {
-                // Only allow assignment without LET for member property targets: obj.Prop = expr
+                // Allow assignment without LET for member property targets: obj.Prop = expr
+                // and for list/dict square-bracket indexing: obj[expr] = value
                 if let Expr::MemberGet { target, name } = lhs {
                     let _ = self.next(); // consume '='
                     let value = self.parse_expr_bp(0)?;
                     self.terminate_stmt()?;
                     return Ok(Stmt::SetProp { target: *target, prop: name, value });
+                } else if let Expr::IndexSquare { target, index } = lhs {
+                    let _ = self.next(); // consume '='
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::SetIndexSquare { target: *target, index: *index, value });
                 } else {
                     return Err(BasilError("Use LET for assignment; '=' in expressions tests equality.".into()));
                 }
@@ -952,14 +1081,14 @@ impl Parser {
     fn terminate_stmt(&mut self) -> Result<()> {
         if self.match_k(TokenKind::Semicolon) { return Ok(()); }
         if self.check(TokenKind::Eof) { return Ok(()); }
-        Err(BasilError(format!("parse error at line {}: expected Semicolon", self.peek_line())))
+        Err(BasilError(format!("parse error at line {}: expected Semicolon or Colon", self.peek_line())))
     }
 
     // Pratt parser with postfix call and comparisons
     fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr> {
         let mut lhs = self.parse_prefix()?;
 
-        // postfix calls and member access (highest precedence)
+        // postfix calls, member access, and square-bracket indexing (highest precedence)
         loop {
             if self.match_k(TokenKind::LParen) {
                 let mut args = Vec::new();
@@ -971,6 +1100,12 @@ impl Parser {
                 }
                 self.expect(TokenKind::RParen)?;
                 lhs = Expr::Call { callee: Box::new(lhs), args };
+                continue;
+            }
+            if self.match_k(TokenKind::LBracket) {
+                let idx = self.parse_expr_bp(0)?;
+                self.expect(TokenKind::RBracket)?;
+                lhs = Expr::IndexSquare { target: Box::new(lhs), index: Box::new(idx) };
                 continue;
             }
             if self.match_k(TokenKind::Dot) {
@@ -1016,10 +1151,8 @@ impl Parser {
         }
         match self.peek_kind() {
             Some(TokenKind::Dot) => {
-                // Leading '.' only allowed inside a WITH block
-                if self.with_depth == 0 {
-                    return Err(BasilError("Leading '.' member requires a WITH block.".into()));
-                }
+                // Leading '.' parsed as ImplicitThis member access; validity (WITH scope) is enforced during compilation.
+                // This avoids false parse errors when newline continuation or formatting places '.' at line start.
                 let _ = self.next(); // consume '.'
                 let name = self.expect_member_name()?;
                 if self.match_k(TokenKind::LParen) {
@@ -1086,6 +1219,52 @@ impl Parser {
                 let inner = self.parse_expr_bp(0)?;
                 self.expect(TokenKind::RParen)?;
                 Ok(Expr::Eval(Box::new(inner)))
+            }
+            Some(TokenKind::LBracket) => {
+                // List literal: [ expr (, expr)* ,? ] with optional newlines/semicolons between elements
+                let _ = self.next(); // consume '['
+                let mut items: Vec<Expr> = Vec::new();
+                // allow stray semicolons/newlines
+                while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                if !self.check(TokenKind::RBracket) {
+                    loop {
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        items.push(self.parse_expr_bp(0)?);
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        if self.match_k(TokenKind::Comma) { continue; }
+                        break;
+                    }
+                    // optional trailing comma
+                    let _ = self.match_k(TokenKind::Comma);
+                }
+                self.expect(TokenKind::RBracket)?;
+                Ok(Expr::List(items))
+            }
+            Some(TokenKind::LBrace) => {
+                // Dict literal: { "key": expr (, "key": expr)* ,? }
+                let _ = self.next(); // consume '{'
+                let mut entries: Vec<(String, Expr)> = Vec::new();
+                // allow stray semicolons/newlines
+                while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                if !self.check(TokenKind::RBrace) {
+                    loop {
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        // key must be string literal
+                        let key_tok = self.expect(TokenKind::String)?;
+                        let key = if let Some(basil_lexer::Literal::Str(s)) = key_tok.literal { s } else { return Err(BasilError("Dictionary key must be a quoted string literal".into())); };
+                        // colon separator
+                        self.expect(TokenKind::Colon)?;
+                        let value = self.parse_expr_bp(0)?;
+                        entries.push((key, value));
+                        while self.check(TokenKind::Semicolon) { let _ = self.next(); }
+                        if self.match_k(TokenKind::Comma) { continue; }
+                        break;
+                    }
+                    // optional trailing comma
+                    let _ = self.match_k(TokenKind::Comma);
+                }
+                self.expect(TokenKind::RBrace)?;
+                Ok(Expr::Dict(entries))
             }
             Some(TokenKind::LParen) => { self.next(); let e = self.parse_expr_bp(0)?; self.expect(TokenKind::RParen)?; Ok(e) }
             other => Err(BasilError(format!("parse error at line {}: unexpected token in expression: {:?}", self.peek_line(), other))),
@@ -1244,8 +1423,56 @@ impl Parser {
         }
     }
     fn check(&self, k: TokenKind) -> bool { self.peek_kind() == Some(k) }
-    fn match_k(&mut self, k: TokenKind) -> bool { if self.check(k) { self.next(); true } else { false } }
+    fn match_k(&mut self, k: TokenKind) -> bool {
+        if self.check(k.clone()) { self.next(); true }
+        else if matches!(k, TokenKind::Semicolon) && self.check(TokenKind::Colon) { self.next(); true }
+        else { false }
+    }
     fn peek_kind(&self) -> Option<TokenKind> { self.tokens.get(self.i).map(|t| t.kind.clone()) }
     fn peek_line(&self) -> u32 { self.tokens.get(self.i).map(|t| t.line).unwrap_or(0) }
+
+    // Parse a single struct field declaration after 'DIM' in a TYPE body.
+    // Returns (field_name, field_kind).
+    fn parse_struct_field(&mut self) -> Result<(String, basil_ast::StructFieldKind)> {
+        use basil_ast::StructFieldKind as SFK;
+        let fname = self.expect_ident()?;
+        // Optional classic array dims for fields not supported in this minimal pass
+        if self.match_k(TokenKind::LParen) {
+            return Err(BasilError(format!("parse error at line {}: array fields in TYPE not supported yet", self.peek_line())));
+        }
+        // Type clause or infer from suffix
+        let kind = if self.match_k(TokenKind::As) {
+            if self.check(TokenKind::Ident) {
+                let t = self.tokens.get(self.i).unwrap();
+                if t.lexeme.eq_ignore_ascii_case("STRING") {
+                    let _ = self.next(); // consume IDENT("STRING")
+                    if self.match_k(TokenKind::Star) {
+                        let n_tok = self.expect(TokenKind::Number)?;
+                        let n = if let Some(basil_lexer::Literal::Num(v)) = n_tok.literal { v as usize } else { 0usize };
+                        SFK::FixedString(n)
+                    } else {
+                        SFK::VarString
+                    }
+                } else {
+                    // AS <TypeName>
+                    let tname = self.expect_ident()?;
+                    SFK::Struct(tname)
+                }
+            } else if self.match_k(TokenKind::Type) {
+                let tname = self.expect_ident()?;
+                SFK::Struct(tname)
+            } else {
+                return Err(BasilError(format!("parse error at line {}: expected type after AS", self.peek_line())));
+            }
+        } else {
+            if fname.ends_with('%') { SFK::Int32 }
+            else if fname.ends_with('$') { SFK::VarString }
+            else { SFK::Float64 }
+        };
+        // Consume optional statement terminator here if present; caller may also handle.
+        while self.match_k(TokenKind::Semicolon) {}
+        Ok((fname, kind))
+    }
+
     fn next(&mut self) -> Option<Token> { let t = self.tokens.get(self.i).cloned(); if t.is_some() { self.i+=1; } t }
 }

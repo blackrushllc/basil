@@ -1,0 +1,11 @@
+REM Basic structure (TYPE) demo
+
+TYPE Person
+  DIM Name$ AS STRING * 16
+  DIM Age%
+END TYPE
+
+DIM p AS Person
+p.Name$ = "Ada"
+p.Age% = 36
+PRINT "Person: " + p.Name$ + " (Age " + p.Age% + ")"

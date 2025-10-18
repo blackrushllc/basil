@@ -1,0 +1,21 @@
+REM Array of structures with mixed field types (fixed strings, integers, floats)
+
+ TYPE Record
+   DIM Name$ AS STRING * 12
+   DIM Age%
+   DIM Score     ' floating point
+ END TYPE
+
+ DIM recs(2) AS Record
+
+ recs(1).Name$ = "Alice"
+ recs(1).Age% = 30
+ recs(1).Score = 95.5
+
+ recs(2).Name$ = "Bob"
+ recs(2).Age% = 25
+ recs(2).Score = 88.0
+
+ FOR i% = 1 TO 2
+   PRINTLN recs(i%).Name$ + " age=" + recs(i%).Age% + " score=" + recs(i%).Score
+ NEXT
