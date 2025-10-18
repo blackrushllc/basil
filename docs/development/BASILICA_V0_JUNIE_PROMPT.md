@@ -2,6 +2,10 @@ Awesome — here’s a clean, copy-paste **Junie prompt** to build the **Basilic
 
 ---
 
+
+
+---
+
 Implement “Basilica” (GUI Starter App with Embedded Basil)
 
 Goal
@@ -304,7 +308,7 @@ WEB.SET_HTML$("
 ")
 WEB.ON%("click","sale", OnSale)
 PRINT "Cashier ready."
-END
+STOP
 
 OnSale:
 PRINT "Start sale"
