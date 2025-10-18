@@ -104,6 +104,8 @@ pub enum Stmt {
     Shell { cmd: Expr },
     // EXIT statement (optional numeric code)
     Exit(Option<Expr>),
+    // STOP statement: suspend execution
+    Stop,
     ExprStmt(Expr),
     // Function return (inside FUNC)
     Return(Option<Expr>),

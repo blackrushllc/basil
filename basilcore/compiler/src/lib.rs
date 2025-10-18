@@ -511,6 +511,12 @@ impl C {
                 chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
                 self.chunk = chunk;
             }
+            // STOP
+            Stmt::Stop => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                chunk.push_op(Op::Stop);
+                self.chunk = chunk;
+            }
             // Unstructured flow: LABEL/GOTO at top level
             Stmt::Label(name) => {
                 let pos = self.chunk.here();
@@ -1191,6 +1197,10 @@ impl C {
                 if let Some(e) = code_opt { self.emit_expr_in(chunk, e, Some(env))?; }
                 else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
                 chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
+            }
+            // STOP inside function
+            Stmt::Stop => {
+                chunk.push_op(Op::Stop);
             }
             // Unstructured flow inside function: support LABEL/GOTO
             Stmt::Label(name) => {
@@ -2390,6 +2400,10 @@ impl C {
                 if let Some(e) = code_opt { self.emit_expr_in(chunk, e, None)?; }
                 else { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
                 chunk.push_op(Op::Builtin); chunk.push_u8(61u8); chunk.push_u8(1u8);
+            }
+            // STOP
+            Stmt::Stop => {
+                chunk.push_op(Op::Stop);
             }
             // Unstructured flow inside toplevel chunk: support LABEL/GOTO
             Stmt::Label(name) => {

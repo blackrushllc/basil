@@ -238,6 +238,8 @@ pub struct VM {
     registry: Registry,
     enums: Vec<ArrEnum>,
     current_line: u32,
+    // Suspension
+    suspended: bool,
     // Test mode fields
     test_mode: bool,
     trace: bool,
@@ -389,6 +391,7 @@ impl VM {
             registry,
             enums: Vec::new(),
             current_line: 0,
+            suspended: false,
             test_mode: false,
             trace: false,
             script_path: None,
@@ -435,6 +438,14 @@ impl VM {
     }
 
     pub fn current_line(&self) -> u32 { self.current_line }
+
+    // Suspension state API
+    pub fn is_suspended(&self) -> bool { self.suspended }
+    pub fn resume(&mut self) -> Result<()> {
+        if !self.suspended { return Ok(()); }
+        self.suspended = false;
+        self.run()
+    }
 
     // Provide script path so CLASS() can resolve relative file names
     pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
@@ -869,6 +880,14 @@ impl VM {
                         self.cur().ip = target;
                     } else {
                         return Err(BasilError(msg));
+                    }
+                }
+                Op::Stop => {
+                    if self.test_mode {
+                        std::process::exit(0);
+                    } else {
+                        self.suspended = true;
+                        return Ok(());
                     }
                 }
 
@@ -2844,7 +2863,7 @@ impl VM {
             100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
             105=>Op::ExecString, 106=>Op::EvalString,
             110=>Op::Gosub, 111=>Op::GosubBack, 112=>Op::GosubRet, 113=>Op::GosubPop,
-            120=>Op::TryPush, 121=>Op::TryPop, 122=>Op::Raise, 123=>Op::Reraise,
+            120=>Op::TryPush, 121=>Op::TryPop, 122=>Op::Raise, 123=>Op::Reraise, 124=>Op::Stop,
             255=>Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };

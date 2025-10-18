@@ -72,7 +72,7 @@ pub enum TokenKind {
     // Exceptions
     Try, Catch, Finally, Raise,
     // Env and process control
-    Setenv, Exportenv, Shell, Exit,
+    Setenv, Exportenv, Shell, Exit, Stop,
     // Unstructured control flow
     Label, Goto, Gosub,
     // Dynamic code execution
@@ -592,6 +592,7 @@ impl<'a> Lexer<'a> {
             "EXPORTENV" => TokenKind::Exportenv,
             "SHELL"  => TokenKind::Shell,
             "EXIT"   => TokenKind::Exit,
+            "STOP"   => TokenKind::Stop,
             "LABEL"  => TokenKind::Label,
             "GOTO"   => TokenKind::Goto,
             "GOSUB"  => TokenKind::Gosub,
