@@ -85,6 +85,10 @@ pub enum Stmt {
     DimObject { name: String, type_name: String, args: Vec<Expr> },
     // DIM arr@(dims) [AS Type] (object arrays)
     DimObjectArray { name: String, dims: Vec<Expr>, type_name: Option<String> },
+    // Fixed-length string declaration: DIM name$ AS STRING * N  or  DIM name$[N]
+    DimFixedStr { name: String, len: usize },
+    // TYPE ... END TYPE (struct definition)
+    TypeDef { name: String, fields: Vec<StructField> },
     // Property set: obj.Prop = expr (without LET)
     SetProp { target: Expr, prop: String, value: Expr },
     // Square-bracket index set: list[i] = expr or dict["k"] = expr
@@ -150,4 +154,20 @@ pub type Program = Vec<Stmt>;
 pub enum FuncKind {
     Func,
     Sub,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: String,
+    pub kind: StructFieldKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum StructFieldKind {
+    Int32,
+    Float64,
+    VarString,              // variable-length string (handle/pointer at runtime)
+    FixedString(usize),     // fixed-length string with declared byte size
+    Struct(String),         // nested struct by type name
 }

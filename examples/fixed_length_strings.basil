@@ -3,11 +3,11 @@ REM NOTE: Requires fixed-length strings feature (DIM A$ AS STRING * N or A$[N]).
 REM As of 2025-10-17, this interpreter build may not support these; this example may not run yet.
 
 DIM code$ AS STRING * 5
-code$ = "ABCDEF"
+LET code$ = "ABCDEF"
 PRINT "code$ = '" + code$ + "'"
 PRINT "LEN(code$) = " + LEN(code$)
 
 DIM tag$[3]
-tag$ = "ππππ"
+LET tag$ = "ππππ"
 PRINT "tag$ = '" + tag$ + "'"
 PRINT "LEN(tag$) = " + LEN(tag$)

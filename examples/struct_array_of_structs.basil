@@ -1,23 +1,23 @@
 REM Array of structures with mixed field types (fixed strings, integers, floats)
-REM NOTE: Requires TYPE and arrays of TYPE support; the current interpreter build may not yet support these features.
+REM NOTE: Arrays of TYPE structures are not yet supported in this interpreter build (as of 2025-10-17).
+REM The example Basil code is provided below but commented out. Uncomment when support lands.
 
-TYPE Record
-  DIM Name$ AS STRING * 12
-  DIM Age%
-  DIM Score     ' floating point
-END TYPE
+ TYPE Record
+   DIM Name$ AS STRING * 12
+   DIM Age%
+   DIM Score     ' floating point
+ END TYPE
 
-DIM recs(2) AS Record
+ DIM recs(2) AS Record
 
-recs(1).Name$ = "Alice"
-recs(1).Age% = 30
-recs(1).Score = 95.5
+ recs(1).Name$ = "Alice"
+ recs(1).Age% = 30
+ recs(1).Score = 95.5
 
-recs(2).Name$ = "Bob"
-recs(2).Age% = 25
-recs(2).Score = 88.0
+ recs(2).Name$ = "Bob"
+ recs(2).Age% = 25
+ recs(2).Score = 88.0
 
-FOR i% = 1 TO 2 {
-  PRINT recs(i%).Name$ + " age=" + recs(i%).Age% + " score=" + recs(i%).Score
-}
-NEXT
+ FOR i% = 1 TO 2
+   PRINTLN recs(i%).Name$ + " age=" + recs(i%).Age% + " score=" + recs(i%).Score
+ NEXT

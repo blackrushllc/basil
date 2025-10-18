@@ -824,7 +824,8 @@ impl VM {
                         ElemType::Num => Value::Num(0.0),
                         ElemType::Int => Value::Int(0),
                         ElemType::Str => Value::Str(String::new()),
-                        ElemType::Obj(_) => Value::Null,
+                        ElemType::Obj(Some(_)) => Value::Dict(Rc::new(std::cell::RefCell::new(HashMap::new()))),
+                        ElemType::Obj(None) => Value::Null,
                     };
                     let mut data = Vec::with_capacity(total);
                     data.resize(total, defv);
@@ -997,7 +998,12 @@ impl VM {
                             let v = rc.borrow().get_prop(&prop)?;
                             self.stack.push(v);
                         }
-                        other => { let ty = self.type_of(&other); return Err(BasilError(format!("GETPROP on non-object (got TYPE={})", ty))); }, 
+                        Value::Dict(map_rc) => {
+                            let m = map_rc.borrow();
+                            if let Some(v) = m.get(&prop) { self.stack.push(v.clone()); }
+                            else { return Err(BasilError(format!("Dictionary missing key: \"{}\"", prop))); }
+                        }
+                        other => { let ty = self.type_of(&other); return Err(BasilError(format!("GETPROP on non-object/dict (got TYPE={})", ty))); }, 
                     }
                 }
                 Op::SetProp => {
@@ -1010,7 +1016,10 @@ impl VM {
                         Value::Object(rc) => {
                             rc.borrow_mut().set_prop(&prop, val)?;
                         }
-                        _ => return Err(BasilError("SETPROP on non-object".into())),
+                        Value::Dict(map_rc) => {
+                            map_rc.borrow_mut().insert(prop, val);
+                        }
+                        _ => return Err(BasilError("SETPROP on non-object/dict".into())),
                     }
                 }
                 Op::CallMethod => {

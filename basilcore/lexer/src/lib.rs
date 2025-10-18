@@ -66,6 +66,7 @@ pub enum TokenKind {
     Describe,
     New,
     Class,
+    Type, // TYPE ... END TYPE definitions
     // New for SELECT CASE
     Select, Case, Is,
     // Exceptions
@@ -597,6 +598,7 @@ impl<'a> Lexer<'a> {
             "MOD"    => TokenKind::Mod,
             "EXEC"   => TokenKind::Exec,
             "EVAL"   => TokenKind::Eval,
+            "TYPE"   => TokenKind::Type,
             _        => TokenKind::Ident,
         };
 

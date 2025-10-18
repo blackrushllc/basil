@@ -151,6 +151,8 @@ struct C {
     fn_labels: HashMap<String, usize>,
     fn_goto_fixups: Vec<(usize, usize, String)>,
     fn_gosub_fixups: Vec<(usize, usize, String)>,
+    // Recorded TYPE definitions: map uppercase type name -> fields
+    struct_types: HashMap<String, Vec<basil_ast::StructField>>,
 }
 
 impl C {
@@ -173,6 +175,7 @@ impl C {
             fn_labels: HashMap::new(),
             fn_goto_fixups: Vec::new(),
             fn_gosub_fixups: Vec::new(),
+            struct_types: HashMap::new(),
         }
     }
 
@@ -198,6 +201,22 @@ impl C {
                 let g = self.gslot(name);
                 self.chunk.push_op(Op::StoreGlobal);
                 self.chunk.push_u8(g);
+            }
+
+            Stmt::TypeDef { name, fields } => {
+                // Record TYPE definition for later struct variable initializations
+                let key = name.to_ascii_uppercase();
+                self.struct_types.insert(key, fields.clone());
+            }
+
+            Stmt::DimFixedStr { name, len: _ } => {
+                // Initialize fixed-length string as empty string for now (semantics TBD)
+                let mut chunk = std::mem::take(&mut self.chunk);
+                let ci = chunk.add_const(Value::Str(String::new()));
+                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.chunk = chunk;
             }
 
             // Top-level LET/PRINT/EXPR: move chunk out to avoid &mut self + &mut self.chunk alias.
@@ -440,14 +459,43 @@ impl C {
             }
             Stmt::DimObject { name, type_name, args } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
-                // push args
-                for a in args { self.emit_expr_in(&mut chunk, a, None)?; }
-                // get type name constant index
-                let tci = chunk.add_const(Value::Str(type_name.clone()));
-                // emit NEW_OBJ (note: VM expects type const index operand then argc)
-                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
-                let g = self.gslot(name);
-                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                let key = type_name.to_ascii_uppercase();
+                if let Some(fields) = self.struct_types.get(&key) {
+                    // Build a dictionary of default field values
+                    for f in fields.iter() {
+                        let kci = chunk.add_const(Value::Str(f.name.clone()));
+                        chunk.push_op(Op::Const); chunk.push_u16(kci);
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => {
+                                let ci = chunk.add_const(Value::Int(0));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            }
+                            basil_ast::StructFieldKind::Float64 => {
+                                let ci = chunk.add_const(Value::Num(0.0));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            }
+                            basil_ast::StructFieldKind::VarString | basil_ast::StructFieldKind::FixedString(_) => {
+                                let ci = chunk.add_const(Value::Str(String::new()));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            }
+                            basil_ast::StructFieldKind::Struct(_) => {
+                                // empty dict for nested struct
+                                chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(0u8);
+                            }
+                        }
+                    }
+                    let argc = (fields.len() * 2) as u8;
+                    chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
+                    let g = self.gslot(name);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                } else {
+                    // Fallback: object instance via registry
+                    for a in args { self.emit_expr_in(&mut chunk, a, None)?; }
+                    let tci = chunk.add_const(Value::Str(type_name.clone()));
+                    chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
+                    let g = self.gslot(name);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                }
                 self.chunk = chunk;
             }
             Stmt::SetProp { target, prop, value } => {
@@ -832,6 +880,18 @@ impl C {
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
             }
+            Stmt::TypeDef { name, fields } => {
+                // Record TYPE definitions inside functions as well (no code emitted)
+                let key = name.to_ascii_uppercase();
+                self.struct_types.insert(key, fields.clone());
+            }
+            Stmt::DimFixedStr { name, len: _ } => {
+                // Initialize fixed-length string local as empty string for now
+                let ci = chunk.add_const(Value::Str(String::new()));
+                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                let slot = env.bind_next_if_absent(name.clone());
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+            }
             Stmt::With { target, body } => {
                 // Evaluate target once into a hidden local and push with-scope
                 self.emit_expr_in(chunk, target, Some(env))?;
@@ -982,9 +1042,26 @@ impl C {
                 self.fn_gosub_fixups.push((op_pos, u16_pos, name.clone()));
             }
             Stmt::DimObject { name, type_name, args } => {
-                for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
-                let tci = chunk.add_const(Value::Str(type_name.clone()));
-                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
+                let key = type_name.to_ascii_uppercase();
+                if let Some(fields) = self.struct_types.get(&key) {
+                    // Build a dictionary of default field values
+                    for f in fields.iter() {
+                        let kci = chunk.add_const(Value::Str(f.name.clone()));
+                        chunk.push_op(Op::Const); chunk.push_u16(kci);
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                            basil_ast::StructFieldKind::Float64 => { let ci = chunk.add_const(Value::Num(0.0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                            basil_ast::StructFieldKind::VarString | basil_ast::StructFieldKind::FixedString(_) => { let ci = chunk.add_const(Value::Str(String::new())); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                            basil_ast::StructFieldKind::Struct(_) => { chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(0u8); }
+                        }
+                    }
+                    let argc = (fields.len() * 2) as u8;
+                    chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
+                } else {
+                    for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
+                    let tci = chunk.add_const(Value::Str(type_name.clone()));
+                    chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
+                }
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
@@ -1911,6 +1988,16 @@ impl C {
                 self.emit_expr_in(chunk, target, None)?;
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
+            }
+            Stmt::TypeDef { name, fields } => {
+                let key = name.to_ascii_uppercase();
+                self.struct_types.insert(key, fields.clone());
+            }
+            Stmt::DimFixedStr { name, len: _ } => {
+                let ci = chunk.add_const(Value::Str(String::new()));
+                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
             }
             Stmt::Raise(expr_opt) => {
                 match expr_opt {
