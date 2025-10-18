@@ -5,7 +5,7 @@ Welcome to the OK prompt — Basil’s rad, old‑school immediate mode CLI insp
 Banner vibes:
 
 BASIL - A BASIC Bytecode Interpreter and Compiler
-Copyright (C) Blackrush LLC - All Rights Reserved.
+Copyright (C) Blackrush LLC .
 Open Source Software under MIT License
 
 Then you’ll see the prompt style:

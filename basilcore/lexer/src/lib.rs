@@ -10,7 +10,7 @@
  ░    ░   ░ ░    ░   ▒   ░        ░ ░░ ░   ░░   ░  ░░░ ░ ░ ░  ░  ░   ░  ░░ ░
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
-Copyright (C) 2026, Blackrush LLC, All Rights Reserved
+Copyright (C) 2026, Blackrush LLC
 Created by Erik Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 
@@ -44,7 +44,7 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     // Single-char
-    LParen, RParen, LBrace, RBrace, Comma, Semicolon,
+    LParen, RParen, LBrace, RBrace, LBracket, RBracket, Comma, Semicolon, Colon,
     Plus, Minus, Star, Slash,
     Dot,
     Mod,
@@ -66,6 +66,7 @@ pub enum TokenKind {
     Describe,
     New,
     Class,
+    Type, // TYPE ... END TYPE definitions
     // New for SELECT CASE
     Select, Case, Is,
     // Exceptions
@@ -181,9 +182,11 @@ impl<'a> Lexer<'a> {
             ')' => { let tok = self.make(TokenKind::RParen);    self.advance(); tok }
             '{' => { let tok = self.make(TokenKind::LBrace);    self.advance(); tok }
             '}' => { let tok = self.make(TokenKind::RBrace);    self.advance(); tok }
+            '[' => { let tok = self.make(TokenKind::LBracket);  self.advance(); tok }
+            ']' => { let tok = self.make(TokenKind::RBracket);  self.advance(); tok }
             ',' => { let tok = self.make(TokenKind::Comma);     self.advance(); tok }
             ';' => { let tok = self.make(TokenKind::Semicolon); self.advance(); tok }
-            ':' => { let tok = self.make(TokenKind::Semicolon); self.advance(); tok }
+            ':' => { let tok = self.make(TokenKind::Colon);     self.advance(); tok }
             '+' => { let tok = self.make(TokenKind::Plus);      self.advance(); tok }
             '-' => { let tok = self.make(TokenKind::Minus);     self.advance(); tok }
             '*' => { let tok = self.make(TokenKind::Star);      self.advance(); tok }
@@ -595,6 +598,7 @@ impl<'a> Lexer<'a> {
             "MOD"    => TokenKind::Mod,
             "EXEC"   => TokenKind::Exec,
             "EVAL"   => TokenKind::Eval,
+            "TYPE"   => TokenKind::Type,
             _        => TokenKind::Ident,
         };
 

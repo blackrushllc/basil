@@ -10,7 +10,7 @@
  ░    ░   ░ ░    ░   ▒   ░        ░ ░░ ░   ░░   ░  ░░░ ░ ░ ░  ░  ░   ░  ░░ ░
  ░          ░  ░     ░  ░░ ░      ░  ░      ░        ░           ░   ░  ░  ░
       ░                  ░
-Copyright (C) 2026, Blackrush LLC, All Rights Reserved
+Copyright (C) 2026, Blackrush LLC
 Created by Erik Olson, Tarpon Springs, Florida
 For more information, visit BlackrushDrive.com
 
@@ -130,6 +130,7 @@ fn expr_contains_sub_call(routines: &HashMap<String, RoutineInfo>, e: &Expr) -> 
 }
 
 struct C {
+    cur_line: u32,
     chunk: Chunk,
     globals: Vec<String>,
     gmap: HashMap<String, u8>,
@@ -140,6 +141,8 @@ struct C {
     with_counter: u32,
     with_stack_tl: Vec<String>,
     with_stack_fn: Vec<String>,
+    // Explicit tracking of active WITH target names (stack)
+    with_current_stack: Vec<String>,
     // Label/GOTO support (top-level)
     tl_labels: HashMap<String, usize>,
     tl_goto_fixups: Vec<(usize, usize, String)>, // (op_pos, u16_pos, label)
@@ -148,12 +151,22 @@ struct C {
     fn_labels: HashMap<String, usize>,
     fn_goto_fixups: Vec<(usize, usize, String)>,
     fn_gosub_fixups: Vec<(usize, usize, String)>,
+    // Recorded TYPE definitions: map uppercase type name -> fields
+    struct_types: HashMap<String, Vec<basil_ast::StructField>>,
+    // Fixed-length string metadata: globals
+    fixed_globs: HashMap<String, usize>,
+    // Struct variable type bindings for globals
+    var_struct_globs: HashMap<String, String>,            // var -> TypeName (upper)
+    // Arrays of struct element type bindings (globals)
+    var_struct_array_globs: HashMap<String, String>,
 }
 
 impl C {
     fn new() -> Self {
         Self {
+            cur_line: 0,
             chunk: Chunk::default(),
+            with_current_stack: Vec::new(),
             globals: Vec::new(),
             gmap: HashMap::new(),
             fn_names: HashSet::new(),
@@ -168,6 +181,10 @@ impl C {
             fn_labels: HashMap::new(),
             fn_goto_fixups: Vec::new(),
             fn_gosub_fixups: Vec::new(),
+            struct_types: HashMap::new(),
+            fixed_globs: HashMap::new(),
+            var_struct_globs: HashMap::new(),
+            var_struct_array_globs: HashMap::new(),
         }
     }
 
@@ -195,13 +212,93 @@ impl C {
                 self.chunk.push_u8(g);
             }
 
+            Stmt::TypeDef { name, fields } => {
+                // Record TYPE definition for later struct variable initializations
+                let key = name.to_ascii_uppercase();
+                self.struct_types.insert(key, fields.clone());
+                // Emit STRUCT_REG(name$, spec$)
+                let mut chunk = std::mem::take(&mut self.chunk);
+                let spec = {
+                    let mut s = String::new();
+                    for (i, f) in fields.iter().enumerate() {
+                        if i > 0 { s.push(';'); }
+                        s.push_str(&f.name);
+                        s.push('|');
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => s.push('I'),
+                            basil_ast::StructFieldKind::Float64 => s.push('F'),
+                            basil_ast::StructFieldKind::VarString => s.push('S'),
+                            basil_ast::StructFieldKind::FixedString(n) => { s.push('X'); s.push('|'); s.push_str(&n.to_string()); },
+                            basil_ast::StructFieldKind::Struct(tn) => { s.push('T'); s.push('|'); s.push_str(tn); },
+                        }
+                    }
+                    s
+                };
+                let nci = chunk.add_const(Value::Str(name.clone()));
+                let sci = chunk.add_const(Value::Str(spec));
+                chunk.push_op(Op::Const); chunk.push_u16(nci);
+                chunk.push_op(Op::Const); chunk.push_u16(sci);
+                // call STRUCT_REG (161)
+                chunk.push_op(Op::Builtin); chunk.push_u8(161u8); chunk.push_u8(2u8);
+                chunk.push_op(Op::Pop);
+                self.chunk = chunk;
+            }
+
+            Stmt::DimFixedStr { name, len } => {
+                // Record metadata and initialize to empty string
+                self.fixed_globs.insert(name.clone(), *len);
+                let mut chunk = std::mem::take(&mut self.chunk);
+                let ci = chunk.add_const(Value::Str(String::new()));
+                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.chunk = chunk;
+            }
+
             // Top-level LET/PRINT/EXPR: move chunk out to avoid &mut self + &mut self.chunk alias.
             Stmt::Let { name, indices, init } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 match indices {
                     None => {
+                        // Detect struct <-> string pack/unpack first
+                        if let Some(ty_s) = self.var_struct_globs.get(name).cloned() {
+                            // LET <struct> = <string>
+                            if let Expr::Var(rn) = init {
+                                if rn.ends_with('$') {
+                                    // push RHS string, then type name, call STRUCT_UNPACK (164)
+                                    self.emit_expr_in(&mut chunk, init, None)?;
+                                    let tci = chunk.add_const(Value::Str(ty_s.clone()));
+                                    chunk.push_op(Op::Const); chunk.push_u16(tci);
+                                    chunk.push_op(Op::Builtin); chunk.push_u8(164u8); chunk.push_u8(2u8);
+                                    let g = self.gslot(name);
+                                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                                    self.chunk = chunk; return Ok(());
+                                }
+                            }
+                        }
+                        if name.ends_with('$') {
+                            // LET <string> = <struct> ? pack
+                            if let Expr::Var(rn) = init {
+                                if let Some(ty_s) = self.var_struct_globs.get(rn).cloned() {
+                                    self.emit_expr_in(&mut chunk, init, None)?; // push dict
+                                    let tci = chunk.add_const(Value::Str(ty_s.clone()));
+                                    chunk.push_op(Op::Const); chunk.push_u16(tci);
+                                    chunk.push_op(Op::Builtin); chunk.push_u8(163u8); chunk.push_u8(2u8);
+                                    let g = self.gslot(name);
+                                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                                    self.chunk = chunk; return Ok(());
+                                }
+                            }
+                        }
+                        // Regular assignment with possible fixed-length enforcement and % coercion
                         self.emit_expr_in(&mut chunk, init, None)?;
-                        if name.ends_with('%') { chunk.push_op(Op::ToInt); }
+                        if let Some(n) = self.fixed_globs.get(name) {
+                            let ci = chunk.add_const(Value::Int(*n as i64));
+                            chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            chunk.push_op(Op::Builtin); chunk.push_u8(160u8); chunk.push_u8(2u8);
+                        } else if name.ends_with('%') {
+                            chunk.push_op(Op::ToInt);
+                        }
                         let g = self.gslot(name);
                         chunk.push_op(Op::StoreGlobal);
                         chunk.push_u8(g);
@@ -242,7 +339,11 @@ impl C {
                 for d in dims { self.emit_expr_in(&mut chunk, d, None)?; }
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 chunk.push_u8(3u8); // object array
-                let tci = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 65535u16 };
+                let tci = if let Some(tn) = type_name {
+                    // Record global array element type binding
+                    self.var_struct_array_globs.insert(name.clone(), tn.to_ascii_uppercase());
+                    chunk.add_const(Value::Str(tn.clone()))
+                } else { 65535u16 };
                 chunk.push_u16(tci);
                 let g = self.gslot(name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
@@ -275,7 +376,9 @@ impl C {
                 let g = self.gslot(&name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.with_stack_tl.push(name.clone());
+                self.with_current_stack.push(name.clone());
                 for s2 in body { self.emit_stmt_tl_in_chunk(&mut chunk, s2)?; }
+                self.with_current_stack.pop();
                 self.with_stack_tl.pop();
                 self.chunk = chunk;
             }
@@ -433,23 +536,82 @@ impl C {
             }
             Stmt::DimObject { name, type_name, args } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
-                // push args
-                for a in args { self.emit_expr_in(&mut chunk, a, None)?; }
-                // get type name constant index
-                let tci = chunk.add_const(Value::Str(type_name.clone()));
-                // emit NEW_OBJ (note: VM expects type const index operand then argc)
-                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
-                let g = self.gslot(name);
-                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                let key = type_name.to_ascii_uppercase();
+                // Record global struct variable type binding
+                self.var_struct_globs.insert(name.clone(), key.clone());
+                if let Some(fields) = self.struct_types.get(&key) {
+                    // Build a dictionary of default field values
+                    for f in fields.iter() {
+                        let kci = chunk.add_const(Value::Str(f.name.clone()));
+                        chunk.push_op(Op::Const); chunk.push_u16(kci);
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => {
+                                let ci = chunk.add_const(Value::Int(0));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            }
+                            basil_ast::StructFieldKind::Float64 => {
+                                let ci = chunk.add_const(Value::Num(0.0));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            }
+                            basil_ast::StructFieldKind::VarString | basil_ast::StructFieldKind::FixedString(_) => {
+                                let ci = chunk.add_const(Value::Str(String::new()));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            }
+                            basil_ast::StructFieldKind::Struct(_) => {
+                                // empty dict for nested struct
+                                chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(0u8);
+                            }
+                        }
+                    }
+                    let argc = (fields.len() * 2) as u8;
+                    chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
+                    let g = self.gslot(name);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                } else {
+                    // Fallback: object instance via registry
+                    for a in args { self.emit_expr_in(&mut chunk, a, None)?; }
+                    let tci = chunk.add_const(Value::Str(type_name.clone()));
+                    chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
+                    let g = self.gslot(name);
+                    chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                }
                 self.chunk = chunk;
             }
             Stmt::SetProp { target, prop, value } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
+                // push target object/dict first
                 self.emit_expr_in(&mut chunk, target, None)?;
+                // Determine field coercion if target is a known struct type
+                let mut coerce_to_int = false;
+                let mut fixed_n_opt: Option<usize> = None;
+                if let Some(ty) = self.resolve_struct_type_of_expr(target) {
+                    if let Some(kind) = self.field_kind_of(&ty, prop) {
+                        match kind {
+                            basil_ast::StructFieldKind::Int32 => coerce_to_int = true,
+                            basil_ast::StructFieldKind::FixedString(n) => fixed_n_opt = Some(n),
+                            _ => {}
+                        }
+                    }
+                }
+                // push value and apply coercions if needed
                 self.emit_expr_in(&mut chunk, value, None)?;
+                if coerce_to_int { chunk.push_op(Op::ToInt); }
+                if let Some(n) = fixed_n_opt {
+                    let ci = chunk.add_const(Value::Int(n as i64));
+                    chunk.push_op(Op::Const); chunk.push_u16(ci);
+                    chunk.push_op(Op::Builtin); chunk.push_u8(160u8); chunk.push_u8(2u8);
+                }
                 // property name const index
                 let pci = chunk.add_const(Value::Str(prop.clone()));
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
+                self.chunk = chunk;
+            }
+            Stmt::SetIndexSquare { target, index, value } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, target, None)?;
+                self.emit_expr_in(&mut chunk, index, None)?;
+                self.emit_expr_in(&mut chunk, value, None)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
                 self.chunk = chunk;
             }
             Stmt::ExprStmt(e) => {
@@ -489,6 +651,7 @@ impl C {
                 self.chunk = chunk;
             }
             Stmt::Line(line) => {
+                self.cur_line = *line;
                 let mut chunk = std::mem::take(&mut self.chunk);
                 chunk.push_op(Op::SetLine);
                 chunk.push_u16((*line as u16).min(u16::MAX));
@@ -737,8 +900,53 @@ impl C {
             Stmt::Let { name, indices, init } => {
                 match indices {
                     None => {
+                        // Detect struct <-> string conversions first
+                        if let Some(ty_s) = env.var_struct.get(name).cloned().or_else(|| self.var_struct_globs.get(name).cloned()) {
+                            if let Expr::Var(rn) = init {
+                                if rn.ends_with('$') {
+                                    // UNPACK: push rhs, type name, call 164
+                                    self.emit_expr_in(chunk, init, Some(env))?;
+                                    let tci = chunk.add_const(Value::Str(ty_s.clone()));
+                                    chunk.push_op(Op::Const); chunk.push_u16(tci);
+                                    chunk.push_op(Op::Builtin); chunk.push_u8(164u8); chunk.push_u8(2u8);
+                                    // store to local/global using same logic
+                                    if let Some(slot) = env.lookup(name) {
+                                        chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                                    } else if self.gmap.contains_key(name) && !self.routines.contains_key(&name.to_ascii_uppercase()) {
+                                        let g = self.gslot(name); chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                                    } else {
+                                        let slot = env.bind_next_if_absent(name.clone()); chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                                    }
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        if name.ends_with('$') {
+                            if let Expr::Var(rn) = init {
+                                if let Some(ty_s) = env.var_struct.get(rn).cloned().or_else(|| self.var_struct_globs.get(rn).cloned()) {
+                                    // PACK: push dict, type name, call 163
+                                    self.emit_expr_in(chunk, init, Some(env))?;
+                                    let tci = chunk.add_const(Value::Str(ty_s.clone()));
+                                    chunk.push_op(Op::Const); chunk.push_u16(tci);
+                                    chunk.push_op(Op::Builtin); chunk.push_u8(163u8); chunk.push_u8(2u8);
+                                    if let Some(slot) = env.lookup(name) {
+                                        chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                                    } else if self.gmap.contains_key(name) && !self.routines.contains_key(&name.to_ascii_uppercase()) {
+                                        let g = self.gslot(name); chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                                    } else {
+                                        let slot = env.bind_next_if_absent(name.clone()); chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                                    }
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        // Regular assignment with fixed-string/int coercion
                         self.emit_expr_in(chunk, init, Some(env))?;
-                        if name.ends_with('%') { chunk.push_op(Op::ToInt); }
+                        if let Some(n) = env.fixed.get(name).copied() {
+                            let ci = chunk.add_const(Value::Int(n as i64));
+                            chunk.push_op(Op::Const); chunk.push_u16(ci);
+                            chunk.push_op(Op::Builtin); chunk.push_u8(160u8); chunk.push_u8(2u8);
+                        } else if name.ends_with('%') { chunk.push_op(Op::ToInt); }
                         // If a local with this name already exists, store into it.
                         if let Some(slot) = env.lookup(name) {
                             chunk.push_op(Op::StoreLocal);
@@ -794,11 +1002,22 @@ impl C {
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
+            Stmt::DimFixedStr { name, len } => {
+                // record local fixed-length string and init to empty
+                env.fixed.insert(name.clone(), *len);
+                let ci = chunk.add_const(Value::Str(String::new()));
+                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                let slot = env.bind_next_if_absent(name.clone());
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+            }
             Stmt::DimObjectArray { name, dims, type_name } => {
                 for d in dims { self.emit_expr_in(chunk, d, Some(env))?; }
                 chunk.push_op(Op::ArrMake); chunk.push_u8(dims.len() as u8);
                 chunk.push_u8(3u8);
-                let tci: u16 = if let Some(tn) = type_name { chunk.add_const(Value::Str(tn.clone())) } else { 65535u16 };
+                let tci: u16 = if let Some(tn) = type_name {
+                    env.var_struct_array.insert(name.clone(), tn.to_ascii_uppercase());
+                    chunk.add_const(Value::Str(tn.clone()))
+                } else { 65535u16 };
                 chunk.push_u16(tci);
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
@@ -816,6 +1035,33 @@ impl C {
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
             }
+            Stmt::TypeDef { name, fields } => {
+                // Record TYPE definitions inside functions as well and register at runtime
+                let key = name.to_ascii_uppercase();
+                self.struct_types.insert(key, fields.clone());
+                let spec = {
+                    let mut s = String::new();
+                    for (i, f) in fields.iter().enumerate() {
+                        if i > 0 { s.push(';'); }
+                        s.push_str(&f.name);
+                        s.push('|');
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => s.push('I'),
+                            basil_ast::StructFieldKind::Float64 => s.push('F'),
+                            basil_ast::StructFieldKind::VarString => s.push('S'),
+                            basil_ast::StructFieldKind::FixedString(n) => { s.push('X'); s.push('|'); s.push_str(&n.to_string()); },
+                            basil_ast::StructFieldKind::Struct(tn) => { s.push('T'); s.push('|'); s.push_str(tn); },
+                        }
+                    }
+                    s
+                };
+                let nci = chunk.add_const(Value::Str(name.clone()));
+                let sci = chunk.add_const(Value::Str(spec));
+                chunk.push_op(Op::Const); chunk.push_u16(nci);
+                chunk.push_op(Op::Const); chunk.push_u16(sci);
+                chunk.push_op(Op::Builtin); chunk.push_u8(161u8); chunk.push_u8(2u8);
+                chunk.push_op(Op::Pop);
+            }
             Stmt::With { target, body } => {
                 // Evaluate target once into a hidden local and push with-scope
                 self.emit_expr_in(chunk, target, Some(env))?;
@@ -824,7 +1070,9 @@ impl C {
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
                 self.with_stack_fn.push(name.clone());
+                self.with_current_stack.push(name.clone());
                 for s2 in body { self.emit_stmt_func(chunk, s2, env)?; }
+                self.with_current_stack.pop();
                 self.with_stack_fn.pop();
             }
             Stmt::Raise(expr_opt) => {
@@ -964,17 +1212,62 @@ impl C {
                 self.fn_gosub_fixups.push((op_pos, u16_pos, name.clone()));
             }
             Stmt::DimObject { name, type_name, args } => {
-                for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
-                let tci = chunk.add_const(Value::Str(type_name.clone()));
-                chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
+                let key = type_name.to_ascii_uppercase();
+                // record local struct var binding
+                env.var_struct.insert(name.clone(), key.clone());
+                if let Some(fields) = self.struct_types.get(&key) {
+                    // Build a dictionary of default field values
+                    for f in fields.iter() {
+                        let kci = chunk.add_const(Value::Str(f.name.clone()));
+                        chunk.push_op(Op::Const); chunk.push_u16(kci);
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => { let ci = chunk.add_const(Value::Int(0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                            basil_ast::StructFieldKind::Float64 => { let ci = chunk.add_const(Value::Num(0.0)); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                            basil_ast::StructFieldKind::VarString | basil_ast::StructFieldKind::FixedString(_) => { let ci = chunk.add_const(Value::Str(String::new())); chunk.push_op(Op::Const); chunk.push_u16(ci); }
+                            basil_ast::StructFieldKind::Struct(_) => { chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(0u8); }
+                        }
+                    }
+                    let argc = (fields.len() * 2) as u8;
+                    chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
+                } else {
+                    for a in args { self.emit_expr_in(chunk, a, Some(env))?; }
+                    let tci = chunk.add_const(Value::Str(type_name.clone()));
+                    chunk.push_op(Op::NewObj); chunk.push_u16(tci); chunk.push_u8(args.len() as u8);
+                }
                 let slot = env.bind_next_if_absent(name.clone());
                 chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
             }
             Stmt::SetProp { target, prop, value } => {
+                // push target first
                 self.emit_expr_in(chunk, target, Some(env))?;
+                // Determine field coercion
+                let mut coerce_to_int = false;
+                let mut fixed_n_opt: Option<usize> = None;
+                if let Some(ty) = self.resolve_struct_type_of_expr_in_fn(target, env) {
+                    if let Some(kind) = self.field_kind_of(&ty, prop) {
+                        match kind {
+                            basil_ast::StructFieldKind::Int32 => coerce_to_int = true,
+                            basil_ast::StructFieldKind::FixedString(n) => fixed_n_opt = Some(n),
+                            _ => {}
+                        }
+                    }
+                }
+                // push value and apply
                 self.emit_expr_in(chunk, value, Some(env))?;
+                if coerce_to_int { chunk.push_op(Op::ToInt); }
+                if let Some(n) = fixed_n_opt {
+                    let ci = chunk.add_const(Value::Int(n as i64));
+                    chunk.push_op(Op::Const); chunk.push_u16(ci);
+                    chunk.push_op(Op::Builtin); chunk.push_u8(160u8); chunk.push_u8(2u8);
+                }
                 let pci = chunk.add_const(Value::Str(prop.clone()));
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
+            }
+            Stmt::SetIndexSquare { target, index, value } => {
+                self.emit_expr_in(chunk, target, Some(env))?;
+                self.emit_expr_in(chunk, index, Some(env))?;
+                self.emit_expr_in(chunk, value, Some(env))?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
             }
             Stmt::ExprStmt(e) => {
                 // Special-case: direct SUB call as a statement
@@ -1006,6 +1299,7 @@ impl C {
                 chunk.push_op(Op::Pop);
             }
             Stmt::Line(line) => {
+                self.cur_line = *line;
                 chunk.push_op(Op::SetLine);
                 chunk.push_u16((*line as u16).min(u16::MAX));
             }
@@ -1261,6 +1555,26 @@ impl C {
                 let idx = chunk.add_const(Value::Bool(*b));
                 chunk.push_op(Op::Const); chunk.push_u16(idx);
             }
+            Expr::List(items) => {
+                // Evaluate items left-to-right, then call MAKE_LIST builtin with argc
+                for it in items { self.emit_expr_in(chunk, it, env)?; }
+                chunk.push_op(Op::Builtin); chunk.push_u8(251u8); chunk.push_u8(items.len() as u8);
+            }
+            Expr::Dict(entries) => {
+                // Push key (string const) then value expr for each entry; call MAKE_DICT with 2*len args
+                for (k, v) in entries {
+                    let ki = chunk.add_const(Value::Str(k.clone()));
+                    chunk.push_op(Op::Const); chunk.push_u16(ki);
+                    self.emit_expr_in(chunk, v, env)?;
+                }
+                let argc = (entries.len() * 2) as u8;
+                chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
+            }
+            Expr::IndexSquare { target, index } => {
+                self.emit_expr_in(chunk, target, env)?;
+                self.emit_expr_in(chunk, index, env)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(253u8); chunk.push_u8(2u8);
+            }
             Expr::Var(name) => {
                 // Minimal constants for object features
                 let uname = name.to_ascii_uppercase();
@@ -1382,6 +1696,62 @@ impl C {
                         }
                     }
                     // Detect other built-in string functions by name and emit a Builtin opcode instead of a call
+                    // Special handling for LEN for compile-time folding of fixed strings and struct sizes
+                    if uname == "LEN" && args.len() == 1 {
+                        // Try folding cases in order
+                        let a0 = &args[0];
+                        // 1) LEN(fixedVar$)
+                        if let Expr::Var(vn) = a0 {
+                            if let Some(env) = env {
+                                if let Some(&n) = env.fixed.get(vn) {
+                                    let ci = chunk.add_const(Value::Int(n as i64));
+                                    chunk.push_op(Op::Const); chunk.push_u16(ci);
+                                    return Ok(());
+                                }
+                            }
+                            if let Some(&n) = self.fixed_globs.get(vn) {
+                                let ci = chunk.add_const(Value::Int(n as i64));
+                                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                                return Ok(());
+                            }
+                            // 2) LEN(varStruct) where var is known struct type with fixed size
+                            let ty_opt = if let Some(env) = env { env.var_struct.get(vn).cloned() } else { None }
+                                .or_else(|| self.var_struct_globs.get(vn).cloned());
+                            if let Some(tyu) = ty_opt {
+                                if let Some(sz) = self.compute_struct_fixed_size(&tyu) {
+                                    let ci = chunk.add_const(Value::Int(sz as i64));
+                                    chunk.push_op(Op::Const); chunk.push_u16(ci);
+                                    return Ok(());
+                                }
+                            }
+                            // 3) LEN(TypeName) — if looks like a type (no var bound and exists in struct_types)
+                            let is_var_bound = if let Some(env) = env { env.lookup(vn).is_some() } else { false } || self.gmap.contains_key(vn);
+                            let tkey = vn.to_ascii_uppercase();
+                            if !is_var_bound {
+                                if self.struct_types.contains_key(&tkey) {
+                                    let sz = self.compute_struct_fixed_size(&tkey).unwrap_or(0);
+                                    let ci = chunk.add_const(Value::Int(sz as i64));
+                                    chunk.push_op(Op::Const); chunk.push_u16(ci);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        // 4) LEN(rec.Field$) when Field is fixed-length
+                        if let Expr::MemberGet { target, name } = a0 {
+                            // resolve type of target
+                            let ty_opt = if let Some(env) = env { self.resolve_struct_type_of_expr_in_fn(target, env) } else { self.resolve_struct_type_of_expr(target) };
+                            if let Some(tyu) = ty_opt {
+                                if let Some(k) = self.field_kind_of(&tyu, name) {
+                                    if let basil_ast::StructFieldKind::FixedString(n) = k {
+                                        let ci = chunk.add_const(Value::Int(n as i64));
+                                        chunk.push_op(Op::Const); chunk.push_u16(ci);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                        // Fallback: emit normal LEN builtin
+                    }
                     let bid = match &*uname {
                         "LEN" => Some(1u8),
                         "MID$" => Some(2u8),
@@ -1628,27 +1998,44 @@ impl C {
                 chunk.push_op(Op::EvalString);
             }
             Expr::ImplicitThis => {
-                // Load the current WITH target (local inside functions, global at top level)
-                match env {
-                    Some(env) => {
-                        if let Some(nm) = self.with_stack_fn.last().cloned() {
+                // Prefer explicit current WITH target if present
+                if let Some(nm) = self.with_current_stack.last().cloned() {
+                    match env {
+                        Some(env) => {
                             if let Some(slot) = env.lookup(&nm) {
                                 chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
                             } else {
-                                // Fallback to global if somehow not found locally
                                 let g = self.gslot(&nm);
                                 chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                             }
-                        } else {
-                            return Err(BasilError("Leading '.' member requires a WITH block.".into()));
                         }
-                    }
-                    None => {
-                        if let Some(nm) = self.with_stack_tl.last().cloned() {
+                        None => {
                             let g = self.gslot(&nm);
                             chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
-                        } else {
-                            return Err(BasilError("Leading '.' member requires a WITH block.".into()));
+                        }
+                    }
+                } else {
+                    // Load the current WITH target from legacy stacks as fallback; if none, error at compile time
+                    match env {
+                        Some(env) => {
+                            if let Some(nm) = self.with_stack_fn.last().cloned() {
+                                if let Some(slot) = env.lookup(&nm) {
+                                    chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                                } else {
+                                    let g = self.gslot(&nm);
+                                    chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                                }
+                            } else {
+                                return Err(BasilError(format!("Leading '.' member requires a WITH block (at line {})", self.cur_line)));
+                            }
+                        }
+                        None => {
+                            if let Some(nm) = self.with_stack_tl.last().cloned() {
+                                let g = self.gslot(&nm);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            } else {
+                                return Err(BasilError(format!("Leading '.' member requires a WITH block (at line {})", self.cur_line)));
+                            }
                         }
                     }
                 }
@@ -1663,9 +2050,13 @@ impl C {
 struct LocalEnv {
     map: HashMap<String, u8>,
     next: u8,
+    // function-scope metadata
+    fixed: HashMap<String, usize>,                 // local fixed-length strings
+    var_struct: HashMap<String, String>,           // local struct vars: var -> TypeName (upper)
+    var_struct_array: HashMap<String, String>,     // local arrays of struct: var -> ElemTypeName (upper)
 }
 impl LocalEnv {
-    fn new() -> Self { Self { map: HashMap::new(), next: 0 } }
+    fn new() -> Self { Self { map: HashMap::new(), next: 0, fixed: HashMap::new(), var_struct: HashMap::new(), var_struct_array: HashMap::new() } }
     fn bind(&mut self, name: String, slot: u8) { self.map.insert(name, slot); self.next = self.next.max(slot + 1); }
     fn bind_next_if_absent(&mut self, name: String) -> u8 {
         if let Some(&i) = self.map.get(&name) { return i; }
@@ -1850,6 +2241,41 @@ impl C {
                 chunk.push_op(Op::DescribeObj);
                 chunk.push_op(Op::Print);
             }
+            Stmt::TypeDef { name, fields } => {
+                let key = name.to_ascii_uppercase();
+                self.struct_types.insert(key, fields.clone());
+                // Emit STRUCT_REG(name$, spec$) at top-level in-chunk
+                let spec = {
+                    let mut s = String::new();
+                    for (i, f) in fields.iter().enumerate() {
+                        if i > 0 { s.push(';'); }
+                        s.push_str(&f.name);
+                        s.push('|');
+                        match &f.kind {
+                            basil_ast::StructFieldKind::Int32 => s.push('I'),
+                            basil_ast::StructFieldKind::Float64 => s.push('F'),
+                            basil_ast::StructFieldKind::VarString => s.push('S'),
+                            basil_ast::StructFieldKind::FixedString(n) => { s.push('X'); s.push('|'); s.push_str(&n.to_string()); },
+                            basil_ast::StructFieldKind::Struct(tn) => { s.push('T'); s.push('|'); s.push_str(tn); },
+                        }
+                    }
+                    s
+                };
+                let nci = chunk.add_const(Value::Str(name.clone()));
+                let sci = chunk.add_const(Value::Str(spec));
+                chunk.push_op(Op::Const); chunk.push_u16(nci);
+                chunk.push_op(Op::Const); chunk.push_u16(sci);
+                chunk.push_op(Op::Builtin); chunk.push_u8(161u8); chunk.push_u8(2u8);
+                chunk.push_op(Op::Pop);
+            }
+            Stmt::DimFixedStr { name, len } => {
+                // Record metadata and initialize to empty string (top-level in-chunk)
+                self.fixed_globs.insert(name.clone(), *len);
+                let ci = chunk.add_const(Value::Str(String::new()));
+                chunk.push_op(Op::Const); chunk.push_u16(ci);
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+            }
             Stmt::Raise(expr_opt) => {
                 match expr_opt {
                     Some(e) => { self.emit_expr_in(chunk, e, None)?; chunk.push_op(Op::Raise); }
@@ -2009,11 +2435,18 @@ impl C {
                 let pci = chunk.add_const(Value::Str(prop.clone()));
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
+            Stmt::SetIndexSquare { target, index, value } => {
+                self.emit_expr_in(chunk, target, None)?;
+                self.emit_expr_in(chunk, index, None)?;
+                self.emit_expr_in(chunk, value, None)?;
+                chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
+            }
             Stmt::ExprStmt(e) => {
                 self.emit_expr_in(chunk, e, None)?;
                 chunk.push_op(Op::Pop);
             }
             Stmt::Line(line) => {
+                self.cur_line = *line;
                 chunk.push_op(Op::SetLine);
                 chunk.push_u16((*line as u16).min(u16::MAX));
             }
@@ -2092,7 +2525,9 @@ impl C {
                 let g = self.gslot(&name);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 self.with_stack_tl.push(name.clone());
+                self.with_current_stack.push(name.clone());
                 for s2 in body { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
+                self.with_current_stack.pop();
                 self.with_stack_tl.pop();
             }
             Stmt::For { var, start, end, step, body } => {
@@ -2172,3 +2607,84 @@ impl C {
 
 // loop context for BREAK/CONTINUE within WHILE loops
 struct LoopCtx { test_here: usize, break_sites: Vec<usize> }
+
+
+// --- Helpers for struct/fixed-string lowering ---
+impl C {
+    fn resolve_struct_type_of_expr(&self, e: &Expr) -> Option<String> {
+        match e {
+            Expr::Var(name) => self.var_struct_globs.get(name).cloned(),
+            Expr::Call { callee, .. } => {
+                if let Expr::Var(arr_name) = &**callee {
+                    self.var_struct_array_globs.get(arr_name).cloned()
+                } else { None }
+            }
+            Expr::MemberGet { target, name } => {
+                if let Some(parent_ty) = self.resolve_struct_type_of_expr(target) {
+                    if let Some(kind) = self.field_kind_of(&parent_ty, name) {
+                        if let basil_ast::StructFieldKind::Struct(nested) = kind { return Some(nested.to_ascii_uppercase()); }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+    fn field_kind_of(&self, type_upper: &str, field: &str) -> Option<basil_ast::StructFieldKind> {
+        let uname = type_upper.to_ascii_uppercase();
+        let fields = self.struct_types.get(&uname)?;
+        for f in fields {
+            if f.name.eq_ignore_ascii_case(field) { return Some(f.kind.clone()); }
+        }
+        None
+    }
+}
+
+
+impl C {
+    fn resolve_struct_type_of_expr_in_fn(&self, e: &Expr, env: &LocalEnv) -> Option<String> {
+        match e {
+            Expr::Var(name) => env.var_struct.get(name).cloned().or_else(|| self.var_struct_globs.get(name).cloned()),
+            Expr::Call { callee, .. } => {
+                if let Expr::Var(arr_name) = &**callee {
+                    env.var_struct_array.get(arr_name).cloned().or_else(|| self.var_struct_array_globs.get(arr_name).cloned())
+                } else { None }
+            }
+            Expr::MemberGet { target, name } => {
+                if let Some(parent_ty) = self.resolve_struct_type_of_expr_in_fn(target, env) {
+                    if let Some(kind) = self.field_kind_of(&parent_ty, name) {
+                        if let basil_ast::StructFieldKind::Struct(nested) = kind { return Some(nested.to_ascii_uppercase()); }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    // Compute fixed size of a struct type if all fields are fixed-size; otherwise return None
+    fn compute_struct_fixed_size(&self, type_upper: &str) -> Option<usize> {
+        fn inner(this: &C, tyu: &str, seen: &mut HashSet<String>) -> Option<usize> {
+            let key = tyu.to_ascii_uppercase();
+            if !this.struct_types.contains_key(&key) { return None; }
+            if seen.contains(&key) { return None; } // cycle
+            seen.insert(key.clone());
+            let mut total: usize = 0;
+            for f in this.struct_types.get(&key).unwrap() {
+                match &f.kind {
+                    basil_ast::StructFieldKind::Int32 => total += 4,
+                    basil_ast::StructFieldKind::Float64 => total += 8,
+                    basil_ast::StructFieldKind::FixedString(n) => total += *n,
+                    basil_ast::StructFieldKind::VarString => return None,
+                    basil_ast::StructFieldKind::Struct(nm) => {
+                        let sz = inner(this, &nm.to_ascii_uppercase(), seen)?;
+                        total += sz;
+                    }
+                }
+            }
+            Some(total)
+        }
+        let mut seen: HashSet<String> = HashSet::new();
+        inner(self, type_upper, &mut seen)
+    }
+}
