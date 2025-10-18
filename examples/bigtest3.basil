@@ -452,7 +452,7 @@ PRINTLN "URL decoded:  ", URLDECODE$(enc$);     REM -> name=Bob Smith & title=En
 
 
 REM Demonstrates ENV$, SETENV / EXPORTENV, SHELL, and EXIT
-SHELL "clear";
+SHELL "dir *.*";
 PRINTLN "=== Environment demo ===";
 
 PRINTLN "USERNAME before:", ENV$("USERNAME");

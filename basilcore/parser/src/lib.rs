@@ -466,6 +466,15 @@ impl Parser {
                     }
                 }
                 self.expect(TokenKind::RParen)?;
+                // Support LET arr(i).Prop = expr by detecting a following '.'
+                if self.match_k(TokenKind::Dot) {
+                    let prop = self.expect_member_name()?;
+                    self.expect(TokenKind::Assign)?;
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    let call = Expr::Call { callee: Box::new(Expr::Var(name)), args: idxs };
+                    return Ok(Stmt::SetProp { target: call, prop, value });
+                }
                 Some(idxs)
             } else { None };
             self.expect(TokenKind::Assign)?;
@@ -711,6 +720,40 @@ impl Parser {
             return Ok(Stmt::Block(inner));
         }
 
+        // TYPE ... END TYPE (struct definition) or TYPE Name { ... }
+        if self.match_k(TokenKind::Type) {
+            let type_name = self.expect_ident()?;
+            // Optional brace body
+            let mut fields: Vec<basil_ast::StructField> = Vec::new();
+            if self.match_k(TokenKind::LBrace) {
+                loop {
+                    while self.match_k(TokenKind::Semicolon) {}
+                    if self.check(TokenKind::RBrace) { let _ = self.next(); break; }
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated TYPE {{ ... }}", self.peek_line()))); }
+                    // Expect field declaration starting with DIM
+                    if !self.match_k(TokenKind::Dim) { return Err(BasilError(format!("parse error at line {}: expected DIM in TYPE body", self.peek_line()))); }
+                    let (fname, fkind) = self.parse_struct_field()?;
+                    fields.push(basil_ast::StructField { name: fname, kind: fkind });
+                }
+            } else {
+                // Classic TYPE ... END TYPE form
+                loop {
+                    while self.match_k(TokenKind::Semicolon) {}
+                    if self.check(TokenKind::End) {
+                        let _ = self.next(); // consume END
+                        if !self.match_k(TokenKind::Type) { return Err(BasilError(format!("parse error at line {}: expected 'END TYPE'", self.peek_line()))); }
+                        break;
+                    }
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated TYPE ... END TYPE", self.peek_line()))); }
+                    if !self.match_k(TokenKind::Dim) { return Err(BasilError(format!("parse error at line {}: expected DIM in TYPE body", self.peek_line()))); }
+                    let (fname, fkind) = self.parse_struct_field()?;
+                    fields.push(basil_ast::StructField { name: fname, kind: fkind });
+                }
+            }
+            self.terminate_stmt().ok(); // tolerate optional terminator
+            return Ok(Stmt::TypeDef { name: type_name, fields });
+        }
+
         if self.match_k(TokenKind::For) {
             // Check FOR EACH form first
             if self.match_k(TokenKind::Each) {
@@ -808,6 +851,15 @@ impl Parser {
 
         if self.match_k(TokenKind::Dim) {
             let name = self.expect_ident()?;
+            // Fixed-length string bracket form: DIM name$[N]
+            if name.ends_with('$') && self.match_k(TokenKind::LBracket) {
+                // Expect integer literal for N
+                let n_tok = self.expect(TokenKind::Number)?;
+                let n = if let Some(basil_lexer::Literal::Num(v)) = n_tok.literal { v as usize } else { 0usize };
+                self.expect(TokenKind::RBracket)?;
+                self.terminate_stmt()?;
+                return Ok(Stmt::DimFixedStr { name, len: n });
+            }
             if self.match_k(TokenKind::LParen) {
                 let mut dims = Vec::new();
                 if !self.check(TokenKind::RParen) {
@@ -841,6 +893,29 @@ impl Parser {
                     self.terminate_stmt()?;
                     return Ok(Stmt::Let { name, indices: None, init: Expr::NewClass { filename: Box::new(fname) } });
                 }
+                // Support: DIM name$ AS STRING * N  (fixed-length string)
+                if self.check(TokenKind::Ident) {
+                    // Peek without consuming to check for STRING
+                    let t = self.tokens.get(self.i).unwrap();
+                    if t.lexeme.eq_ignore_ascii_case("STRING") {
+                        let _ = self.next(); // consume IDENT("STRING")
+                        if self.match_k(TokenKind::Star) {
+                            let n_tok = self.expect(TokenKind::Number)?;
+                            let n = if let Some(basil_lexer::Literal::Num(v)) = n_tok.literal { v as usize } else { 0usize };
+                            self.terminate_stmt()?;
+                            return Ok(Stmt::DimFixedStr { name, len: n });
+                        } else {
+                            return Err(BasilError(format!("parse error at line {}: expected '*' and length after STRING", self.peek_line())));
+                        }
+                    }
+                }
+                // Support: DIM name AS TYPE TypeName
+                if self.match_k(TokenKind::Type) {
+                    let tname = self.expect_ident()?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::DimObject { name, type_name: tname, args: Vec::new() });
+                }
+                // Default: DIM name AS TypeName [(args)] — object/struct scalar
                 let tname = self.expect_ident()?;
                 let mut args = Vec::new();
                 if self.match_k(TokenKind::LParen) {
@@ -1355,5 +1430,49 @@ impl Parser {
     }
     fn peek_kind(&self) -> Option<TokenKind> { self.tokens.get(self.i).map(|t| t.kind.clone()) }
     fn peek_line(&self) -> u32 { self.tokens.get(self.i).map(|t| t.line).unwrap_or(0) }
+
+    // Parse a single struct field declaration after 'DIM' in a TYPE body.
+    // Returns (field_name, field_kind).
+    fn parse_struct_field(&mut self) -> Result<(String, basil_ast::StructFieldKind)> {
+        use basil_ast::StructFieldKind as SFK;
+        let fname = self.expect_ident()?;
+        // Optional classic array dims for fields not supported in this minimal pass
+        if self.match_k(TokenKind::LParen) {
+            return Err(BasilError(format!("parse error at line {}: array fields in TYPE not supported yet", self.peek_line())));
+        }
+        // Type clause or infer from suffix
+        let kind = if self.match_k(TokenKind::As) {
+            if self.check(TokenKind::Ident) {
+                let t = self.tokens.get(self.i).unwrap();
+                if t.lexeme.eq_ignore_ascii_case("STRING") {
+                    let _ = self.next(); // consume IDENT("STRING")
+                    if self.match_k(TokenKind::Star) {
+                        let n_tok = self.expect(TokenKind::Number)?;
+                        let n = if let Some(basil_lexer::Literal::Num(v)) = n_tok.literal { v as usize } else { 0usize };
+                        SFK::FixedString(n)
+                    } else {
+                        SFK::VarString
+                    }
+                } else {
+                    // AS <TypeName>
+                    let tname = self.expect_ident()?;
+                    SFK::Struct(tname)
+                }
+            } else if self.match_k(TokenKind::Type) {
+                let tname = self.expect_ident()?;
+                SFK::Struct(tname)
+            } else {
+                return Err(BasilError(format!("parse error at line {}: expected type after AS", self.peek_line())));
+            }
+        } else {
+            if fname.ends_with('%') { SFK::Int32 }
+            else if fname.ends_with('$') { SFK::VarString }
+            else { SFK::Float64 }
+        };
+        // Consume optional statement terminator here if present; caller may also handle.
+        while self.match_k(TokenKind::Semicolon) {}
+        Ok((fname, kind))
+    }
+
     fn next(&mut self) -> Option<Token> { let t = self.tokens.get(self.i).cloned(); if t.is_some() { self.i+=1; } t }
 }
