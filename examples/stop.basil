@@ -1,0 +1,11 @@
+# This example demonstrates the STOP command in Basil.
+# in CLI mode, STOP drops to the command prompt where you can type BASIL commands or RESUME to continue execution.
+# in GUI mode, STOP pauses execution to allow event processing; There is no RESUME command.
+# in TEST mode, STOP behaves like EXIT;
+# in RUN mode, STOP causes the program to stop and you never get to do anything ever again (except terminate the program externally)
+
+PRINT "Before stop"
+LET X = 123
+STOP
+PRINT "This line runs after resume"
+

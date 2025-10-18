@@ -415,6 +415,11 @@ impl Parser {
             self.terminate_stmt()?;
             return Ok(Stmt::Exit(expr));
         }
+        // STOP
+        if self.match_k(TokenKind::Stop) {
+            self.terminate_stmt()?;
+            return Ok(Stmt::Stop);
+        }
 
         // RAISE [expr]
         if self.match_k(TokenKind::Raise) {

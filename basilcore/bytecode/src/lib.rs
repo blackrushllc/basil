@@ -303,6 +303,9 @@ pub enum Op {
     Raise   = 122,      // expects message (any value) on stack; converts to string and raises
     Reraise = 123,      // rethrow current exception
 
+    // suspension
+    Stop   = 124,       // suspend execution
+
     Halt  = 255,
 }
 

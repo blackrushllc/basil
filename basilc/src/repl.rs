@@ -28,11 +28,13 @@ pub struct Session {
     pub next_snippet_id: usize,
     pub settings: SessionSettings,
     script_path: Option<String>,
+    // If a program has executed STOP, keep its VM to allow RESUME
+    suspended_vm: Option<VM>,
 }
 
 impl Session {
     pub fn new(settings: SessionSettings) -> Self {
-        Self { globals: HashMap::new(), order: Vec::new(), origins: HashMap::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None }
+        Self { globals: HashMap::new(), order: Vec::new(), origins: HashMap::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None, suspended_vm: None }
     }
 
     pub fn run_program(&mut self, path: &str) -> Result<(), String> {
@@ -98,13 +100,20 @@ impl Session {
                 let _ = vm.set_global_by_name(name, v.clone());
             }
         }
-        vm.run().map_err(|e| {
+        let run_res = vm.run();
+        if let Err(e) = run_res {
             let line = vm.current_line();
-            if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
-            else { format!("runtime error: {}", e) }
-        })?;
+            let msg = if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
+                      else { format!("runtime error: {}", e) };
+            return Err(msg);
+        }
+        // Merge globals back into REPL session so they are visible while suspended
         let (names, values) = vm.globals_snapshot();
         self.merge_globals(&names, &values, Some(path));
+        if vm.is_suspended() {
+            println!("Program suspended.");
+            self.suspended_vm = Some(vm);
+        }
         Ok(())
     }
 
@@ -367,6 +376,31 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                             println!("{} : {} = {}    from: {}", name, ty, v, origins.join(", "));
                         }
                     }
+                }
+                continue;
+            } else if upper == "RESUME" {
+                if let Some(mut vm) = sess.suspended_vm.take() {
+                    match vm.resume() {
+                        Ok(()) => {
+                            let (names, values) = vm.globals_snapshot();
+                            let origin_owned = sess.script_path.clone();
+                            let origin = origin_owned.as_deref();
+                            sess.merge_globals(&names, &values, origin);
+                            if vm.is_suspended() {
+                                println!("Program suspended.");
+                                sess.suspended_vm = Some(vm);
+                            } else {
+                                println!("Program resumed and finished.");
+                            }
+                        }
+                        Err(e) => {
+                            let line = vm.current_line();
+                            if sess.settings.show_backtraces { eprintln!("runtime error at line {}: {}", line, e); }
+                            else { eprintln!("runtime error: {}", e); }
+                        }
+                    }
+                } else {
+                    println!("No program is suspended.");
                 }
                 continue;
             }

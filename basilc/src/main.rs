@@ -348,6 +348,9 @@ fn cmd_run(path: Option<String>) {
         if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
         else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
+    } else if vm.is_suspended() {
+        // In RUN mode, when STOP is encountered, remain suspended with no prompt.
+        loop { std::thread::sleep(std::time::Duration::from_secs(3600)); }
     }
 }
 
