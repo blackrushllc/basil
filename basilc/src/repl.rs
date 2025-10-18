@@ -292,6 +292,57 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                 for (ln, txt) in &program_buf {
                     println!("{} {}", ln, txt);
                 }
+
+                // Mods compiled into this basilc binary
+                println!("-- MODS --");
+                let mut mods: Vec<&str> = Vec::new();
+                // Core/common objects
+                if cfg!(feature = "obj-base64") { mods.push("obj-base64"); }
+                if cfg!(feature = "obj-zip")    { mods.push("obj-zip"); }
+                if cfg!(feature = "obj-curl")   { mods.push("obj-curl"); }
+                if cfg!(feature = "obj-json")   { mods.push("obj-json"); }
+                if cfg!(feature = "obj-csv")    { mods.push("obj-csv"); }
+                if cfg!(feature = "obj-sqlite") { mods.push("obj-sqlite"); }
+                if cfg!(feature = "obj-sql")    { mods.push("obj-sql"); }
+                if cfg!(feature = "obj-sql-mysql")    { mods.push("obj-sql-mysql"); }
+                if cfg!(feature = "obj-sql-postgres") { mods.push("obj-sql-postgres"); }
+
+                // BMX sample domain objects
+                if cfg!(feature = "obj-bmx")        { mods.push("obj-bmx"); }
+                if cfg!(feature = "obj-bmx-rider")  { mods.push("obj-rider"); }
+                if cfg!(feature = "obj-bmx-team")   { mods.push("obj-team"); }
+
+                // Audio/MIDI/DAW
+                if cfg!(feature = "obj-audio") { mods.push("obj-audio"); }
+                if cfg!(feature = "obj-midi")  { mods.push("obj-midi"); }
+                if cfg!(feature = "obj-daw")   { mods.push("obj-daw"); }
+
+                // AI/Terminal
+                if cfg!(feature = "obj-ai")   { mods.push("obj-ai"); }
+                if cfg!(feature = "obj-term") { mods.push("obj-term"); }
+
+                // AWS
+                if cfg!(feature = "obj-aws-s3")  { mods.push("obj-s3"); }
+                if cfg!(feature = "obj-aws-ses") { mods.push("obj-ses"); }
+                if cfg!(feature = "obj-aws-sqs") { mods.push("obj-sqs"); }
+
+                // NET
+                if cfg!(feature = "obj-net-http") { mods.push("obj-http"); }
+                if cfg!(feature = "obj-net-smtp") { mods.push("obj-smtp"); }
+                if cfg!(feature = "obj-net-sftp") { mods.push("obj-sftp"); }
+
+                // ORM
+                if cfg!(feature = "obj-orm")           { mods.push("obj-orm"); }
+                if cfg!(feature = "obj-orm-mysql")     { mods.push("obj-orm-mysql"); }
+                if cfg!(feature = "obj-orm-postgres")  { mods.push("obj-orm-postgres"); }
+
+                if mods.is_empty() {
+                    println!("(none)");
+                } else {
+                    mods.sort();
+                    for m in mods { println!("{}", m); }
+                }
+
                 // Then symbol table with types, values, and origins
                 println!("-- SYMBOLS --");
                 for name in &sess.order {
