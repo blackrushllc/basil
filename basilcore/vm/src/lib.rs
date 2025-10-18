@@ -47,7 +47,7 @@ use std::env;
 use std::time::Duration;
 use crossterm::event::{read, Event, KeyEvent, KeyCode};
 use crossterm::event::poll;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 
@@ -219,6 +219,16 @@ struct FileHandleEntry {
 
 struct HandlerEntry { handler_ip: usize }
 
+// --- Struct type descriptors for pack/unpack ---
+#[derive(Clone)]
+enum VMFieldKind { Int32, Float64, VarString, FixedString(usize), Struct(String) }
+
+#[derive(Clone)]
+struct VMFieldDesc { name: String, kind: VMFieldKind }
+
+#[derive(Clone)]
+struct VMTypeDesc { fields: Vec<VMFieldDesc> }
+
 pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Value>,
@@ -252,6 +262,8 @@ pub struct VM {
     // Exceptions
     _handlers: Vec<HandlerEntry>,
     current_exception: Option<String>,
+    // Struct type descriptor registry
+    struct_types: HashMap<String, VMTypeDesc>,
 }
 
 // --- Lightweight Class Instance object ---
@@ -394,6 +406,7 @@ impl VM {
             debugger: None,
             _handlers: Vec::new(),
             current_exception: None,
+            struct_types: HashMap::new(),
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -473,6 +486,144 @@ impl VM {
             }
         }
         out
+    }
+
+    // --- Struct registry helpers ---
+    fn struct_reg(&mut self, name: &str, spec: &str) -> Result<()> {
+        let mut fields: Vec<VMFieldDesc> = Vec::new();
+        for part in spec.split(';') {
+            if part.trim().is_empty() { continue; }
+            let mut it = part.split('|');
+            let fname = it.next().unwrap_or("").to_string();
+            let ktag = it.next().unwrap_or("");
+            let kind = match ktag {
+                "I" => VMFieldKind::Int32,
+                "F" => VMFieldKind::Float64,
+                "S" => VMFieldKind::VarString,
+                "X" => {
+                    let nstr = it.next().ok_or_else(|| BasilError("STRUCT_REG: missing length for FixedString".into()))?;
+                    let n: usize = nstr.parse().map_err(|_| BasilError("STRUCT_REG: bad FixedString length".into()))?;
+                    VMFieldKind::FixedString(n)
+                }
+                "T" => {
+                    let tname = it.next().ok_or_else(|| BasilError("STRUCT_REG: missing nested type name".into()))?;
+                    VMFieldKind::Struct(tname.to_string())
+                }
+                other => return Err(BasilError(format!("STRUCT_REG: unknown field kind '{}'", other))),
+            };
+            fields.push(VMFieldDesc { name: fname, kind });
+        }
+        self.struct_types.insert(name.to_ascii_uppercase(), VMTypeDesc { fields });
+        Ok(())
+    }
+
+    fn sizeof_struct(&self, name: &str) -> Option<usize> {
+        fn inner(vm: &VM, tname: &str, seen: &mut HashSet<String>) -> Option<usize> {
+            let key = tname.to_ascii_uppercase();
+            let td = vm.struct_types.get(&key)?;
+            if seen.contains(&key) { return None; }
+            seen.insert(key.clone());
+            let mut total: usize = 0;
+            for f in &td.fields {
+                match &f.kind {
+                    VMFieldKind::Int32 => total += 4,
+                    VMFieldKind::Float64 => total += 8,
+                    VMFieldKind::FixedString(n) => total += *n,
+                    VMFieldKind::VarString => return None,
+                    VMFieldKind::Struct(nm) => {
+                        let sz = inner(vm, nm, seen)?;
+                        total += sz;
+                    }
+                }
+            }
+            Some(total)
+        }
+        let mut seen = HashSet::new();
+        inner(self, name, &mut seen)
+    }
+
+    fn pack_struct_bytes(&self, dict_rc: &std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>, name: &str) -> Result<Vec<u8>> {
+        fn enforce_len(s: &str, n: usize) -> String {
+            let bytes = s.as_bytes();
+            if bytes.len() == n { return s.to_string(); }
+            if bytes.len() > n {
+                let mut cut = n; while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 { cut -= 1; }
+                return std::str::from_utf8(&bytes[..cut]).unwrap_or("").to_string();
+            }
+            let mut out = s.to_string(); let pad = n - bytes.len(); if pad > 0 { out.push_str(&" ".repeat(pad)); } out
+        }
+        let key = name.to_ascii_uppercase();
+        let td = self.struct_types.get(&key).ok_or_else(|| BasilError(format!("STRUCT_PACK: unknown struct type '{}'", name)))?;
+        let fixed = self.sizeof_struct(&key).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+        let mut out: Vec<u8> = Vec::with_capacity(fixed);
+        let map = dict_rc.borrow();
+        for f in &td.fields {
+            match &f.kind {
+                VMFieldKind::Int32 => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Int(0));
+                    let i = match v { Value::Int(i)=> i as i32, Value::Num(n)=> n.trunc() as i32, Value::Str(ref s)=> s.parse::<i32>().unwrap_or(0), _=>0 };
+                    out.extend_from_slice(&i.to_le_bytes());
+                }
+                VMFieldKind::Float64 => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Num(0.0));
+                    let x = match v { Value::Num(n)=> n, Value::Int(i)=> i as f64, Value::Str(ref s)=> s.parse::<f64>().unwrap_or(0.0), _=>0.0 };
+                    out.extend_from_slice(&x.to_le_bytes());
+                }
+                VMFieldKind::FixedString(n) => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Str(String::new()));
+                    let s = match v { Value::Str(s)=>s, other=> format!("{}", other) };
+                    let s2 = enforce_len(&s, *n);
+                    out.extend_from_slice(s2.as_bytes());
+                }
+                VMFieldKind::VarString => {
+                    return Err(BasilError("Struct contains variable-length fields; size is not fixed.".into()));
+                }
+                VMFieldKind::Struct(nm) => {
+                    let v = map.get(&f.name).cloned().unwrap_or(Value::Dict(std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()))));
+                    let drc = match v { Value::Dict(rc)=> rc, _ => std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())) };
+                    let nested = self.pack_struct_bytes(&drc, nm)?;
+                    out.extend_from_slice(&nested);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn unpack_struct_from(&self, buf: &[u8], name: &str) -> Result<Value> {
+        let key = name.to_ascii_uppercase();
+        let td = self.struct_types.get(&key).ok_or_else(|| BasilError(format!("STRUCT_UNPACK: unknown struct type '{}'", name)))?;
+        let fixed = self.sizeof_struct(&key).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+        if buf.len() != fixed { return Err(BasilError(format!("Unpack: expected {} bytes, got {}.", fixed, buf.len()))); }
+        let mut offset = 0usize;
+        let mut map: HashMap<String, Value> = HashMap::new();
+        for f in &td.fields {
+            match &f.kind {
+                VMFieldKind::Int32 => {
+                    let mut arr = [0u8;4]; arr.copy_from_slice(&buf[offset..offset+4]); offset += 4;
+                    let i = i32::from_le_bytes(arr) as i64; map.insert(f.name.clone(), Value::Int(i));
+                }
+                VMFieldKind::Float64 => {
+                    let mut arr = [0u8;8]; arr.copy_from_slice(&buf[offset..offset+8]); offset += 8;
+                    let x = f64::from_le_bytes(arr); map.insert(f.name.clone(), Value::Num(x));
+                }
+                VMFieldKind::FixedString(n) => {
+                    let slice = &buf[offset..offset+*n]; offset += *n;
+                    let s = match std::str::from_utf8(slice) {
+                        Ok(s) => s.to_string(),
+                        Err(_) => String::from_utf8_lossy(slice).to_string(),
+                    };
+                    map.insert(f.name.clone(), Value::Str(s));
+                }
+                VMFieldKind::VarString => { return Err(BasilError("Struct contains variable-length fields; size is not fixed.".into())); }
+                VMFieldKind::Struct(nm) => {
+                    let sz = self.sizeof_struct(nm).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+                    let slice = &buf[offset..offset+sz]; offset += sz;
+                    let v = self.unpack_struct_from(slice, nm)?;
+                    map.insert(f.name.clone(), v);
+                }
+            }
+        }
+        Ok(Value::Dict(std::rc::Rc::new(std::cell::RefCell::new(map))))
     }
     fn parse_pairs(&self, s: &str) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
@@ -1203,6 +1354,70 @@ impl VM {
                                     self.stack.push(Value::Int(n));
                                 }
                             }
+                        }
+                        160 => { // FIXSTR_ENFORCE(value, n)
+                            if argc != 2 { return Err(BasilError("FIXSTR_ENFORCE expects 2 arguments (value, N)".into())); }
+                            // Coerce first arg to string if not already
+                            let s0 = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            };
+                            // N as integer
+                            let mut n_i: i64 = match &args[1] {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => n.trunc() as i64,
+                                other => return Err(BasilError(format!("FIXSTR_ENFORCE: N must be numeric, got {}", self.type_of(other)))),
+                            };
+                            if n_i < 0 { n_i = 0; }
+                            let n = n_i as usize;
+                            let bytes = s0.as_bytes();
+                            let res = if bytes.len() == n {
+                                s0
+                            } else if bytes.len() > n {
+                                // Truncate at last UTF-8 boundary <= n
+                                let mut cut = n;
+                                while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 { cut -= 1; }
+                                let slice = &bytes[..cut];
+                                match std::str::from_utf8(slice) {
+                                    Ok(s) => s.to_string(),
+                                    Err(_) => String::new(),
+                                }
+                            } else {
+                                // Pad with ASCII spaces to reach exactly n bytes
+                                let pad = n - bytes.len();
+                                let mut s = s0.clone();
+                                if pad > 0 { s.push_str(&" ".repeat(pad)); }
+                                s
+                            };
+                            self.stack.push(Value::Str(res));
+                        }
+                        161 => { // STRUCT_REG(name$, spec$)
+                            if argc != 2 { return Err(BasilError("STRUCT_REG expects 2 arguments (name$, spec$)".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_REG: name must be string, got {}", self.type_of(other)))) };
+                            let spec = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_REG: spec must be string, got {}", self.type_of(other)))) };
+                            self.struct_reg(&name, &spec)?;
+                            self.stack.push(Value::Null);
+                        }
+                        162 => { // STRUCT_SIZEOF(name$)
+                            if argc != 1 { return Err(BasilError("STRUCT_SIZEOF expects 1 argument (name$)".into())); }
+                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_SIZEOF: name must be string, got {}", self.type_of(other)))) };
+                            let sz = self.sizeof_struct(&name).unwrap_or(0);
+                            self.stack.push(Value::Int(sz as i64));
+                        }
+                        163 => { // STRUCT_PACK(value, type$)
+                            if argc != 2 { return Err(BasilError("STRUCT_PACK expects 2 arguments (value, typeName)".into())); }
+                            let tname = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_PACK: type name must be string, got {}", self.type_of(other)))) };
+                            let dict_rc = match &args[0] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("STRUCT_PACK: value must be a struct/dict".into())) };
+                            let bytes = self.pack_struct_bytes(&dict_rc, &tname)?;
+                            let s = String::from_utf8_lossy(&bytes).to_string();
+                            self.stack.push(Value::Str(s));
+                        }
+                        164 => { // STRUCT_UNPACK(str, type$)
+                            if argc != 2 { return Err(BasilError("STRUCT_UNPACK expects 2 arguments (buffer$, typeName)".into())); }
+                            let tname = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_UNPACK: type name must be string, got {}", self.type_of(other)))) };
+                            let buf = match &args[0] { Value::Str(s)=> s.as_bytes().to_vec(), other=> return Err(BasilError(format!("STRUCT_UNPACK: buffer must be string, got {}", self.type_of(other)))) };
+                            let v = self.unpack_struct_from(&buf, &tname)?;
+                            self.stack.push(v);
                         }
                         2 => { // MID$(s, start [,len]) -- start is 1-based
                             if !(argc == 2 || argc == 3) { return Err(BasilError("MID$ expects 2 or 3 arguments".into())); }

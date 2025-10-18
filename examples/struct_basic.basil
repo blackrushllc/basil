@@ -1,5 +1,4 @@
 REM Basic structure (TYPE) demo
-REM NOTE: Requires TYPE ... END TYPE support; the current interpreter build may not yet support this.
 
 TYPE Person
   DIM Name$ AS STRING * 16
