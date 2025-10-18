@@ -1,0 +1,14 @@
+' Clear and add two quick items, then save
+BASILICA.MENU.CLEAR%()
+
+BASILICA.MENU.ADD_CLI%("Basil Prompt", "cli", "bare", "", "")
+BASILICA.MENU.ADD_CLI%("Run Hello", "run", "file", "examples/hello.basil", "")
+
+BASILICA.MENU.ADD_GUI%("Blank GUI Prompt", "cli", "bare", "", "")
+BASILICA.MENU.ADD_GUI%("GUI Hello", "run", "file", "examples/gui_hello.basil", "")
+
+IF BASILICA.MENU.SAVE%() = 1 THEN
+  PRINT "Basilica menu updated."
+ELSE
+  PRINT "Failed to save menu."
+END IF

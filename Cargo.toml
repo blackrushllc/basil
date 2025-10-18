@@ -19,6 +19,9 @@ members = [
     "crates/basil-ir",
     "crates/backend-rs",
     "crates/libbasilrt",
+    "crates/basilica",
+    "crates/basil-embed",
+    "crates/basil-host",
 ]
 resolver = "2"
 

@@ -1,0 +1,14 @@
+WEB.SET_HTML$("
+  <style>body{font-family:sans-serif} .btn{padding:8px;margin:4px}</style>
+  <h2>POS - Cashier</h2>
+  <button id='sale' class='btn'>New Sale</button>
+  <div id='o'></div>
+")
+WEB.ON%("click","sale", OnSale)
+PRINT "Cashier ready."
+STOP
+
+OnSale:
+PRINT "Start sale"
+WEB.EVAL$("document.getElementById('o').innerText='Sale started';")
+RETURN

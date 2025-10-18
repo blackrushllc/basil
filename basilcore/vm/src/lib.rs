@@ -463,6 +463,12 @@ impl VM {
         } else { false }
     }
 
+    // Extension hook: allow embedding hosts to register additional object types.
+    // This is a non-breaking API used by the Basilica GUI to expose APP.*, WEB.*, and BASILICA.MENU.* host objects.
+    pub fn registry_mut(&mut self) -> &mut basil_objects::Registry {
+        &mut self.registry
+    }
+
     fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
 
     // --- CGI param helpers ---
