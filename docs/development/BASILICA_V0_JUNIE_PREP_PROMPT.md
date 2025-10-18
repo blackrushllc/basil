@@ -71,7 +71,7 @@ Before stop
 Program suspended.
 > PRINT X
 123
-> CONTINUE
+> RESUME
 This line runs after resume
 >
 ```
