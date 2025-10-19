@@ -6,6 +6,7 @@ use crossbeam_channel as chan;
 use crate::config::{MenuKind, MenuMode};
 use basil_embed::{BasilRunner, RunnerCmd, RunnerEvent, RunMode, RunnerOptions};
 use basil_host::HostRequest;
+use anyhow::Result;
 
 // Minimal event payload from webview IPC
 #[derive(Debug, Clone)]
@@ -99,33 +100,37 @@ impl ConsoleInstance {
     }
 }
 
+#[cfg_attr(windows, allow(unreachable_code))]
 fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: chan::Sender<WebEvent>) {
+    // On Windows, offload the WebView to a helper process whose main thread owns Tao/Wry
+    #[cfg(windows)]
+    {
+        if let Err(e) = spawn_webview_helper_process(initial_html.clone(), rx_js, tx_event) {
+            eprintln!("[webview-helper] failed to start: {}", e);
+        }
+        return;
+    }
+
+    // Non-Windows: keep the in-process Wry thread approach
     thread::spawn(move || {
         use tao::event::{Event, WindowEvent};
-        use tao::event_loop::{ControlFlow, EventLoop};
+        use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
         use tao::window::WindowBuilder;
         use wry::WebViewBuilder;
 
-        // On Windows, ensure this thread is initialized as STA for WebView2
-        #[cfg(windows)]
-        unsafe {
-            use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-        }
+        eprintln!("[webview] thread start");
 
-        let event_loop: EventLoop<()> = EventLoop::new();
-
-        let window = match WindowBuilder::new().with_title("Basilica Webview").build(&event_loop) {
-            Ok(w) => w,
-            Err(e) => { eprintln!("[webview] failed to create window: {}", e); return; }
-        };
+        let event_loop: EventLoop<()> = EventLoopBuilder::new().build();
 
         // Inject bootstrap JS per spec
         let bootstrap_js = r#"
             window.BASIL = {
               send: (obj) => {
-                try { window.ipc.postMessage(typeof obj === 'string' ? obj : JSON.stringify(obj)); }
-                catch (e) { /* ignore */ }
+                try {
+                  const s = typeof obj === 'string' ? obj : JSON.stringify(obj);
+                  if (window.ipc && window.ipc.postMessage) { window.ipc.postMessage(s); }
+                  else if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) { window.chrome.webview.postMessage(s); }
+                } catch (e) { /* ignore */ }
               },
               receive: (payload) => { /* host may override */ }
             };
@@ -135,36 +140,56 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
             });
         "#;
 
-        let webview = match WebViewBuilder::new(&window)
-            .with_initialization_script(bootstrap_js)
-            .with_html(initial_html)
-            .with_ipc_handler(move |req: wry::http::Request<String>| {
-                            let s = req.body().clone();
-                // s is a string; try to parse JSON {event,id}
-                let mut ev = None;
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                    let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    if !event.is_empty() && !id.is_empty() { ev = Some(WebEvent { event, id }); }
-                }
-                if let Some(e) = ev { let _ = tx_event.send(e); }
-            })
-            .build() {
-            Ok(wv) => wv,
-            Err(e) => { eprintln!("[webview] failed to build webview: {}", e); return; }
-        };
+        // Defer window + webview creation until the event loop is running.
+        eprintln!("[webview] entering event loop (deferred create)");
+        let mut window_opt: Option<tao::window::Window> = None;
+        let mut webview_opt: Option<wry::WebView> = None;
+        let initial_html_buf = initial_html;
 
-        event_loop.run(move |event, _, control_flow| {
+        event_loop.run(move |event, target, control_flow| {
             *control_flow = ControlFlow::Poll;
             match event {
                 Event::MainEventsCleared => {
+                    // Create window/webview on first tick
+                    if window_opt.is_none() {
+                        eprintln!("[webview] creating window...");
+                        let window = match WindowBuilder::new().with_title("Basilica Webview").build(target) {
+                            Ok(w) => w,
+                            Err(e) => { eprintln!("[webview] failed to create window: {}", e); *control_flow = ControlFlow::Exit; return; }
+                        };
+                        eprintln!("[webview] window created");
+                        eprintln!("[webview] building webview...");
+                        let tx_event2 = tx_event.clone();
+                        let wv = match WebViewBuilder::new(&window)
+                            .with_initialization_script(bootstrap_js)
+                            .with_html(initial_html_buf.clone())
+                            .with_ipc_handler(move |req: wry::http::Request<String>| {
+                                let s = req.body().clone();
+                                let mut ev = None;
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                                    let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    if !event.is_empty() && !id.is_empty() { ev = Some(WebEvent { event, id }); }
+                                }
+                                if let Some(e) = ev { let _ = tx_event2.send(e); }
+                            })
+                            .build() {
+                            Ok(wv) => wv,
+                            Err(e) => { eprintln!("[webview] failed to build webview: {}", e); *control_flow = ControlFlow::Exit; return; }
+                        };
+                        eprintln!("[webview] webview created; entering run loop");
+                        webview_opt = Some(wv);
+                        window_opt = Some(window);
+                    }
                     // Drain JS queue
-                    while let Ok(code) = rx_js.try_recv() {
-                        if let Some(rest) = code.strip_prefix("__SET_HTML__\n") {
-                            let js = format!("document.open();document.write({});document.close();", serde_json::to_string(rest).unwrap_or("\"\"".into()));
-                            let _ = webview.evaluate_script(&js);
-                        } else {
-                            let _ = webview.evaluate_script(&code);
+                    if let Some(wv) = webview_opt.as_ref() {
+                        while let Ok(code) = rx_js.try_recv() {
+                            if let Some(rest) = code.strip_prefix("__SET_HTML__\n") {
+                                let js = format!("document.open();document.write({});document.close();", serde_json::to_string(rest).unwrap_or("\"\"".into()));
+                                let _ = wv.evaluate_script(&js);
+                            } else {
+                                let _ = wv.evaluate_script(&code);
+                            }
                         }
                     }
                 }
@@ -175,4 +200,92 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
             }
         });
     });
+}
+
+
+#[cfg(windows)]
+fn spawn_webview_helper_process(initial_html: String, rx_js: chan::Receiver<String>, tx_event: chan::Sender<WebEvent>) -> Result<()> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    // Locate helper executable next to basilica.exe
+    let exe = std::env::current_exe()?;
+    let dir = exe.parent().ok_or_else(|| anyhow::anyhow!("no parent dir for current_exe"))?;
+    let helper_path = dir.join("basilica-webview-helper.exe");
+
+    let mut cmd = if helper_path.exists() {
+        Command::new(helper_path)
+    } else {
+        // Fallback: launch the main binary in helper mode
+        let exe2 = std::env::current_exe()?;
+        let mut c = Command::new(exe2);
+        c.arg("--webview-helper");
+        c
+    };
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin for helper"))?;
+    let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout for helper"))?;
+    let stderr = child.stderr.take();
+
+    // Send initial HTML
+    let init_msg = serde_json::json!({"cmd":"set_html", "html": initial_html});
+    let mut init_line = serde_json::to_string(&init_msg)?;
+    init_line.push('\n');
+    stdin.write_all(init_line.as_bytes())?;
+    stdin.flush()?;
+
+    // Thread: forward JS/HTML commands to helper stdin
+    let writer2 = std::sync::Arc::new(parking_lot::Mutex::new(stdin));
+    let writer3 = writer2.clone();
+    thread::spawn(move || {
+        while let Ok(code) = rx_js.recv() {
+            let payload = if let Some(rest) = code.strip_prefix("__SET_HTML__\n") {
+                serde_json::json!({"cmd":"set_html", "html": rest})
+            } else {
+                serde_json::json!({"cmd":"eval", "js": code})
+            };
+            if let Ok(mut s) = serde_json::to_string(&payload) {
+                s.push('\n');
+                let mut w = writer3.lock();
+                let _ = w.write_all(s.as_bytes());
+                let _ = w.flush();
+            }
+        }
+    });
+
+    // Thread: read events from helper stdout and forward to Basilica instance
+    let tx2 = tx_event.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let Ok(line) = line else { break; };
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if !event.is_empty() && !id.is_empty() {
+                    let _ = tx2.send(WebEvent { event, id });
+                }
+            }
+        }
+    });
+
+    // Thread: read helper stderr to our stderr for diagnostics
+    if let Some(stderr) = stderr {
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                if let Ok(l) = line { eprintln!("[webview-helper] {}", l); }
+            }
+        });
+    }
+
+    // Detach child process by forgetting it; pipes kept alive by threads
+    std::mem::forget(child);
+
+    Ok(())
 }

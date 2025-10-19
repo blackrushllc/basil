@@ -1,63 +1,78 @@
-# Basilica (GUI Starter App)
+# Basilica (GUI Starter App) — Proof of Concept
 
-This guide explains what landed in this iteration for the Basilica GUI starter app and how to build and run it alongside the existing Basil toolchain and sample programs.
+This document describes the current state of the Basilica desktop GUI and how to build and run it with the included Basil examples.
 
-Note: This is the first incremental drop. The executable and config machinery are present; a fuller GUI + embedded VM loop will follow in subsequent increments.
+Important: Basilica is currently a proof‑of‑concept (POC) GUI for Basil. It demonstrates the full loop end‑to‑end (menus → Basil VM → optional webview) but some edges are intentionally minimal.
 
 
-## What’s included now
+## What’s included in this POC
 
 New workspace members (under crates/):
-- basilica — the GUI starter binary crate (basilica.exe on Windows)
-- basil-embed — a thin adapter for embedding the Basil VM (scaffolded)
-- basil-host — host surface definitions for APP.*, WEB.*, and BASILICA.MENU.* (scaffolded)
+- basilica — the GUI binary (basilica.exe on Windows)
+- basil-embed — thin adapter that embeds the Basil VM and exposes host APIs
+- basil-host — host “objects” available to Basil programs: APP.*, WEB.*, BASILICA.MENU.*
 
-Initial features implemented in this increment:
-- Config persistence in a standard config directory (basilica.json), with a seeded default menu layout on first run.
-- Example Basil programs under examples/ for quick testing and future GUI menu wiring.
-- A placeholder basilica main that loads or seeds config and exits; GUI rendering and bootstrap mode are scaffolded but not yet wired through in main.
+Implemented features:
+- Config persistence (basilica.json) located in the OS‑standard config dir; default menu is seeded on first run.
+- GUI built with eframe/egui:
+  - CLI Scripts and GUI Scripts menus (driven by basilica.json)
+  - Run Script… dialog (ad‑hoc .basil file; choose Run/Test/CLI mode and window type)
+  - Manage Scripts… dialog (Add/Edit/Delete items; Save writes basilica.json atomically)
+  - Multiple console instances; each GUI instance also owns a paired HTML webview
+- Webview via wry with Windows‑safe helper process strategy:
+  - On Windows, a helper mode (`--webview-helper`) runs Tao/Wry on the main thread; Basilica spawns it automatically when needed.
+  - The webview injects a small JS bootstrap and relays DOM events (clicks with element id) back to the console instance.
+- Host APIs available to Basil scripts:
+  - APP.OPEN_FILE$(), APP.ALERT%(), APP.START_ANIM%(), APP.STOP_ANIM%()
+  - WEB.SET_HTML$(html$), WEB.EVAL$(js$), WEB.ON%(event$, id$, label)
+  - BASILICA.MENU.* for bootstrap/menu seeding
+- Bootstrap mode is implemented headless: `basilica --bootstrap <script.basil>` mutates a pending menu via BASILICA.MENU.* and saves on SAVE%().
+- Feature‑flag parity with basilc: you can run Basilica with the same `--features` (e.g., `obj-all`, `obj-safe`, `obj-json`…).
+- Examples under examples/ (hello, gui_hello, POS stubs, bootstrap scripts).
 
-Planned for upcoming increments (already scaffolded in source):
-- eframe/egui main window with menus for CLI Scripts / GUI Scripts, ad‑hoc Run Script…, and Manage Scripts… dialogs.
-- Console instance(s) and paired HTML webview windows via wry, with APP.* and WEB.* host bindings.
-- Bootstrap CLI mode: basilica --bootstrap <path> to run a Basil script that programmatically sets menus via BASILICA.MENU.*.
+What’s intentionally minimal (for now):
+- WEB.ON% event routing is fully registered and events are received; invoking the mapped Basil label is logged today but the callback back into the running VM is not yet executed.
 
 
 ## Repository layout (relevant parts)
 
-- crates/basilica/ — GUI app
+- crates/basilica/
   - src/config.rs — basilica.json schema, load/save, seed config
-  - src/app.rs — GUI scaffolding (menus, consoles, dialogs)
-  - src/instance.rs — Console/Webview instance wiring (scaffolded)
-  - src/main.rs — current entry point (placeholder flow)
-- crates/basil-embed/ — BasilRunner scaffold
-- crates/basil-host/ — host API type scaffolding
+  - src/app.rs — GUI (menus, consoles, dialogs)
+  - src/instance.rs — console instances, host request handling, webview launch
+  - src/main.rs — app entry point; implements `--bootstrap` and `--webview-helper`
+  - src/bin/basilica-webview-helper.rs — dedicated helper binary to host Tao/Wry on Windows
+- crates/basil-embed/ — BasilRunner + REPL/file‑run helpers; seeds APP/WEB/BASILICA.MENU
+- crates/basil-host/ — host object implementations + thread context
 - examples/ — sample Basil scripts
 
 
 ## Build
 
-The full workspace contains optional crates that may pull in native dependencies (e.g., nettle-sys) which require pkg-config, etc. If you see pkg-config errors on Windows, build only the Basilica-related crates for now.
+The workspace contains optional crates that may pull in native deps. If you hit pkg‑config or native library issues on Windows, build just the Basilica‑related crates.
 
-Recommended commands:
-
-- Build just Basilica-related packages:
-  - Windows PowerShell:
-    - cargo build -p basil-host -p basil-embed -p basilica
-
-- Build entire workspace (may require pkg-config and other native deps depending on features in your environment):
+Recommended commands (Windows PowerShell):
+- Build Basilica‑related packages only:
+  - cargo build -p basil-host -p basil-embed -p basilica
+- Build entire workspace (may require extra native deps):
   - cargo build --workspace
 
-If you want colored output but hit terminal quirks, keep it simple; the minimal commands above are sufficient.
+Features (parity with basilc):
+- Run all objects enabled:
+  - cargo run -p basilica --features obj-all
+- Safer portable set (excludes audio/DAW/SFTP):
+  - cargo run -p basilica --features obj-safe
+- Fine‑grained examples:
+  - cargo run -p basilica --features obj-json,obj-csv
 
 
 ## First run and config
 
-On first run, Basilica creates a basilica.json with the seed menu in your OS config directory:
-- Windows: %APPDATA%\Basilica\basilica\basilica.json (via directories crate)
+On first run, Basilica writes a seed basilica.json into your config dir:
+- Windows: %APPDATA%\Basilica\basilica\basilica.json
 - Linux/macOS: ~/.config/basilica/basilica.json
 
-Seed menu (summary):
+Seed menu summary:
 - CLI Scripts
   - Basil Prompt — bare, mode=cli
   - Run Hello — file examples/hello.basil, mode=run
@@ -65,82 +80,66 @@ Seed menu (summary):
   - Blank GUI Prompt — bare, mode=cli
   - GUI Hello — file examples/gui_hello.basil, mode=run
 
-Run the app:
-- cargo run -p basilica
 
-Current behavior: prints a short status line indicating the number of CLI/GUI items loaded and exits. This verifies config creation and load. The GUI window and embedded VM are part of the next increment; their scaffolding is already present in the source tree.
+## Run the GUI
 
+- Start the app:
+  - cargo run -p basilica
+- Use the top menu:
+  - CLI Scripts → opens a console instance
+  - GUI Scripts → opens a console paired with a webview window
+  - Run Script… → pick a .basil file, choose mode and window type, then Launch
+  - Manage Scripts… → CRUD the menu entries; Save writes basilica.json atomically
 
-## Running sample Basil programs today (via basilc)
-
-While Basilica’s GUI execution loop is being wired up, you can run the sample Basil programs with the existing CLI tool basilc:
-
-- Run the simple hello:
-  - cargo run -p basilc -- run examples\hello.basil
-
-- Explore other examples in examples\ like:
-  - examples\gui_hello.basil — demonstrates WEB.* calls intended for Basilica’s paired webview.
-  - examples\bootstrap_minimal.basil — demonstrates BASILICA.MENU.* API usage (to be enabled by Basilica’s bootstrap mode).
-  - examples\bootstrap_pos_demo.basil — seeds a small “POS” demo menu.
-  - examples\pos_cashier.basil, examples\pos_inventory.basil — GUI-oriented scripts for future Basilica webview.
-
-Note: The GUI/webview behaviors in these scripts will show their PRINT output in basilc today; the webview effects require Basilica’s GUI, which will be activated in a subsequent increment.
-
-
-## Future: Running Basil programs inside Basilica
-
-Once the GUI entry point in basilica/src/main.rs is switched over to launch the eframe app:
-- Launch basilica (cargo run -p basilica) to open the main window.
-- Use the “CLI Scripts” and “GUI Scripts” menus to start instances from basilica.json.
-- Use “Run Script…” for ad-hoc files; choose window type (CLI vs GUI) and mode (run/test/cli).
-- Use “Manage Scripts…” to add/edit/delete menu items and save atomically to basilica.json.
-
-Webview integration (wry):
-- WEB.SET_HTML$(html$) sets the page DOM.
-- WEB.EVAL$(js$) runs JavaScript.
-- WEB.ON%(event$, id$, label) registers event routing back into your Basil code.
+Expected behavior with examples:
+- GUI Scripts → GUI Hello: opens a webview window that renders the inline HTML; console shows PRINT output.
+- Run Script… + GUI window + examples\gui_hello.basil: same as above.
+- Clicking “Go” logs a [WEB.EVENT] line; the OnGo label is not invoked yet in this POC.
 
 
 ## Bootstrap mode (headless)
 
-Planned CLI:
-- basilica --bootstrap examples\bootstrap_minimal.basil
+Run a bootstrap script to populate menus programmatically:
+- cargo run -p basilica -- --bootstrap examples\bootstrap_minimal.basil
+- cargo run -p basilica -- --bootstrap examples\bootstrap_pos_demo.basil
 
 Behavior:
-- Loads basilica.json, creates a pending config.
-- Runs the Basil script inside an embedded VM with BASILICA.MENU.* enabled to mutate the pending config.
-- If the script calls BASILICA.MENU.SAVE%(), writes basilica.json atomically and exits 0.
+- Loads current basilica.json into a pending config.
+- Runs the Basil script with BASILICA.MENU.* enabled.
+- If the script calls BASILICA.MENU.SAVE%(), Basilica writes basilica.json atomically and prints a summary like:
+  - Saved N CLI items, M GUI items.
+- Exits 0 on success; non‑zero on error.
 
-Current status: the flag is recognized in main.rs as a placeholder. The full flow will be enabled in an upcoming increment.
+
+## Running examples with basilc (CLI)
+
+You can still run samples via the CLI tool for comparison:
+- cargo run -p basilc -- run examples\hello.basil
 
 
 ## Troubleshooting
 
-- pkg-config / nettle-sys errors on Windows during a workspace build:
-  - Workaround: build just the Basilica-related crates: cargo build -p basil-host -p basil-embed -p basilica
-  - Or install pkg-config (e.g., choco install pkgconfiglite) if you need to build the full workspace.
-
+- Webview didn’t appear on Windows:
+  - Basilica uses a helper mode that runs Tao/Wry on a main thread (either a dedicated helper exe or `--webview-helper` in the same binary). If something fails, the console prints messages prefixed with [helper] or [webview-helper].
 - Where is basilica.json?
-  - See “First run and config” above; use the OS-specific config dir. If directories lookup fails, Basilica falls back to the executable directory.
-
-- I don’t see a GUI window yet.
-  - That’s expected in this increment: the main entry point currently prints status to stdout to validate config creation. The eframe/egui UI and wry webview are scaffolded and will be enabled next.
+  - See “First run and config” above. If directories lookup fails, Basilica falls back to the executable directory.
+- Native dependency issues while building:
+  - Build just the Basilica crates: `cargo build -p basil-host -p basil-embed -p basilica`.
 
 
 ## Quick commands (copy/paste)
 
 - Build Basilica packages only:
   - cargo build -p basil-host -p basil-embed -p basilica
-
-- Run Basilica (current placeholder):
+- Run Basilica (GUI):
   - cargo run -p basilica
-
-- Run Hello with the CLI compiler/runner:
-  - cargo run -p basilc -- run examples\hello.basil
-
-- Try a bootstrap script (placeholder mode today):
+- Run Basilica with all objects:
+  - cargo run -p basilica --features obj-all
+- Run the GUI Hello ad‑hoc:
+  - cargo run -p basilica --
+    (then in the app: Run Script… → pick examples\gui_hello.basil → GUI window → Launch)
+- Bootstrap menus from a Basil script:
   - cargo run -p basilica -- --bootstrap examples\bootstrap_minimal.basil
 
-
 ---
-Last updated: 2025-10-18
+Last updated: 2025-10-18 10:23
