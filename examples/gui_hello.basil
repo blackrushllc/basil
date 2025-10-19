@@ -1,0 +1,9 @@
+WEB.SET_HTML$("<h3 id='h'>Hi from Basilica</h3><button id='go'>Go</button><div id='log'></div>")
+WEB.ON%("click","go", OnGo)
+PRINT "Open the GUI window and click Go."
+STOP
+
+OnGo:
+PRINT "Go clicked!"
+WEB.EVAL$("document.getElementById('log').innerText += 'Clicked!\\n';")
+RETURN
