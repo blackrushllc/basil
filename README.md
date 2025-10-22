@@ -7,7 +7,7 @@
 > ### This is the only programming language you need.
 
 >
-> Invite link to Blackrush Slack (Expires 11/13/25)
+> Invite link to Blackrush Slack (Never Expires)
 >
 > https://join.slack.com/t/blackrushworkspace/shared_invite/zt-3g33s1rxc-9wWmCfggBEzInblqjzsn1A
 >
