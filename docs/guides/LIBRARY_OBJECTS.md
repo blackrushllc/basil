@@ -161,12 +161,14 @@ Keywords
 - ZIP_COMPRESS_FILE(src_path$, zip_path$[, entry_name$]) -> string (empty string on success)
 - ZIP_COMPRESS_DIR(src_dir$, zip_path$) -> string (empty string on success)
 - ZIP_LIST$(zip_path$) -> string (newline-separated entries)
+- ZIP_ARRAY$(zip_path$) -> string[] (array of entry names)
 
 Description
 - ZIP_EXTRACT_ALL extracts every entry into the destination directory, creating folders as needed.
 - ZIP_COMPRESS_FILE compresses one file into a new zip (with optional entry name).
 - ZIP_COMPRESS_DIR zips a directory recursively, preserving folder structure.
 - ZIP_LIST$ returns a newline-separated listing of the archive’s entries.
+- ZIP_ARRAY$ returns an array of entry names suitable for DIM x$[] variables, FOR EACH loops, etc.
 
 Example
 ```

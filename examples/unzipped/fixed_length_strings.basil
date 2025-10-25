@@ -1,0 +1,11 @@
+REM Fixed-length strings demo
+
+DIM code$ AS STRING * 5
+LET code$ = "ABCDEF"
+PRINTLN "code$ = '" + code$ + "'"
+PRINTLN "LEN(code$) = " + LEN(code$)
+
+DIM tag$[8]
+LET tag$ = "xxxxx"
+PRINTLN "tag$ = '" + tag$ + "'"
+PRINTLN "LEN(tag$) = " + LEN(tag$)

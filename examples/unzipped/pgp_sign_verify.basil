@@ -1,0 +1,15 @@
+// TODO: This hasn't been tested :/
+
+REM Detached sign & verify
+
+LET pub$ = READFILE$("pub.asc")
+LET sec$ = READFILE$("sec.asc")
+LET pass$ = ""
+
+DIM pgp@ AS CRYPTO_PGP()
+LET data$ = "Important message"
+
+LET sig$ = pgp@.SignArmored$(sec$, pass$, data$)
+PRINTLN "SIG:\n", sig$
+
+PRINTLN "VERIFY OK? ", pgp@.Verify$(pub$, data$, sig$)

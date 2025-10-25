@@ -1,0 +1,15 @@
+REM Demo: EXEC and EVAL in Basil
+
+REM EVAL evaluates a string expression and returns its value
+LET sum% = EVAL("2 + 2 * 5");
+PRINTLN "sum%:", sum%;
+
+REM EVAL can call functions available to the program
+LET s$ = EVAL("LEFT$(\"Hello\", 3)");
+PRINTLN "s$:", s$;
+
+REM EXEC executes a multi-line Basil snippet contained in a string
+
+LET code$ = "PRINTLN \"Hello from EXEC!\";" + CHR$(10) +
+            "FOR i% = 1 TO 3 BEGIN PRINTLN \"i=\", i%; END NEXT";
+EXEC(code$);

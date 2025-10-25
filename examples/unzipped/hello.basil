@@ -1,0 +1,4 @@
+PRINT "Hello from Basil!"
+FOR i = 1 TO 3
+  PRINT "i=", i
+NEXT i

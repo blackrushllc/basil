@@ -1,0 +1,23 @@
+REM Transaction demo (either connector)
+
+// Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+
+TRY
+  db@.Begin()
+  PRINTLN db@.Execute("INSERT INTO test (test) VALUES (?)", "Txn1")
+  PRINTLN db@.Execute("INSERT INTO test (test) VALUES (?)", "Txn2")
+  db@.Commit()
+  PRINTLN db@.Query$("SELECT COUNT(*) AS cnt FROM test")
+CATCH e$
+  PRINTLN "SQL error: ", e$
+  db@.Rollback()
+END TRY
+
+// query the test table and list the results
+PRINTLN "Query the test table and list the results:";
+
+  PRINTLN db@.Query$("SELECT * FROM test")

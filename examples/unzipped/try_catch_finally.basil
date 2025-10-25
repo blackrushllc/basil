@@ -1,0 +1,37 @@
+REM TRY … CATCH … FINALLY demo for Basil
+
+PRINTLN "Example 1: divide"
+LET x% = 1 // change to 0 to trigger error
+TRY
+  IF x% == 0 THEN RAISE "Divide by zero"
+  PRINTLN 10 / x%
+CATCH err$
+  PRINTLN "Caught: ", err$
+FINALLY
+  PRINTLN "Finally (ex1)"
+END TRY
+
+PRINTLN "\nExample 2: runtime error (out of bounds)"
+DIM A%(2)
+TRY
+  LET A%(2) = 99     REM >2 triggers built-in out-of-range
+CATCH e$
+  PRINTLN "Caught runtime error: ", e$
+END TRY
+
+PRINTLN "\nExample 3: rethrow"
+TRY
+  RAISE "first"
+CATCH e$
+  PRINTLN "Handling: ", e$
+  //RAISE            REM rethrow same exception
+FINALLY
+  PRINTLN "Finally (ex3) still runs"
+END TRY
+
+PRINTLN "\nExample 4: finally-only (no catch)"
+TRY
+  PRINTLN "Work…"
+FINALLY
+  PRINTLN "Always runs even without catch"
+END TRY

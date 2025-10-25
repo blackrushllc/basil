@@ -1,0 +1,26 @@
+REM String Interpolation demo for Basil
+
+#USE BMX_RIDER, BMX_TEAM   REM Optional: just to show objects stringify too
+
+LET name$ = "Erin";
+LET wins% = 12;
+LET losses% = 3;
+LET rate = wins% / (wins% + losses%);
+
+PRINTLN "Hello #{name$}! You have #{wins%} wins and #{losses%} losses.";
+PRINTLN "Win rate: #{rate * 100}%";
+
+REM Show escaping of delimiters:
+PRINTLN "Escaped interpolation start: \#{ not interpolation }";
+PRINTLN "Escaped close brace:  \}";
+
+REM With objects:
+DIM r@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+PRINTLN "Rider: #{r@}";              REM Uses the same to-string path as PRINT r@
+PRINTLN "Detail: #{r@.Describe$()}"; REM Explicit string-returning method
+
+REM With expressions:
+PRINTLN "Next win makes it #{wins% + 1} total.";
+
+REM Adjacent interpolations and literals:
+PRINTLN "#{name$}: #{wins%}W/#{losses%}L (#{rate*100}%)";

@@ -1,0 +1,7 @@
+REM Basic GET + JSON POST
+DIM http@ AS HTTP()
+PRINTLN "GET:"
+PRINTLN http@.Get$("https://httpbin.org/get")
+
+PRINTLN "\nPOST JSON:"
+PRINTLN http@.PostJson$("https://httpbin.org/post", "{""hello"":""basil""}")

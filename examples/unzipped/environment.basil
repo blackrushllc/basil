@@ -1,0 +1,48 @@
+REM Demonstrates ENV$, SETENV / EXPORTENV, SHELL, and EXIT
+SHELL "clear";
+PRINTLN "=== Environment demo ===";
+
+PRINTLN "USERNAME before:", ENV$("USERNAME");
+PRINTLN "DEMO_EXPORT before:", ENV$("DEMO_EXPORT");
+PRINTLN "PATH snippet:", LEFT$(ENV$("PATH"), 60), "...";
+
+REM Set a process-local environment variable
+SETENV DEMO_VAR = "42";
+PRINTLN "After SETENV, DEMO_VAR=", ENV$("DEMO_VAR");
+
+REM Try to export (persist for future processes, best effort on Windows via SETX)
+
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
+PRINTLN "After EXPORTENV, DEMO_EXPORT (current process) = ", ENV$("DEMO_EXPORT");
+
+PRINTLN "-----------------------------------------";
+REM Run a shell command; on Windows this uses cmd /C
+SHELL "cmd /C echo SHELL=ran OK > env_shell_output.txt";
+SHELL "cmd /C dir *.txt";
+PRINTLN "-----------------------------------------";
+PRINTLN "Created env_shell_output.txt via SHELL.";
+
+// Read the .env file
+PRINTLN "Read .env file:";
+LET a% = LOADENV%("env_shell_output.txt");
+LET b% = LOADENV%(); // defaults to .env
+
+PRINTLN "SHELL = ", ENV$("SHELL");
+PRINTLN "API_KEY = ", ENV$("API_KEY");
+PRINTLN "API_SECRET = ", ENV$("API_SECRET");
+PRINTLN "DATABASE_URL = ", ENV$("DATABASE_URL");
+PRINTLN "DEBUG = ", ENV$("DEBUG");
+PRINTLN "ENABLE_FEATURE_X = ", ENV$("ENABLE_FEATURE_X");
+
+
+if ( a% > 0 ) then begin
+    PRINTLN "Loaded environment variables.";
+else
+    PRINTLN "No .env file found.";
+end if
+
+PRINTLN "=== End of environment demo ===";
+
+
+REM Exit explicitly with code 0
+EXIT 0;
