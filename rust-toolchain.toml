@@ -1,0 +1,9 @@
+[toolchain]
+# Pin the toolchain so IDEs (JetBrains RustRover/IntelliJ + Rust plugin) and CI know what to use
+# This fixes: "Error: no Rust toolchain specified"
+channel = "stable"
+# Common components used in this workspace and by IDE features
+components = ["rustfmt", "clippy"]
+# Optionally pre-select the native macOS target; rustup will auto-install when needed
+# Uncomment if your environment needs it explicitly
+# targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
