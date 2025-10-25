@@ -1,0 +1,10 @@
+REM Record 5 seconds, then play it back;
+PRINTLN "Recording 5s from USB input to take1.wav…";
+rc% = AUDIO_RECORD%("usb", "take1.wav", 5);
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;
+
+PRINTLN "Playing take1.wav on USB output…";
+rc% = AUDIO_PLAY%("usb", "take1.wav");
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$();
+
+PRINTLN "Done.";

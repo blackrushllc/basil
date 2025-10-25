@@ -1,0 +1,54 @@
+REM Objects demo: BMX_RIDER and BMX_TEAM
+REM This example assumes object support is compiled in with features enabling BMX_RIDER and BMX_TEAM.
+
+#USE BMX_RIDER, BMX_TEAM
+
+REM --- Create riders ---
+DIM r1@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+DIM r2@ AS BMX_RIDER("Bob", 21, "Intermediate", 5, 10);
+DIM r3@ AS BMX_RIDER("Carol", 19, "Pro", 30, 4);
+
+REM Change a few properties after construction
+r2@.SkillLevel$ = "Expert";
+r2@.Wins% = 8;
+r2@.Losses% = 9;
+
+REM --- Create a team (PRO flag available when BMX_TEAM is compiled) ---
+DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+
+REM Set some team stats
+t@.TeamWins% = 12;
+t@.TeamLosses% = 3;
+
+REM Add riders to the team
+t@.AddRider(r1@);
+t@.AddRider(r2@);
+t@.AddRider(r3@);
+
+REM --- Show team summary and rider list ---
+PRINTLN "Team:", t@.Info$();
+PRINTLN "WinPct:", t@.WinPct();
+
+LET names$ = t@.RiderNames$();
+PRINTLN "Riders (", LEN(names$), "):";
+FOR i% = 0 TO LEN(names$)-1
+  PRINTLN "  - ", names$(i%);
+NEXT i%
+
+REM Also PRINTLN descriptions from the riders for variety
+LET descs$ = t@.RiderDescriptions$();
+PRINTLN "Descriptions:";
+FOR i% = 0 TO LEN(descs$)-1
+  PRINTLN "  ", descs$(i%);
+NEXT i%
+
+REM --- Optionally show full object descriptors ---
+REM LET ans$ = INPUT$("Show object DESCRIBE info for BMX_RIDER and BMX_TEAM? (Y/N): ");
+LET ans$ = "Y"; REM auto-answer yes for automated testing
+IF ans$ == "Y" THEN
+BEGIN
+  PRINTLN "\n--- DESCRIBE$(r1@) ---";
+  PRINTLN DESCRIBE$(r1@);
+  PRINTLN "\n--- DESCRIBE t@ ---";
+  DESCRIBE t@;
+END

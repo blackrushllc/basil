@@ -1,0 +1,10 @@
+REM RDS TLS example (show RootCertPath$ usage)
+
+// Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+LET dsn$ = ENV$("DB_DSN")
+
+DIM db@ AS DB_POSTGRES(dsn$)
+db@.RootCertPath$ = "rds-ca-root.pem"   REM download AWS RDS CA bundle
+PRINTLN db@.Query$("SELECT version()", [])

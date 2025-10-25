@@ -1,0 +1,7 @@
+LET ans$="Y";
+
+IF ans$ == "Y" THEN BEGIN
+  PRINT "\n--- YES ---";
+ELSE
+    PRINT "\n--- NO ---";
+END

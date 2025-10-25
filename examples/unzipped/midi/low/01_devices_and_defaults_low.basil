@@ -1,0 +1,15 @@
+REM List devices and defaults;
+PRINTLN "== Outputs ==";
+outs$[] = AUDIO_OUTPUTS$[];
+FOR i% = 0 TO LEN(outs$[]) - 1 BEGIN
+  PRINT "  "; PRINT i%; PRINT ": "; PRINTLN outs$[](i%);
+END
+
+PRINTLN "== Inputs ==";
+ins$[] = AUDIO_INPUTS$[];
+FOR i% = 0 TO LEN(ins$[]) - 1 BEGIN
+  PRINT "  "; PRINT i%; PRINT ": "; PRINTLN ins$[](i%);
+END
+
+PRINT "Default rate: "; PRINTLN AUDIO_DEFAULT_RATE%();
+PRINT "Default chans: "; PRINTLN AUDIO_DEFAULT_CHANS%();

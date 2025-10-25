@@ -1,0 +1,17 @@
+REM MySQL quickstart (adapt host/user/pass/db)
+// Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+
+
+TRY
+  PRINTLN db@.Execute("CREATE TABLE IF NOT EXISTS test2 (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50))")
+  PRINTLN db@.Execute("INSERT INTO test2 (name) VALUES (?)", "Alice")
+  PRINTLN db@.Execute("INSERT INTO test2 (name) VALUES (?)", "Bob")
+  PRINTLN db@.Query$("SELECT id, name FROM test2 WHERE name LIKE ?", "A%")
+
+CATCH e$
+  PRINTLN "MySQL error: ", e$
+END TRY

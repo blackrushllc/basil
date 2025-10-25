@@ -1,0 +1,550 @@
+
+PRINTLN "=== Start of BIG TEST 3 ===";
+
+# REM this demonstrates endings
+
+SUB MAIN() BEGIN
+    PRINTLN "I'm a SUB";
+    PRINTLN "I'm a SUB";
+    PRINTLN "I'm a SUB";
+END
+
+FUNC TEST() BEGIN
+    PRINTLN "I'm a FUNC";
+    PRINTLN "I'm a FUNC";
+    PRINTLN "I'm a FUNC";
+    RETURN 1;
+END
+
+
+SUB MAIN2()
+    PRINTLN "I'm a SUB, and BEGIN is optional";
+    PRINTLN "I'm a SUB, and BEGIN is optional";
+    PRINTLN "I'm a SUB, and BEGIN is optional";
+END
+
+FUNC TEST2()
+    PRINTLN "I'm a FUNC, and BEGIN is optional";
+    PRINTLN "I'm a FUNC, and BEGIN is optional";
+    PRINTLN "I'm a FUNC, and BEGIN is optional";
+    RETURN 2;
+END
+
+SUB MAIN3(A$, B%)
+    PRINTLN "I'm a SUB, A$ is " + A$;
+    PRINTLN "I'm a SUB, B% is " + B%;;
+END
+
+FUNC TEST3$(C, D$)
+    PRINTLN "I'm a FUNC, C is " + C;
+    PRINTLN "I'm a FUNC, D$ is " + D$;;
+    RETURN "Complete";
+END
+
+SUB MAIN4(A$, B%)
+    PRINTLN "I'm a SUB, A$ is " + A$;
+    PRINTLN "I'm a SUB, B% is " + B%;;
+END SUB // The SUB is optional  (END is required)
+
+FUNCTION TEST4$(C, D$) // FUNCTION is an alias for FUNC
+    PRINTLN "I'm a FUNC, C is " + C;
+    PRINTLN "I'm a FUNC, D$ is " + D$;;
+    RETURN "Complete";
+END FUNCTION // The FUNCTION is optional (END is required)
+
+
+PRINTLN "hello world";
+
+MAIN();              // ← Empty Parentheses for SUB calls, no return value, use ()
+LET A% = TEST();   // Empty Parentheses for FUNC calls with arguments/return value use ()
+PRINTLN A%;
+
+MAIN2();              // ← Empty Parentheses for SUB calls, no return value, use ()
+LET A% = TEST2();   // Empty Parentheses for FUNC calls with arguments/return value use ()
+PRINTLN A%;
+
+MAIN3("foo", 42);  // ← Parentheses for SUB calls, no return value, Arity must match the number of arguments
+LET A$ = TEST3$("foo", 42);   // Parentheses for FUNC calls with arguments/return value, arity must be correct
+PRINTLN A$;
+
+MAIN4("foo", 42);  // ← Parentheses for SUB calls, no return value, Arity must match the number of arguments
+LET A$ = TEST4$("foo", 42);   // Parentheses for FUNC calls with arguments/return value, arity must be correct
+PRINTLN A$;
+
+PRINTLN "Bye!";
+
+
+REM String Interpolation demo for Basil
+
+#USE BMX_RIDER, BMX_TEAM   REM Optional: just to show objects stringify too
+
+LET name$ = "Erin";
+LET wins% = 12;
+LET losses% = 3;
+LET rate = wins% / (wins% + losses%);
+
+PRINTLN "Hello #{name$}! You have #{wins%} wins and #{losses%} losses.";
+PRINTLN "Win rate: #{rate * 100}%";
+
+REM Show escaping of delimiters:
+PRINTLN "Escaped interpolation start: \#{ not interpolation }";
+PRINTLN "Escaped close brace:  \}";
+
+REM With objects:
+DIM r@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+PRINTLN "Rider: #{r@}";              REM Uses the same to-string path as PRINT r@
+PRINTLN "Detail: #{r@.Describe$()}"; REM Explicit string-returning method
+
+REM With expressions:
+PRINTLN "Next win makes it #{wins% + 1} total.";
+
+REM Adjacent interpolations and literals:
+PRINTLN "#{name$}: #{wins%}W/#{losses%}L (#{rate*100}%)";
+
+
+REM TRY … CATCH … FINALLY demo for Basil
+
+PRINTLN "Example 1: divide"
+LET x% = 1 // change to 0 to trigger error
+TRY
+  IF x% == 0 THEN RAISE "Divide by zero"
+  PRINTLN 10 / x%
+CATCH err$
+  PRINTLN "Caught: ", err$
+FINALLY
+  PRINTLN "Finally (ex1)"
+END TRY
+
+PRINTLN "\nExample 2: runtime error (out of bounds)"
+DIM A%(2)
+TRY
+  LET A%(2) = 99     REM >2 triggers built-in out-of-range
+CATCH e$
+  PRINTLN "Caught runtime error: ", e$
+END TRY
+
+PRINTLN "\nExample 3: rethrow"
+TRY
+  RAISE "first"
+CATCH e$
+  PRINTLN "Handling: ", e$
+  //RAISE            REM rethrow same exception
+FINALLY
+  PRINTLN "Finally (ex3) still runs"
+END TRY
+
+PRINTLN "\nExample 4: finally-only (no catch)"
+TRY
+  PRINTLN "Work…"
+FINALLY
+  PRINTLN "Always runs even without catch"
+END TRY
+
+
+LET x = 0;
+WHILE x < 3 BEGIN
+    PRINT x;
+    LET x = x + 1;
+END
+
+' Infinite loop with BREAK (will break at 3)
+LET i = 0;
+WHILE TRUE BEGIN
+    LET i = i + 1;
+    IF i == 3 THEN BEGIN // Block IF
+        BREAK;
+    END
+    PRINT i;
+END
+
+' Using CONTINUE (skip 3)
+LET j = 0;
+WHILE j < 5 BEGIN
+    LET j = j + 1;
+    IF j == 3 THEN BEGIN
+        CONTINUE;
+    END
+    PRINT j;
+END
+
+' Infinite loop with BREAK (will break at 3)
+LET i = 0;
+WHILE TRUE BEGIN
+    LET i = i + 1;
+    IF i == 3 THEN BREAK; // Immediate IF
+    PRINT i;
+END
+
+' Using CONTINUE (skip 3)
+LET j = 0;
+WHILE j < 5 BEGIN
+    LET j = j + 1;
+    IF j == 3 THEN  CONTINUE;
+    PRINT j;
+END
+
+
+' FALSE as never-enter condition
+WHILE FALSE BEGIN
+    PRINT "You should never see this";
+END
+
+
+
+REM One-shot whole-file operations: READFILE$, WRITEFILE, APPENDFILE
+
+LET p$ = "whole_file_example.txt";
+
+WRITEFILE(p$, "Alpha\nBeta\n");
+APPENDFILE(p$, "Gamma\nDelta\n");
+
+LET all$ = READFILE$(p$);
+PRINTLN "--- CONTENTS ---";
+PRINT all$;
+
+DELETE(p$);  ' cleanup
+
+
+
+REM WITH … END WITH demo for Basil
+
+#USE BMX_RIDER, BMX_TEAM
+
+DIM r@ AS BMX_RIDER("Alice", 17, "Expert", 12, 3);
+DIM t@ AS BMX_TEAM("Rocket Foxes", 2015, PRO);
+t@.AddRider(r@);
+
+REM Todo: WITH blocks are still problematic :/
+
+REM Basic WITH: mutate and call methods without repeating the receiver
+REMWITH r@ BEGIN
+REM    .Wins% = .Wins% + 1;
+REM    .Losses% = .Losses%;
+REM  PRINTLN "Rider:", .Describe$();
+REMEND WITH
+
+REM Nested WITH: inner WITH binds leading dots to the innermost target
+REMWITH t@ BEGIN
+REM  .TeamWins% = 13;
+REM  PRINTLN "Team:", .Info$();
+REM  WITH t@.TopRider() BEGIN
+REM    PRINTLN "Top Rider:", .Describe$();
+REM  END WITH
+REMEND WITH
+
+REM Single-line WITH using ':'
+REM WITH t@ : .TeamLosses% = .TeamLosses% + 1 : PRINTLN "WinPct:", .WinPct() : END WITH
+
+REM Error showcase (uncomment to test):
+REM WITH 42 : .Wins% = 1 : END WITH        REM should error: target not an object
+
+
+
+REM SELECT CASE demo for Basil
+
+LET score% = 6;
+SELECT CASE score%
+  CASE 0
+    PRINTLN "zero";
+  CASE 1, 2, 3
+    PRINTLN "small";
+  CASE 4 TO 7
+    PRINTLN "medium";
+  CASE IS >= 8
+    PRINTLN "large";
+  CASE ELSE
+    PRINTLN "unknown";
+END SELECT
+
+LET color$ = "blue";
+SELECT CASE color$
+  CASE "red", "blue": PRINTLN "primary-ish";
+  CASE "green"      : PRINTLN "green";
+  CASE ELSE         : PRINTLN "other";
+END SELECT
+
+REM Mixed example with expressions and single-line bodies
+LET x = 10.0;
+SELECT CASE x
+  CASE IS < 0      : PRINTLN "negative";
+  CASE 0 TO 1.5    : PRINTLN "tiny";
+  CASE 1.5 TO 9.9  : PRINTLN "smallish";
+  CASE IS >= 10    : PRINTLN "double digits";
+END SELECT
+
+
+
+DIM a% = [1,2,3]
+PRINT a%(1); ", "; a%(2); ", "; a%(3)
+
+DIM mixed@ = [1, "two", 3.0]
+PRINT mixed@[2]
+LET mixed@[2] = "TWO"
+PRINT mixed@[2]
+PRINT "len mixed = ", LEN(mixed@)
+
+
+
+REM FOR EACH over a list (1-based indexing for [] when using FOR)
+LET numbers@ = [10, 20, 30, 40]
+
+FOR EACH n IN numbers@ {
+  PRINT "n = " + n
+}
+NEXT
+
+
+REM FOR EACH over a dictionary: iterate keys and read values
+LET pet@ = { "name": "Fido", "species": "dog", "age": 7 }
+
+FOR EACH key$ IN pet@ {
+  PRINT key$ + ": " + pet@[key$]
+}
+NEXT
+
+
+
+REM FOR loop over a list using indices 1..LEN(list)
+LET items@ = [ "red", "green", "blue" ]
+
+FOR i% = 1 TO LEN(items@) {
+  PRINT "items[" + i% + "] = " + items@[i%]
+}
+NEXT
+
+
+
+REM FOR loop over a dictionary via an explicit keys list
+LET person@ = { "first": "Ada", "last": "Lovelace", "born": 1815 }
+LET keys@ = [ "first", "last", "born" ]
+
+FOR i% = 1 TO LEN(keys@) {
+  LET k$ = keys@[i%]
+  PRINT k$ + ": " + person@[k$]
+}
+NEXT
+
+
+
+REM flow_goto_gosub.basil — Demonstrate GOTO, GOSUB, RETURN, RETURN TO
+
+PRINTLN "Start";
+
+REM --- GOTO demo --------------------------------------------------------------
+GOTO AfterGoto;
+PRINTLN "This line is skipped by GOTO";
+AfterGoto:
+PRINTLN "After GOTO";
+
+REM --- Simple GOSUB/RETURN demo ----------------------------------------------
+GOSUB Work;
+PRINTLN "Back from Work";
+
+REM --- Nested GOSUB + RETURN TO <label> demo ---------------------------------
+PRINTLN "Entering Outer";
+GOSUB Outer;
+PRINTLN "Done with Outer";
+GOTO TheEnd;
+
+Work:
+  PRINTLN "In Work";
+  RETURN;
+
+Outer:
+  PRINTLN "In Outer (before inner)";
+  GOSUB Inner;
+  PRINTLN "In Outer (after inner) — this will be skipped by RETURN TO";
+  RETURN;
+
+Inner:
+  PRINTLN "  In Inner — will RETURN TO a label after the caller";
+  RETURN TO AfterOuter;
+
+AfterOuter:
+  PRINTLN "AfterOuter label reached via RETURN TO";
+  RETURN;
+
+TheEnd:
+PRINTLN "End";
+
+
+REM Fixed-length strings demo
+REM NOTE: Requires fixed-length strings feature (DIM A$ AS STRING * N or A$[N]).
+REM As of 2025-10-17, this interpreter build may not support these; this example may not run yet.
+
+REM [disabled pending fixed-length string support]
+REM DIM code$ AS STRING * 5
+REM code$ = "ABCDEF"
+REM PRINT "code$ = '" + code$ + "'"
+REM PRINT "LEN(code$) = " + LEN(code$)
+
+REM DIM tag$[3]
+REM tag$ = "ππππ"
+REM PRINT "tag$ = '" + tag$ + "'"
+REM PRINT "LEN(tag$) = " + LEN(tag$)
+
+
+
+REM File I/O demo: open, write, readline, seek, eof
+
+LET path$ = "examples_demo.txt";
+
+' Write a few lines
+LET w% = FOPEN(path$, "w");
+FWRITELN(w%, "Alpha");
+FWRITELN(w%, "Beta");
+FWRITELN(w%, "Gamma");
+FFLUSH(w%);
+FCLOSE(w%);
+
+' Read back line by line
+LET r% = FOPEN(path$, "r");
+WHILE NOT FEOF(r%) BEGIN
+  LET line$ = FREADLINE$(r%);
+  IF LEN(line$) > 0 THEN PRINTLN "LINE:", line$; ELSE PRINTLN "(blank line)";
+END
+
+' Seek demonstration
+PRINTLN "--- SEEK DEMO ---";
+FSEEK(r%, 0, 0);                ' rewind to beginning
+PRINTLN "Pos=", FTELL&(r%);
+LET first5$ = FREAD$(r%, 5);
+PRINTLN "First 5 bytes:", first5$;
+PRINTLN "Pos after read=", FTELL&(r%);
+FCLOSE(r%);
+
+DELETE(path$);  ' cleanup
+
+
+
+REM Demo: EXEC and EVAL in Basil
+
+REM EVAL evaluates a string expression and returns its value
+LET sum% = EVAL("2 + 2 * 5");
+PRINTLN "sum%:", sum%;
+
+REM EVAL can call functions available to the program
+LET s$ = EVAL("LEFT$(\"Hello\", 3)");
+PRINTLN "s$:", s$;
+
+REM EXEC executes a multi-line Basil snippet contained in a string
+
+LET code$ = "PRINTLN \"Hello from EXEC!\";" + CHR$(10) +
+            "FOR i% = 1 TO 3 BEGIN PRINTLN \"i=\", i%; END NEXT";
+EXEC(code$);
+
+
+
+REM Demonstration of ESCAPE$, UNESCAPE$, URLENCODE$, URLDECODE$
+
+LET raw$ = "O'Reilly & Sons";
+PRINTLN "Raw:          ", raw$;
+
+LET sql$ = ESCAPE$(raw$);
+PRINTLN "SQL escaped:  ", sql$;                 REM -> O''Reilly & Sons
+PRINTLN "SQL unescape: ", UNESCAPE$(sql$);       REM -> O'Reilly & Sons
+
+LET q$ = "name=Bob Smith & title=Engineer";
+LET enc$ = URLENCODE$(q$);
+PRINTLN "URL encoded:  ", enc$;                 REM -> name%3DBob+Smith+%26+title%3DEngineer
+PRINTLN "URL decoded:  ", URLDECODE$(enc$);     REM -> name=Bob Smith & title=Engineer
+
+
+
+REM Demonstrates ENV$, SETENV / EXPORTENV, SHELL, and EXIT
+SHELL "dir *.*";
+PRINTLN "=== Environment demo ===";
+
+PRINTLN "USERNAME before:", ENV$("USERNAME");
+PRINTLN "DEMO_EXPORT before:", ENV$("DEMO_EXPORT");
+PRINTLN "PATH snippet:", LEFT$(ENV$("PATH"), 60), "...";
+
+REM Set a process-local environment variable
+SETENV DEMO_VAR = "42";
+PRINTLN "After SETENV, DEMO_VAR=", ENV$("DEMO_VAR");
+
+REM Try to export (persist for future processes, best effort on Windows via SETX)
+
+EXPORTENV DEMO_EXPORT = "HELLO WORLD";
+PRINTLN "After EXPORTENV, DEMO_EXPORT (current process) = ", ENV$("DEMO_EXPORT");
+
+PRINTLN "-----------------------------------------";
+REM Run a shell command; on Windows this uses cmd /C
+SHELL "cmd /C echo SHELL=ran OK > env_shell_output.txt";
+SHELL "cmd /C dir *.txt";
+PRINTLN "-----------------------------------------";
+PRINTLN "Created env_shell_output.txt via SHELL.";
+
+// Read the .env file
+PRINTLN "Read .env file:";
+LET a% = LOADENV%("env_shell_output.txt");
+LET b% = LOADENV%(); // defaults to .env
+
+PRINTLN "SHELL = ", ENV$("SHELL");
+PRINTLN "API_KEY = ", ENV$("API_KEY");
+PRINTLN "API_SECRET = ", ENV$("API_SECRET");
+PRINTLN "DATABASE_URL = ", ENV$("DATABASE_URL");
+PRINTLN "DEBUG = ", ENV$("DEBUG");
+PRINTLN "ENABLE_FEATURE_X = ", ENV$("ENABLE_FEATURE_X");
+
+
+if ( a% > 0 ) then begin
+    PRINTLN "Loaded environment variables.";
+else
+    PRINTLN "No .env file found.";
+end if
+
+PRINTLN "=== End of environment demo ===";
+
+
+REM Exit explicitly with code 0
+EXIT 0;
+
+
+
+LET ans$="Y";
+
+IF ans$ == "Y" THEN BEGIN
+  PRINT "\n--- YES ---";
+ELSE
+    PRINT "\n--- NO ---";
+END
+
+
+REM DIR$ demo: list Basil examples in this folder
+
+LET files$@ = DIR$("examples/*.basil");
+PRINTLN "Found ", LEN(files$@), " .basil files:";
+FOR i% = 0 TO UBOUND(files$@)
+  PRINTLN " - ", files$@(i%);
+NEXT
+
+
+
+DIM pet@ = { "name": "Fido", "species": "dog", "age": 7 }
+PRINT pet["name"]
+LET pet["age"] = pet["age"] + 1
+PRINT "age = ", pet["age"]
+PRINT "keys = ", LEN(pet)
+
+
+
+REM Demonstrate a public class file handle field shared across methods
+
+REM Create a logger instance from the class file
+DIM lg@ AS CLASS("examples/logger.basil");
+
+lg@.Init("class_logger_demo.log");
+lg@.Log("Started");
+lg@.Log("Doing work...");
+lg@.Log("Finished");
+lg@.Close();
+
+REM Read back using whole-file helper and print
+LET all$ = READFILE$("class_logger_demo.log");
+PRINT all$;
+
+DELETE("class_logger_demo.log");
+
+PRINTLN "=== End of BIG TEST 3 ===";
+
