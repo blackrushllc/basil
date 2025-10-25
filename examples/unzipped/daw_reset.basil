@@ -1,3 +1,0 @@
-REM Free all DAW resources (audio streams, MIDI connections, rings, WAV writers)
-DAW_RESET
-PRINT "DAW resources reset."
