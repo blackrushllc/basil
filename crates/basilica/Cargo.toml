@@ -23,8 +23,8 @@ tao = "0.30"
 windows = { workspace = true, features = ["Win32_System_Com"] }
 
 # Internal crates
-basil-embed = { path = "..\\basil-embed" }
-basil-host = { path = "..\\basil-host" }
+basil-embed = { path = "../basil-embed" }
+basil-host = { path = "../basil-host" }
 
 
 
