@@ -2114,6 +2114,14 @@ impl VM {
                             let listing = zip_utils::zip_list(&zip_path)?;
                             self.stack.push(Value::Str(listing));
                         }
+                        #[cfg(feature = "obj-zip")]
+                        135 => { // ZIP_ARRAY$(zip_path$)
+                            if argc != 1 { return Err(BasilError("ZIP_ARRAY$ expects 1 argument".into())); }
+                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                            let entries = zip_utils::zip_list_array(&zip_path)?;
+                            let arr = VM::make_string_array(entries);
+                            self.stack.push(arr);
+                        }
                         #[cfg(feature = "obj-curl")]
                         124 => { // HTTP_GET$(url$)
                             if argc != 1 { return Err(BasilError("HTTP_GET$ expects 1 argument".into())); }
