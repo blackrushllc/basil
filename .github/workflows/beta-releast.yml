@@ -1,0 +1,172 @@
+# Trigger on pushes to the branch you want to consider "Beta" (example: "beta")
+on:
+  push:
+    branches:
+      - beta
+
+# Give the job permission to create releases and upload assets
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Example: adjust environment/setup steps to your language/toolchain:
+      # - uses: actions/setup-go@v4
+      # - uses: actions/setup-node@v4
+      # - uses: actions/setup-dotnet@v3
+      - name: Build (placeholder — replace with your real build commands)
+        shell: bash
+        run: |
+          set -e
+          echo "Building for $RUNNER_OS"
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            # example: Linux build - replace with your commands
+            echo "linux binary" > dist/myapp-linux
+            chmod +x dist/myapp-linux
+            ls -lah dist
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            # example: macOS build - replace with your commands
+            echo "macos binary" > dist/myapp-macos
+            chmod +x dist/myapp-macos
+            ls -lah dist
+          else
+            # windows-latest (bash shell is available on windows runners too via msys)
+            echo "windows binary" > dist/myapp-windows.exe
+            ls -lah dist
+          fi
+
+      - name: Upload platform artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Name artifact so the release job can download them individually
+          name: build-${{ matrix.os }}
+          path: dist/*
+
+  release:
+    name: Create or update "Beta" release and upload assets
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download Linux build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-ubuntu-latest
+          path: artifacts/ubuntu || artifacts/ubuntu
+
+      - name: Download macOS build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-macos-latest
+          path: artifacts/macos || artifacts/macos
+
+      - name: Download Windows build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows-latest
+          path: artifacts/windows || artifacts/windows
+
+      - name: Create or update "Beta" release and upload assets
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = 'beta';            // tag name used by the release
+            const releaseName = 'Beta';    // visible release name
+
+            // Try to get a release by the tag; if it doesn't exist, create it
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag
+              });
+              // Update release title/notes if desired
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: release.data.id,
+                name: releaseName,
+                body: `Automated Beta build for ${context.sha} (run ${context.runNumber})`,
+                prerelease: true
+              });
+            } catch (err) {
+              // Not found -> create
+              release = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: releaseName,
+                body: `Automated Beta build for ${context.sha} (run ${context.runNumber})`,
+                prerelease: true,
+                draft: false,
+                target_commitish: context.sha
+              });
+            }
+
+            const release_id = release.data.id;
+
+            // collect files from artifacts directories and upload them,
+            // deleting any existing asset with the same name first
+            const artifactDirs = [
+              'artifacts/ubuntu',
+              'artifacts/macos',
+              'artifacts/windows'
+            ];
+
+            for (const dir of artifactDirs) {
+              if (!fs.existsSync(dir)) continue;
+              const files = fs.readdirSync(dir);
+              for (const file of files) {
+                const filePath = path.join(dir, file);
+                const stat = fs.statSync(filePath);
+
+                // delete existing asset with the same name (if any)
+                const assets = await github.rest.repos.listReleaseAssets({
+                  owner,
+                  repo,
+                  release_id
+                });
+
+                const existing = assets.data.find(a => a.name === file);
+                if (existing) {
+                  await github.rest.repos.deleteReleaseAsset({
+                    owner,
+                    repo,
+                    asset_id: existing.id
+                  });
+                }
+
+                // upload the new asset
+                const data = fs.readFileSync(filePath);
+                await github.rest.repos.uploadReleaseAsset({
+                  owner,
+                  repo,
+                  release_id,
+                  data,
+                  name: file,
+                  headers: {
+                    'content-type': 'application/octet-stream',
+                    'content-length': stat.size
+                  }
+                });
+
+                console.log(`Uploaded ${file} from ${dir}`);
+              }
+            }
+
+            core.info(`Release ${releaseName} updated (id=${release_id})`);
