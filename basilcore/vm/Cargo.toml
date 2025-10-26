@@ -55,3 +55,5 @@ obj-orm = ["basil-objects/obj-orm"]
 obj-orm-mysql = ["basil-objects/obj-orm-mysql", "basil-objects/obj-orm"]
 obj-orm-postgres = ["basil-objects/obj-orm-postgres", "basil-objects/obj-orm"]
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# CRYPTO features forwarded to basil-objects
+obj-crypto = ["basil-objects/obj-crypto"]
