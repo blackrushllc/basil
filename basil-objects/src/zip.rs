@@ -121,3 +121,15 @@ pub fn zip_list(zip_path: &str) -> Result<String> {
     }
     Ok(out)
 }
+
+#[cfg(feature = "obj-zip")]
+pub fn zip_list_array(zip_path: &str) -> Result<Vec<String>> {
+    let file = File::open(zip_path).map_err(|e| to_err("ZIP_ARRAY open", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| to_err("ZIP_ARRAY parse", e))?;
+    let mut out: Vec<String> = Vec::with_capacity(archive.len() as usize);
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| to_err("ZIP_ARRAY entry", e))?;
+        out.push(entry.name().to_string());
+    }
+    Ok(out)
+}

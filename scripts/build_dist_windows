@@ -1,0 +1,9 @@
+# PowerShell wrapper to run the main build script
+# Usage:
+#   pwsh -File scripts/build_dist_windows
+# or
+#   powershell -ExecutionPolicy Bypass -File scripts\build_dist_windows
+
+$ErrorActionPreference = 'Stop'
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+& "$ScriptDir\build_dist_windows.ps1"

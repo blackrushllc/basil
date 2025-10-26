@@ -1,0 +1,72 @@
+[package]
+name = "basil-embed"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
+crossbeam-channel = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+parking_lot = "0.12"
+gag = "1.0"
+
+basil-parser = { workspace = true }
+basil-compiler = { workspace = true }
+basil-bytecode = { workspace = true }
+basil-vm = { workspace = true }
+basil-host = { path = "../basil-host" }
+
+
+
+[features]
+# Mirror basilc feature map so Basilica can be invoked with the same flags
+obj-bmx = ["basil-vm/obj-bmx"]
+obj-bmx-rider = ["basil-vm/obj-bmx-rider"]
+obj-bmx-team = ["basil-vm/obj-bmx-team"]
+obj-base64 = ["basil-vm/obj-base64", "basil-compiler/obj-base64"]
+obj-zip = ["basil-vm/obj-zip", "basil-compiler/obj-zip"]
+obj-curl = ["basil-vm/obj-curl", "basil-compiler/obj-curl"]
+obj-json = ["basil-vm/obj-json", "basil-compiler/obj-json"]
+obj-csv = ["basil-vm/obj-csv", "basil-compiler/obj-csv"]
+obj-sqlite = ["basil-vm/obj-sqlite", "basil-compiler/obj-sqlite"]
+# SQL connectors
+obj-sql-mysql = ["basil-vm/obj-sql-mysql"]
+obj-sql-postgres = ["basil-vm/obj-sql-postgres"]
+obj-sql = ["basil-vm/obj-sql"]
+# Audio/MIDI/DAW/AI/Terminal
+obj-audio = ["basil-vm/obj-audio", "basil-compiler/obj-audio", "basil-vm/obj-daw", "basil-compiler/obj-daw"]
+obj-midi  = ["basil-vm/obj-midi",  "basil-compiler/obj-midi"]
+obj-daw   = ["basil-vm/obj-daw", "basil-compiler/obj-daw", "obj-audio", "obj-midi"]
+obj-ai    = ["basil-vm/obj-ai", "basil-compiler/obj-ai"]
+obj-term  = ["basil-vm/obj-term", "basil-compiler/obj-term"]
+# AWS
+obj-aws-s3  = ["basil-vm/obj-aws-s3"]
+obj-aws-ses = ["basil-vm/obj-aws-ses"]
+obj-aws-sqs = ["basil-vm/obj-aws-sqs"]
+obj-aws     = ["basil-vm/obj-aws", "obj-aws-s3", "obj-aws-ses", "obj-aws-sqs"]
+# NET
+obj-net-sftp = ["basil-vm/obj-net-sftp"]
+obj-net-smtp = ["basil-vm/obj-net-smtp"]
+obj-net-http = ["basil-vm/obj-net-http"]
+obj-net      = ["basil-vm/obj-net", "obj-net-smtp", "obj-net-sftp"]
+# ORM
+obj-orm = ["basil-vm/obj-orm", "basil-compiler/obj-orm"]
+obj-orm-mysql = ["basil-vm/obj-orm-mysql", "basil-compiler/obj-orm-mysql"]
+obj-orm-postgres = ["basil-vm/obj-orm-postgres", "basil-compiler/obj-orm-postgres"]
+obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Umbrellas
+obj-all = [
+  "obj-base64","obj-zip","obj-curl","obj-json","obj-csv","obj-sqlite","obj-sql",
+  "obj-bmx","obj-daw","obj-ai","obj-term","obj-aws","obj-net","obj-orm-all"
+]
+# Portable umbrella without audio/DAW/SFTP
+obj-safe = [
+  "obj-base64","obj-zip","obj-curl","obj-json","obj-csv","obj-sqlite","obj-sql",
+  "obj-bmx","obj-ai","obj-term","obj-aws","obj-net-smtp","obj-net-http","obj-orm-all"
+]
+# Compatibility no-op used by some scripts/notes
+obj-sQ = []
+# Optional flag for parity with basilc
+portable = []

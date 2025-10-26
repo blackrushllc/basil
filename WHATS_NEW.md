@@ -7,12 +7,13 @@
 + Distribution of compiler (CARGO.IO)
 + Updated guides and docs
 + Bigger demo website that lets you compile and run Basil code online
-+ Game Mod (the first one will be gay)
-+ Lists, Dictionaries and Stucture data types
++ Game Mod (the first one will be geh)
 
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
 ### 🌿 New stuff just added:
++ A GUI Proof of Concept (Basilica) that runs Basil scripts in a webview window with HTML/CSS/JS rendering
++ Lists, Dictionaries, and Stucture data types (see docs/guides/NONSCALARS.md)
 + Added new syntax I call "Basil#" - Curly braces instead of BEGIN..END for blocks (and other syntax changes)
 + (You can use both styles interchangeably)
 + ORM Mod (this is insane!) 
