@@ -57,6 +57,8 @@ obj-orm-postgres = ["basil-vm/obj-orm-postgres", "basil-compiler/obj-orm-postgre
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
+# CRYPTO feature forwarding to VM and compiler
+obj-crypto = ["basil-vm/obj-crypto", "basil-compiler/obj-crypto"]
 obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all"]
 
 # Safe umbrella for portable builds: excludes SFTP and audio/MIDI/DAW
