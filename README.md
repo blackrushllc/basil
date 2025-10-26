@@ -1,5 +1,9 @@
 # Basil 🌿
 
+Download runnable binaries for Windows, Linux and MacOS here:
+
+https://github.com/blackrushllc/basil/releases/tag/Beta
+
 ## This is the Basil Programming Language
 > ### This is what first year students should learn.
 > ### This is what hobbyists should learn.
