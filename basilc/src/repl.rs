@@ -28,11 +28,13 @@ pub struct Session {
     pub next_snippet_id: usize,
     pub settings: SessionSettings,
     script_path: Option<String>,
+    // If a program has executed STOP, keep its VM to allow RESUME
+    suspended_vm: Option<VM>,
 }
 
 impl Session {
     pub fn new(settings: SessionSettings) -> Self {
-        Self { globals: HashMap::new(), order: Vec::new(), origins: HashMap::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None }
+        Self { globals: HashMap::new(), order: Vec::new(), origins: HashMap::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None, suspended_vm: None }
     }
 
     pub fn run_program(&mut self, path: &str) -> Result<(), String> {
@@ -98,13 +100,20 @@ impl Session {
                 let _ = vm.set_global_by_name(name, v.clone());
             }
         }
-        vm.run().map_err(|e| {
+        let run_res = vm.run();
+        if let Err(e) = run_res {
             let line = vm.current_line();
-            if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
-            else { format!("runtime error: {}", e) }
-        })?;
+            let msg = if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
+                      else { format!("runtime error: {}", e) };
+            return Err(msg);
+        }
+        // Merge globals back into REPL session so they are visible while suspended
         let (names, values) = vm.globals_snapshot();
         self.merge_globals(&names, &values, Some(path));
+        if vm.is_suspended() {
+            println!("Program suspended.");
+            self.suspended_vm = Some(vm);
+        }
         Ok(())
     }
 
@@ -178,7 +187,7 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
 
     // Old-school banner
     println!("BASIL - A BASIC Bytecode Interpreter and Compiler");
-    println!("Copyright (C) Blackrush LLC - All Rights Reserved.");
+    println!("Copyright (C) Blackrush LLC .");
     println!("Open Source Software under MIT License");
     println!("");
     println!("Enter a command or :help or quit");
@@ -292,6 +301,57 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                 for (ln, txt) in &program_buf {
                     println!("{} {}", ln, txt);
                 }
+
+                // Mods compiled into this basilc binary
+                println!("-- MODS --");
+                let mut mods: Vec<&str> = Vec::new();
+                // Core/common objects
+                if cfg!(feature = "obj-base64") { mods.push("obj-base64"); }
+                if cfg!(feature = "obj-zip")    { mods.push("obj-zip"); }
+                if cfg!(feature = "obj-curl")   { mods.push("obj-curl"); }
+                if cfg!(feature = "obj-json")   { mods.push("obj-json"); }
+                if cfg!(feature = "obj-csv")    { mods.push("obj-csv"); }
+                if cfg!(feature = "obj-sqlite") { mods.push("obj-sqlite"); }
+                if cfg!(feature = "obj-sql")    { mods.push("obj-sql"); }
+                if cfg!(feature = "obj-sql-mysql")    { mods.push("obj-sql-mysql"); }
+                if cfg!(feature = "obj-sql-postgres") { mods.push("obj-sql-postgres"); }
+
+                // BMX sample domain objects
+                if cfg!(feature = "obj-bmx")        { mods.push("obj-bmx"); }
+                if cfg!(feature = "obj-bmx-rider")  { mods.push("obj-rider"); }
+                if cfg!(feature = "obj-bmx-team")   { mods.push("obj-team"); }
+
+                // Audio/MIDI/DAW
+                if cfg!(feature = "obj-audio") { mods.push("obj-audio"); }
+                if cfg!(feature = "obj-midi")  { mods.push("obj-midi"); }
+                if cfg!(feature = "obj-daw")   { mods.push("obj-daw"); }
+
+                // AI/Terminal
+                if cfg!(feature = "obj-ai")   { mods.push("obj-ai"); }
+                if cfg!(feature = "obj-term") { mods.push("obj-term"); }
+
+                // AWS
+                if cfg!(feature = "obj-aws-s3")  { mods.push("obj-s3"); }
+                if cfg!(feature = "obj-aws-ses") { mods.push("obj-ses"); }
+                if cfg!(feature = "obj-aws-sqs") { mods.push("obj-sqs"); }
+
+                // NET
+                if cfg!(feature = "obj-net-http") { mods.push("obj-http"); }
+                if cfg!(feature = "obj-net-smtp") { mods.push("obj-smtp"); }
+                if cfg!(feature = "obj-net-sftp") { mods.push("obj-sftp"); }
+
+                // ORM
+                if cfg!(feature = "obj-orm")           { mods.push("obj-orm"); }
+                if cfg!(feature = "obj-orm-mysql")     { mods.push("obj-orm-mysql"); }
+                if cfg!(feature = "obj-orm-postgres")  { mods.push("obj-orm-postgres"); }
+
+                if mods.is_empty() {
+                    println!("(none)");
+                } else {
+                    mods.sort();
+                    for m in mods { println!("{}", m); }
+                }
+
                 // Then symbol table with types, values, and origins
                 println!("-- SYMBOLS --");
                 for name in &sess.order {
@@ -305,6 +365,8 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                             Value::Func(f) => { let _ = f; "FUNCTION" },
                             Value::Array(_) => "ARRAY",
                             Value::Object(obj) => { let _ = obj; "OBJECT" },
+                            Value::List(_) => "LIST",
+                            Value::Dict(_) => "DICT",
                             Value::StrArray2D { .. } => "STRARRAY2D",
                         };
                         let origins = sess.origins.get(name).cloned().unwrap_or_default();
@@ -314,6 +376,31 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                             println!("{} : {} = {}    from: {}", name, ty, v, origins.join(", "));
                         }
                     }
+                }
+                continue;
+            } else if upper == "RESUME" {
+                if let Some(mut vm) = sess.suspended_vm.take() {
+                    match vm.resume() {
+                        Ok(()) => {
+                            let (names, values) = vm.globals_snapshot();
+                            let origin_owned = sess.script_path.clone();
+                            let origin = origin_owned.as_deref();
+                            sess.merge_globals(&names, &values, origin);
+                            if vm.is_suspended() {
+                                println!("Program suspended.");
+                                sess.suspended_vm = Some(vm);
+                            } else {
+                                println!("Program resumed and finished.");
+                            }
+                        }
+                        Err(e) => {
+                            let line = vm.current_line();
+                            if sess.settings.show_backtraces { eprintln!("runtime error at line {}: {}", line, e); }
+                            else { eprintln!("runtime error: {}", e); }
+                        }
+                    }
+                } else {
+                    println!("No program is suspended.");
                 }
                 continue;
             }
@@ -343,6 +430,8 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                                 Value::Func(_) => "FUNCTION",
                                 Value::Array(_) => "ARRAY",
                                 Value::Object(_) => "OBJECT",
+                                Value::List(_) => "LIST",
+                                Value::Dict(_) => "DICT",
                                 Value::StrArray2D { .. } => "STRARRAY2D",
                             };
                             println!("{} : {}", name, ty);

@@ -7,7 +7,7 @@
 > ### This is the only programming language you need.
 
 >
-> Invite link to Blackrush Slack (Expires 11/13/25)
+> Invite link to Blackrush Slack (Never Expires)
 >
 > https://join.slack.com/t/blackrushworkspace/shared_invite/zt-3g33s1rxc-9wWmCfggBEzInblqjzsn1A
 >
@@ -65,7 +65,56 @@ and seamless interoperability with C and WebAssembly (WASI).
 
 🌱 Basil is pronounced like "basil" the herb, and is a pun volcano.
 
+## Why first languages matter
 
+Your first programming language shouldn’t be a puzzle box. It should:
+- Lower cognitive load while you’re learning core ideas like variables, expressions, control flow, and functions.
+- Offer clear, immediate feedback (short edit–run cycles, gentle error messages).
+- Be consistent in how it uses syntax to express ideas.
+- Build habits that transfer to the broader programming world.
+
+Basil🌿 was designed against these criteria. It keeps the classic readability of BASIC, but adds an alternate “modern” surface syntax so that what you learn today still looks familiar later.
+
+At the same time, Basil🌿 is powerful enough to build real projects, with a growing standard library and a modular “mod” system that to adds out-of-box functionality like AI, AWS, SQL databases, HTTP, SMTP, JSON, CSV, cryptography, audio/MIDI/DAW support, and more.
+
+Basil🌿 is also made for the AI age, the first programming language designed for AI from the ground up.
+
+---
+
+### Two ways to say the same thing (both valid in Basil🌿)
+Classic BASIC style:
+
+```
+REM BOTH SYNTAXES ARE VALID:
+
+REM Infinite loop with BREAK (will break at 3)
+LET i = 0;
+WHILE TRUE BEGIN
+    LET i = i + 1;
+    IF i == 3 THEN BEGIN // Block IF
+        BREAK;
+    END
+    PRINT i;
+END
+```
+
+Modern brace style (THEN is implied when you open a brace):
+
+```
+// Infinite loop with BREAK (will break at 3)
+let i = 0;
+while true {
+    let i = i + 1;
+    if i == 3 { // Block IF
+        break;
+    }
+    print i;
+}
+```
+
+You can mix and match styles in one program. Internally, both forms compile to the same structures and run the same way.
+
+---
 
 
 ### Quick Try:
@@ -118,106 +167,148 @@ See:
 
 
 
-# 🌱 Basil Prototype v0 — Public Plan & Skeleton
+# The Basil Programming Language for Education
 
-A minimal, public‑ready blueprint for a modern BASIC‑flavored language focused on web/back‑end. This plan targets a tiny, end‑to‑end slice: **source → tokens → Abstract Syntax Tree → bytecode → VM** with room to evolve into C/WASM/JS backends.
+### Why Basil🌿 works as a first learning language
+- Gentle, explicit control flow
+    - `if ... then` and `if ... { ... }` are both accepted; `else/elseif` read naturally.
+    - `while`, `for`, and `select case` are straightforward and visible.
+- Clear block boundaries
+    - You can choose `BEGIN ... END` or `{ ... }`. Either way, blocks are explicit and obvious.
+- Low ceremony, fast feedback
+    - Small surface area, immediate execution, simple I/O (`print`, `println`).
+- Case‑insensitive keywords; readable by design
+    - Beginners don’t lose momentum over capitalization or minor formatting.
+- A bridge to mainstream languages
+    - The brace form prepares students to read/write C‑family languages without abandoning BASIC’s clarity.
 
 ---
 
 
-
-## 0) High‑level goals
-
-* 🌱 **Developer joy**: BASIC warmth + modern features (expressions, async later, modules).
-* 🌱 **Simple core now, room to grow**: start with a stack VM, evolve to register/SSA.
-* 🌱 **Interop first**: design a stable C Application Binary Interface (ABI) and WASI component boundary (later phases).
-* 🌱 **Linux + Windows, single binary toolchain**.
+### How Basil🌿 addresses first‑year pain points
+- Visible structure
+    - Choose braces or `BEGIN/END`. Students can literally “see the block.”
+- Predictable, explicit control flow
+    - `if/elseif/else`, `while`, `for/next`, and `select case` have minimal hidden rules.
+- One concept at a time
+    - You can start with the classic style and later migrate to braces without relearning the language.
+- Transferable skills
+    - The modern style maps cleanly to C, C#, Java, JavaScript, and Go idioms.
+- Friendly diagnostics
+    - Errors mention both classic and modern forms (e.g., “Expected THEN or ‘{’ after IF condition.”), guiding students instead of stopping them.
 
 ---
 
-## 1) 🌱 Repository layout (Rust host)
+### A suggested path for an intro course (e.g., COP‑1000)
+1. 🌱 Week 1–2: Variables, arithmetic, `print`/`println`, simple `if/then`.
+2. 🌱 Week 3: Loops (`while`, `for/next`), `break` and `continue`.
+3. 🌱 Week 4: Functions (`func`, `return`), parameters, local scope.
+4. 🌱 Week 5: Decisions at scale: `select case`; string operations.
+5. 🌱 Week 6: Modernization—introduce the brace style in parallel; show side‑by‑side translations.
+6. 🌱 Week 7+: Objects and modules as applicable; project work.
 
-(BADLY needs to be updated)
+Students leave with working mental models and syntax that looks familiar across the industry.
 
-```
-basil/
-├─ LICENSE
-├─ README.md
-├─ Cargo.toml                    # workspace
-├─ basilc/                       # CLI (repl, run, compile)
-│  ├─ Cargo.toml
-│  └─ src/main.rs
-├─ basilcore/                    # language core crates
-│  ├─ lexer/         (tokens + scanner)
-│  ├─ parser/        (Pratt parser → Abstract Syntax Tree)
-│  ├─ ast/           (Abstract Syntax Tree nodes + spans)
-│  ├─ compiler/      (Abstract Syntax Tree → bytecode chunk)
-│  ├─ bytecode/      (opcodes, chunk, constants)
-│  ├─ vm/            (stack VM, values, GC stub)
-│  └─ common/        (errors, interner, span, arena)
-├─ stdlib/                       # native builtins (print, clock) and later modules
-├─ examples/
-│  ├─ hello.basil
-│  ├─ expr.basil
-│  └─ fib.basil
-└─ tests/
-   └─ e2e.rs
-```
+---
 
->
-> Terminal control (obj-term):
->
-> - Enable the terminal feature and run examples:
-    >  cargo run -q -p basilc --features obj-term -- run examples/term/01_colors_and_cls.basil
->
-> - New commands when enabled:
-    >  CLS, CLEAR, HOME, LOCATE(x%, y%), COLOR(fg, bg), COLOR_RESET, ATTR(bold%, underline%, reverse%), ATTR_RESET,
-    >  CURSOR_SAVE, CURSOR_RESTORE, TERM_COLS%(), TERM_ROWS%(), CURSOR_HIDE, CURSOR_SHOW, TERM_ERR$()
->
-> Color values for COLOR can be 0..15 or names (case-insensitive):
-> 
-> 0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White, 8=Grey,
-> 9=BrightRed, 10=BrightGreen, 11=BrightYellow, 12=BrightBlue, 13=BrightMagenta, 14=BrightCyan, 15=BrightWhite
->
-> Names: "black","red","green","yellow","blue","magenta","cyan","white","grey",
-"brightred","brightgreen","brightyellow","brightblue","brightmagenta","brightcyan","brightwhite"
->
-> Examples are in examples/term/.
->
+### Quick syntax map: classic to modern
+- IF
+    - Classic: `IF cond THEN BEGIN ... END`
+    - Modern:  `if cond { ... }`
+- ELSE / ELSEIF
+    - Classic: `ELSE BEGIN ... END` or single statement
+    - Modern:  `} else if cond { ... } else { ... }`
+- WHILE
+    - Classic: `WHILE cond BEGIN ... END`
+    - Modern:  `while cond { ... }`
+- FOR / NEXT
+    - Classic: `FOR i = 1 TO 10 ... NEXT i`
+    - Modern:  same control header; body can use `{ ... }`
+- SELECT CASE
+    - Classic: `SELECT CASE x ... END [SELECT]`
+    - Modern:  `select case x { ... }`
 
-### Complete list of Basil Feature Objects (Mods). You can link them individually or all at once with --features obj-all (Recommended)
+Both forms are always valid; pick one or mix as you learn.
 
-At build time, you can enable any of the following mods.  You can also enable all of them at once with --features obj-all.
+---
 
-Enabling more mods will increase the size of the Basil binary, but will give you more functionality.
+### Basil🌿 is a cross-platform Interpreter and Native-Code Compiler
 
-Enabling mods will add new commands and functions to Basil.
+- Basil🌿 is a cross-platform interpreter and native-code compiler. It runs on Windows, Linux, and macOS.
+- Basil🌿 can run source files, or compile to a single portable executable that runs without installing a runtime or dependencies.
 
-Some mods are automatically bundled with other mods when there is interoperability, such as obj-orm requires obj-sql, etc 
+### A Large Standard Extended Library with "Mods"
 
-+ obj-ai - Enable AI commands and functions in Basil
-+ obj-audio - Audio playback and recording (Alone)
-+ obj-aws - S3, SES, SQS, etc
-+ obj-base64 - Base64 encoding and decoding
-+ obj-bmx - An example set of Basil Modules for you to use as a starting point.
-+ obj-crypto - PGP, other encryption and decryption tools
-+ obj-csv - CSV
-+ obj-curl - Curl client
-+ obj-daw - All Midi and Audio related objects
-+ obj-inet - Internet client (HTTP, FTP, SMTP, REST, etc)
-+ obj-json - JSON utilities
-+ obj-midi - MIDI audio playback and recording (Alone)
-+ obj-mysql - MySQL
-+ obj-net - SFTP, SMTP, REST, etc
-+ obj-orm - Object Relational Model
-+ obj-pgp - PGP encryption and decryption (alone)
-+ obj-postgres - Postgres
-+ obj-rds - RDS
-+ obj-rest - REST API client
-+ obj-sftp - SFTP client (alone)
-+ obj-smtp - SMTP client (alone)
-+ obj-sql - SQL (MySQL, Postgres, RDS, etc)
-+ obj-sqlite - SQLite
-+ obj-term - Terminal control using CrossTerm
-+ obj-zip - Zip file compression and decompression
-+ **obj-all - Enable all of the above (Recommended)**
+Basil🌿  contains a robust standard library and pre-built "Basil🌿 Feature Objects" or "Mods" that provide real-world
+functionality out of the box. These include:
+
+- 🌿 File I/O
+- 🌿 String manipulation
+- 🌿 Date and time functions
+- 🌿 Math functions
+- 🌿 Artificial Intelligence (AI) integration
+- 🌿 Networking (HTTP, SMTP, CURL)
+- 🌿 Database access (SQLite, SQL, ORM Wrappers)
+- 🌿 JSON and CSV handling
+- 🌿 Web Development (Templating HTML with embedded <?Basil🌿 .. ?> like Php)
+- 🌿 AWS integration
+- 🌿 Advance Screen UI (CrossTerm)
+- 🌿 AI/ML interfaces
+- 🌿 Audio/MIDI/DAW support
+- 🌿 Cryptography (Base64, PGP, Zip)
+- 🌿 WebAssembly support
+- 🌿 Example starter Mods
+- 🌿 Tons of examples and documentation
+- 🌿 AI Onboarding for Rust Developers
+- 🌿 Community support
+- 🌿 and more!
+
+
+### Looking ahead
+
+Basil🌿  keeps backward compatibility while also adding new features.  Recently added features include:
+
+- 🌱 List and dictionary literals.
+- 🌱 User‑defined types (`TYPE ... END TYPE`).
+- 🌱 Fixed‑length strings where appropriate.
+- 🌱 Game-capable graphics
+- 🌱 Asterisk Integration (VoIP)
+- 🌱 WebAssembly (WASM) support
+- 🌱 Distributed processing (DPROC)
+- 🌱 Interop with Rust, Go, and C#
+
+At the time of this writing we are also working on:
+- 🌱 An web-based IDE (Integrated Development Environment)
+- 🌱 JetBrains integration
+- 🌱 VS Code integration
+
+... and we are open to suggestions!
+
+These features will slot into the existing language without disrupting the core learning experience.
+
+### Education and Community
+
+Basil🌿  is an open source project and is actively developed by a community of volunteers, built with education and community in mind.
+
+We have built Basil🌿 to be a great learning tool for beginners, while remaining robust and powerful for real-world use.
+We are committed to making it easy for you to learn the Basil🌿 language and to contribute to the project.
+
+---
+
+### Summary
+
+Basil🌿 restores the simplicity many of us loved in our first encounters with BASIC, while offering a modern, brace‑style
+path that aligns with today’s mainstream languages. It’s small enough to learn quickly, expressive enough to build real
+projects, and friendly enough to keep students in the game—so more learners finish the course confident, not frustrated.
+
+### Resources
+
+Github Repository: https://github.com/blackrushllc/basil
+
+Complete Online Reference: https://yobasic.com/basil/reference.html
+
+Email: BlackrushDrive@Gmail.com
+
+Everywhere: @BlackrushWorld
+
+Basil is an open source project under MIT license, Copyright (c) 2026 Blackrush LLC, Tarpon Springs, Florida, USA.

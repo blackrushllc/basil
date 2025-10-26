@@ -1,0 +1,14 @@
+WEB.SET_HTML$("
+  <style>body{font-family:sans-serif} .btn{padding:8px;margin:4px}</style>
+  <h2>POS - Inventory</h2>
+  <button id='scan' class='btn'>Scan Item</button>
+  <div id='o'></div>
+")
+WEB.ON%("click","scan", OnScan)
+PRINT "Inventory ready."
+STOP
+
+OnScan:
+PRINT "Scanning..."
+WEB.EVAL$("document.getElementById('o').innerText='Item scanned';")
+RETURN

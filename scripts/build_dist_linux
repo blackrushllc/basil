@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper that invokes the main Linux build script
+# Usage: bash scripts/build_dist_linux
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/build_dist_linux.sh"
