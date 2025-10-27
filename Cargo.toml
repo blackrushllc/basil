@@ -22,6 +22,8 @@ members = [
     "crates/basilica",
     "crates/basil-embed",
     "crates/basil-host",
+    "crates/basil_web",
+    "bin/basil-serve",
 ]
 resolver = "2"
 

@@ -1,0 +1,41 @@
+[package]
+name = "basil_web"
+version = "0.0.1"
+edition = "2021"
+
+[features]
+# Default: use external basilc process to run (and rebuild if needed)
+default = ["process-runner"]
+process-runner = []
+lib-runner = []
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+axum = { version = "0.7", features = ["http1", "tokio"] }
+hyper = { version = "1", features = ["http1", "server"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "fs", "io-util", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["trace", "fs"] }
+bytes = "1"
+camino = { version = "1", features = ["serde1"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+percent-encoding = "2"
+mime_guess = "2"
+sha2 = "0.10"
+base64 = "0.22"
+regex = "1"
+notify = { version = "6", optional = true }
+http = "1"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+async-stream = "0.3"
+futures = "0.3"
+httpdate = "1"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3"

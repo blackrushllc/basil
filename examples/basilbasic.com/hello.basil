@@ -1,0 +1,3 @@
+PRINT "Content-Type: text/plain\r\n";
+PRINT "\r\n";
+PRINT "Hello from Basil!\n";
