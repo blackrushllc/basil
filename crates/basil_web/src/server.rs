@@ -1,7 +1,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{routing::get, Router};
+use axum::Router;
+use tower_http::trace::TraceLayer;
 use tokio::net::TcpListener;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -29,7 +30,8 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
 
     let state = Arc::new(AppState::new(cfg.clone()));
     let app = Router::new()
-        .fallback(get(handlers::entry))
+        .layer(TraceLayer::new_for_http())
+        .fallback(handlers::entry)
         .with_state(state.clone());
 
     let addr: SocketAddr = format!("{}:{}", cfg.host, cfg.port).parse()?;

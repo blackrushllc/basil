@@ -20,3 +20,13 @@ fn cgi_header_parsing() {
     assert_eq!(so.headers.get("content-type").unwrap(), "text/plain");
     assert_eq!(&so.body[..], b"Hello");
 }
+
+
+#[test]
+fn safe_join_allows_root_relative_nonexistent() {
+    let root = tempfile::tempdir().unwrap();
+    let rootp = root.path();
+    // Intentionally do not create favicon.ico
+    let p = util::safe_join(rootp, "/favicon.ico").expect("should allow root-relative non-existing path");
+    assert!(p.starts_with(rootp));
+}
