@@ -12,7 +12,7 @@
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
 ### 🌿 New stuff just added:
-+ WEB SERVER!  See docs/WEBSERVER.md for info to build & run local dev web server
++ WEB SERVER!  See docs/WEB_SERVER.md for info to build & run local dev web server
 + A GUI Proof of Concept (Basilica) that runs Basil scripts in a webview window with HTML/CSS/JS rendering
 + Lists, Dictionaries, and Stucture data types (see docs/guides/NONSCALARS.md)
 + Added new syntax I call "Basil#" - Curly braces instead of BEGIN..END for blocks (and other syntax changes)
