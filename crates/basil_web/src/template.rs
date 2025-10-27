@@ -35,7 +35,13 @@ pub async fn render_html_with_basil(app: &AppState, _req: Request<Body>, path: P
                 while cs < bytes.len() && (bytes[cs] == b' ' || bytes[cs] == b'\t' || bytes[cs] == b'\r' || bytes[cs] == b'\n') { cs += 1; }
                 if let Some(end) = find_subslice(&bytes, close, cs) {
                     let code_bytes = &bytes[cs..end];
-                    let rendered = eval_inline_basil(app, path.as_path(), code_bytes).await.unwrap_or_else(|e| format!("<pre class=\"error\">{}</pre>", e));
+                    let rendered = match eval_inline_basil(app, path.as_path(), code_bytes).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!(file = %path.display(), error = %e, "inline basil block error");
+                            format!("<pre class=\"error\">{}</pre>", e)
+                        }
+                    };
                     out.extend_from_slice(rendered.as_bytes());
                     pos = end + close.len();
                 } else {

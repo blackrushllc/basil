@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 
 [features]
-# Default: use external processes (bcc/basilc) to compile and run
+# Default: use external basilc process to run (and rebuild if needed)
 default = ["process-runner"]
 process-runner = []
 lib-runner = []

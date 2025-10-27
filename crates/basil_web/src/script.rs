@@ -18,7 +18,7 @@ pub async fn run_script(app: &AppState, req: Request<Body>, path: PathBuf) -> Re
         util::change_ext(&path, "basilx")
     };
 
-    // Compile if stale
+    // Compile if stale (no-op: basilc rebuilds as needed, but we keep path prep for future)
     let _co = compile::compile_if_stale(&path, &bytecode_path, app.cfg.bytecode_dir.as_ref().map(|b| b.as_std_path())).await?;
 
     // Run basil VM: process-runner via basilc
@@ -43,8 +43,14 @@ pub async fn run_script(app: &AppState, req: Request<Body>, path: PathBuf) -> Re
 
     let out = match time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(o)) => o,
-        Ok(Err(e)) => { return Ok(error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to run script: {}", e))); }
-        Err(_) => { return Ok(error_response(StatusCode::GATEWAY_TIMEOUT, "Script timed out")); }
+        Ok(Err(e)) => {
+            tracing::error!(script = %path.display(), error = %e, "Failed to run script process");
+            return Ok(error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to run script: {}", e)));
+        }
+        Err(_) => {
+            tracing::error!(script = %path.display(), timeout_secs = %timeout.as_secs(), "Script timed out");
+            return Ok(error_response(StatusCode::GATEWAY_TIMEOUT, "Script timed out"));
+        }
     };
 
     if !out.stderr.is_empty() {
