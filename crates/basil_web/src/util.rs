@@ -19,18 +19,45 @@ pub fn etag_weak_for_meta(p: &Path) -> Result<String> {
 }
 
 pub fn safe_join(root: &Path, req_path: &str) -> Result<PathBuf> {
-    let mut result = PathBuf::from(root);
-    for seg in req_path.split('/') {
-        if seg.is_empty() || seg == "." { continue; }
-        if seg == ".." { return Err(anyhow::anyhow!("path traversal attempted")); }
-        result.push(seg);
-    }
+    // Canonicalize root for security checks, but build the returned path from the original root
+    // so callers can reliably test `starts_with(root)` even on Windows where canonicalize may
+    // introduce a verbatim prefix (\\?\C:\...).
     let canon_root = fs::canonicalize(root).context("canonicalize root")?;
-    let canon = fs::canonicalize(&result).unwrap_or(result.clone());
-    if !canon.starts_with(&canon_root) {
+
+    // Build under the provided root path
+    let mut result = PathBuf::from(root);
+
+    // Walk the requested path using OS components; ignore absolute markers
+    for comp in std::path::Path::new(req_path).components() {
+        use std::path::Component;
+        match comp {
+            Component::Prefix(_) | Component::RootDir | Component::CurDir => {
+                // drop drive letters (Windows), leading slashes, and '.'
+            }
+            Component::ParentDir => {
+                return Err(anyhow::anyhow!("path traversal attempted"));
+            }
+            Component::Normal(seg) => {
+                result.push(seg);
+            }
+        }
+    }
+
+    // If the resulting path exists, enforce that its canonical form stays under the canonical root
+    if result.exists() {
+        let canon_res = fs::canonicalize(&result).unwrap_or(result.clone());
+        if !canon_res.starts_with(&canon_root) {
+            return Err(anyhow::anyhow!("path escapes root"));
+        }
+        return Ok(result);
+    }
+
+    // For non-existing targets, we built directly under `root`, so lexical prefix check suffices
+    if !result.starts_with(root) {
         return Err(anyhow::anyhow!("path escapes root"));
     }
-    Ok(canon)
+
+    Ok(result)
 }
 
 pub fn stderr_tail(bytes: &[u8], max: usize) -> String {
