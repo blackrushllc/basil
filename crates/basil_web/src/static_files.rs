@@ -17,6 +17,29 @@ pub fn resolve_path(root: &Path, uri_path: &str) -> Result<PathBuf> {
 pub async fn serve_file(cfg: &crate::config::Config, parts: http::request::Parts, file: PathBuf) -> Result<Response> {
     // HEAD vs GET handling
     let method = parts.method.clone();
+
+    // 405 for methods other than GET/HEAD
+    if method != http::Method::GET && method != http::Method::HEAD {
+        tracing::warn!(method = %method, path = %file.display(), "405 Method Not Allowed (static)");
+        let mut resp = Response::builder()
+            .status(StatusCode::METHOD_NOT_ALLOWED)
+            .body(Body::empty())
+            .unwrap();
+        resp.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
+        return Ok(resp);
+    }
+
+    // 404 if file doesn't exist
+    if !file.exists() {
+        tracing::warn!(path = %file.display(), "404 Not Found");
+        let mut resp = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(if method == http::Method::HEAD { Body::empty() } else { Body::from(format!("<h1>404 Not Found</h1><pre>{}</pre>", file.display())) })
+            .unwrap();
+        resp.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        return Ok(resp);
+    }
+
     let mut headers = HeaderMap::new();
 
     // MIME
@@ -58,7 +81,7 @@ pub async fn serve_file(cfg: &crate::config::Config, parts: http::request::Parts
 
 pub async fn dispatch(app: &AppState, req: Request<Body>) -> Result<Response> {
     let (parts, body) = req.into_parts();
-    let _method = parts.method.clone();
+    let method = parts.method.clone();
     let path = resolve_path(app.cfg.root.as_std_path(), parts.uri.path())?;
 
     if path.is_dir() {
@@ -66,10 +89,43 @@ pub async fn dispatch(app: &AppState, req: Request<Body>) -> Result<Response> {
         return serve_file(&app.cfg, parts, idx).await;
     }
 
+    // 404 early if the target path doesn't exist
+    if !path.exists() {
+        tracing::warn!(path = %path.display(), "404 Not Found");
+        let mut resp = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(if method == http::Method::HEAD { Body::empty() } else { Body::from(format!("<h1>404 Not Found</h1><pre>{}</pre>", path.display())) })
+            .unwrap();
+        resp.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        return Ok(resp);
+    }
+
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
     match ext {
-        "basil" | "bas" => return crate::script::run_script(app, Request::from_parts(parts, Body::from(body)), path).await,
+        // For Basil scripts: allow GET and POST only; others → 405
+        "basil" | "bas" => {
+            if method != http::Method::GET && method != http::Method::POST {
+                tracing::warn!(method = %method, path = %path.display(), "405 Method Not Allowed (script)");
+                let mut resp = Response::builder()
+                    .status(StatusCode::METHOD_NOT_ALLOWED)
+                    .body(Body::empty())
+                    .unwrap();
+                resp.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, POST"));
+                return Ok(resp);
+            }
+            return crate::script::run_script(app, Request::from_parts(parts, Body::from(body)), path).await;
+        }
+        // For HTML/templates: allow GET/HEAD only; others → 405
         "html" => {
+            if method != http::Method::GET && method != http::Method::HEAD {
+                tracing::warn!(method = %method, path = %path.display(), "405 Method Not Allowed (html)");
+                let mut resp = Response::builder()
+                    .status(StatusCode::METHOD_NOT_ALLOWED)
+                    .body(Body::empty())
+                    .unwrap();
+                resp.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
+                return Ok(resp);
+            }
             if crate::template::file_contains_basil(&path).await? {
                 return crate::template::render_html_with_basil(app, Request::from_parts(parts, Body::from(body)), path).await;
             } else {

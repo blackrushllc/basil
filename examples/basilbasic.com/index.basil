@@ -1,6 +1,6 @@
 #CGI_NO_HEADER
 <?basil
-  LET SITE_TITLE$ = "Basil Website Skeleton";
+  LET SITE_TITLE$ = "Basil Website Skeleton!";
   FUNC send_header_ok_html() BEGIN
     PRINT "Status: 200 OK\r\n";
     PRINT "Content-Type: text/html; charset=utf-8\r\n";

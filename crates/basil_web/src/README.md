@@ -2,7 +2,7 @@
 
 Dev-only Axum server that serves static files, runs Basil .basil/.bas scripts with a CGI-style adapter, recompiles bytecode when stale, and renders HTML templates containing `<?basil ... ?>` inline blocks.
 
-Status: scaffolded. Uses external `bcc` and `basilc` processes by default (feature `process-runner`). Future `lib-runner` will call into basil compiler/VM crates directly.
+Status: scaffolded. Uses the external `basilc` process by default (feature `process-runner`). Future `lib-runner` will call into basil compiler/VM crates directly.
 
 Quickstart
 

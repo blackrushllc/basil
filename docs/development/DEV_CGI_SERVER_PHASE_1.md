@@ -131,7 +131,7 @@ Implementations:
     * If bytecode missing or `mtime(source) > mtime(bytecode)` then compile
     * Two backends:
 
-        * feature `process-runner`: shell out to `bcc` or fallback to `basilc --bytecode` with timeouts; capture stderr
+        * feature `process-runner`: invoke `basilc` only (it loads/runs and rebuilds `.basilx` as needed); capture stderr on failures
         * feature `lib-runner` (future): call into `basil_compiler::compile_to_bytecode`
 * Return a `CompileOutcome { changed: bool, stderr_tail: Option<String>, version: Option<String> }`
 
