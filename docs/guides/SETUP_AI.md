@@ -3,7 +3,7 @@
 Follow these steps to get the AI helpers working and try the demos.
 
 
-1) Set your API key environment variable (See lower down in thei setup guide for more info on getting an API key)
+1) Set your API key environment variable (See lower down in the setup guide for more info on getting an API key)
 
 - Windows (PowerShell):
   - $Env:OPENAI_API_KEY = "sk-..."
