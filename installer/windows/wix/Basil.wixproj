@@ -1,0 +1,45 @@
+<Project Sdk="WixToolset.Sdk/1.0.0">
+  <PropertyGroup>
+    <OutputName>Basil</OutputName>
+    <Platform>x64</Platform>
+
+    <!-- Passed in by the build script -->
+    <DefineConstants>
+      RepoRoot=$(RepoRoot);
+      BuildDir=$(BuildDir);
+      DocsStage=$(DocsStage);
+      ExamplesStage=$(ExamplesStage)
+    </DefineConstants>
+
+    <IntermediateOutputPath>obj\</IntermediateOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Product.wxs" />
+  </ItemGroup>
+
+  <!-- Harvest docs -> DOCSFOLDER -->
+  <ItemGroup>
+    <HarvestDirectory Include="$(DocsStage)">
+      <ComponentGroupName>DocsGroup</ComponentGroupName>
+      <DirectoryRefId>DOCSFOLDER</DirectoryRefId>
+      <PreprocessorVariable>var.DocsStage</PreprocessorVariable>
+      <SuppressRootDirectory>true</SuppressRootDirectory>
+      <HeatOutput>_harvest.docs.wxs</HeatOutput>
+    </HarvestDirectory>
+
+    <!-- Harvest examples -> EXAMPLESDIR -->
+    <HarvestDirectory Include="$(ExamplesStage)">
+      <ComponentGroupName>ExamplesGroup</ComponentGroupName>
+      <DirectoryRefId>EXAMPLESDIR</DirectoryRefId>
+      <PreprocessorVariable>var.ExamplesStage</PreprocessorVariable>
+      <SuppressRootDirectory>true</SuppressRootDirectory>
+      <HeatOutput>_harvest.examples.wxs</HeatOutput>
+    </HarvestDirectory>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="_harvest.docs.wxs" Condition="Exists('_harvest.docs.wxs')" />
+    <Compile Include="_harvest.examples.wxs" Condition="Exists('_harvest.examples.wxs')" />
+  </ItemGroup>
+</Project>
