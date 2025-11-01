@@ -1,3 +1,4 @@
+# debian/postinst
 #!/bin/sh
 set -e
 case "$1" in
@@ -5,4 +6,5 @@ case "$1" in
     echo "Basil installed. What's New: https://basilbasic.com/basil/"
   ;;
 esac
+#DEBHELPER#
 exit 0
