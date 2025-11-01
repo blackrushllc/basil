@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+%:
+	dh $@ --buildsystem=cargo
+
+# Build with your feature set explicitly (basilc needs --features obj-all)
+override_dh_auto_build:
+	dh_auto_build -- \
+	  -p basilc --features obj-all --release
+	# Build the other binaries (adjust if they need features)
+	cargo build -p bcc --release
+	cargo build -p basil-serve --release
+
+# Install built binaries into /usr/bin
+override_dh_auto_install:
+	# Create dest dir
+	install -d debian/basil/usr/bin
+	# Copy the 3 binaries
+	install -m755 target/release/basilc      debian/basil/usr/bin/
+	install -m755 target/release/bcc         debian/basil/usr/bin/
+	install -m755 target/release/basil-serve debian/basil/usr/bin/
+
+	# Docs (/usr/share/doc/basil)
+	install -d debian/basil/usr/share/doc/basil
+	# Copy docs/**, README.md, WHATS_NEW.md
+	rsync -a --delete docs/ debian/basil/usr/share/doc/basil/docs/
+	install -m644 README.md WHATS_NEW.md debian/basil/usr/share/doc/basil/
+
+	# Examples → Debian policy prefers /usr/share/doc/<pkg>/examples
+	# We stage with excludes: *.basilx, .env, dot/underscore, .basilcache
+	EXDST=debian/basil/usr/share/doc/basil/examples ; \
+	mkdir -p "$$EXDST" ; \
+	rsync -a examples/ "$$EXDST"/ \
+	  --exclude="*.basilx" \
+	  --exclude=".env" \
+	  --exclude=".*" \
+	  --exclude="_*" \
+	  --exclude="basilbasic.com/.basilcache"
+
+# Lint: don't fail on missing manpages (optional)
+override_dh_missing:
+	dh_missing --list-missing

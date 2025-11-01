@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+case "$1" in
+  configure)
+    echo "Basil installed. What's New: https://basilbasic.com/basil/"
+  ;;
+esac
+exit 0

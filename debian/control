@@ -1,0 +1,24 @@
+Source: basil
+Section: utils
+Priority: optional
+Maintainer: Blackrush LLC <you@example.com>
+Standards-Version: 4.7.0
+Homepage: https://basilbasic.com
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-cargo,
+ cargo,
+ rustc,
+ pkg-config,
+ libssl-dev
+
+Package: basil
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Basil BASIC tools (interpreter, compiler, and local web server)
+ Basil includes:
+  - basilc  : BASIC interpreter
+  - bcc     : BASIC compiler
+  - basil-serve : local web server for Basil projects
+
