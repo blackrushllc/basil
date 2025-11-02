@@ -1,3 +1,9 @@
+basil (1.1.0-0ubuntu7) noble; urgency=medium
+
+  * Build for Ubuntu noble.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 14:27:34 +0000
+
 basil (1.1.0-0ubuntu6) noble; urgency=medium
 
   * PPA: add debian/cargo-config and build --offline.
