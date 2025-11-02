@@ -1,3 +1,4 @@
+debian/cargo-vendor.tar.xz
 *.zip
 _.basil
 .env
