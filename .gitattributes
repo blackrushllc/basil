@@ -17,3 +17,5 @@ examples/**/.basil export-ignore
 examples/basilbasic.com/.basilcache export-ignore
 examples/**/.env export-ignore
 scripts/ export-ignore
+scripts/ export-ignore
+scripts/** export-ignore
