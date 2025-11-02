@@ -1,24 +1,19 @@
 #!/usr/bin/make -f
-export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
 %:
 	dh $@ --buildsystem=cargo
 
-# Build with your feature set explicitly (basilc needs --features obj-all)
 override_dh_auto_build:
-	dh_auto_build -- \
-	  -p basilc --features obj-all --release
-	# Build the other binaries (adjust if they need features)
-	cargo build -p bcc --release
-	cargo build -p basil-serve --release
+	# basilc needs --features obj-all
+	dh_auto_build -- --locked --offline -p basilc --release --features obj-all
+	cargo build --locked --offline -p bcc --release
+	cargo build --locked --offline -p basil-serve --release
 
-# Install built binaries into /usr/bin
 override_dh_auto_install:
-	# Create dest dir
-	install -d debian/basil/usr/bin
-	# Copy the 3 binaries
-	install -m755 target/release/basilc      debian/basil/usr/bin/
-	install -m755 target/release/bcc         debian/basil/usr/bin/
-	install -m755 target/release/basil-serve debian/basil/usr/bin/
+	install -D -m 0755 target/release/basilc      debian/basil/usr/bin/basilc
+	install -D -m 0755 target/release/bcc         debian/basil/usr/bin/bcc
+	install -D -m 0755 target/release/basil-serve debian/basil/usr/bin/basil-serve
+	# (docs/examples as you already had)
 
 	# Docs (/usr/share/doc/basil)
 	install -d debian/basil/usr/share/doc/basil

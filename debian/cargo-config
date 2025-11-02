@@ -1,0 +1,10 @@
+# Redirect crates-io to vendored sources
+[source.crates-io]
+replace-with = "vendored-sources"
+
+# Be extra explicit for older cargo
+[source."https://github.com/rust-lang/crates.io-index"]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
