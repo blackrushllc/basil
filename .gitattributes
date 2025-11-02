@@ -1,4 +1,4 @@
-# Exclude prebuilt artifacts from upstream tarball
+# Exclude prebuilt artifacts
 dist/ export-ignore
 dist/** export-ignore
 
@@ -7,15 +7,7 @@ examples/**/*.basilx export-ignore
 examples/**/.basil export-ignore
 examples/basilbasic.com/.basilcache export-ignore
 examples/**/.env export-ignore
-# Exclude prebuilt artifacts from upstream tarball
-dist/ export-ignore
-dist/** export-ignore
 
-# Exclude generated examples / caches
-examples/**/*.basilx export-ignore
-examples/**/.basil export-ignore
-examples/basilbasic.com/.basilcache export-ignore
-examples/**/.env export-ignore
-scripts/ export-ignore
+# Exclude helper scripts from orig tarball
 scripts/ export-ignore
 scripts/** export-ignore
