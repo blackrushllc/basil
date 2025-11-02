@@ -1,3 +1,57 @@
+basil (1.1.0-0ubuntu16~focal1) focal; urgency=medium
+
+  * Build for Ubuntu focal (no orig upload).
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 16:41:39 +0000
+
+basil (1.1.0-0ubuntu15~jammy1) jammy; urgency=medium
+
+  * Build for Ubuntu jammy (no orig upload).
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 16:38:06 +0000
+
+basil (1.1.0-0ubuntu14~noble1) noble; urgency=medium
+
+  * Build for Ubuntu noble (no orig upload).
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 16:33:39 +0000
+
+basil (1.1.0-0ubuntu13~noble1) noble; urgency=medium
+
+  * Retry: no orig upload.
+
+ -- root <erikolson1965@gmail.com>  Sun, 02 Nov 2025 16:27:20 +0000
+
+basil (1.1.0-0ubuntu12~focal1) focal; urgency=medium
+
+  * Retry: no orig upload.
+
+ -- root <erikolson1965@gmail.com>  Sun, 02 Nov 2025 16:21:28 +0000
+
+basil (1.1.0-0ubuntu11~jammy1) jammy; urgency=medium
+
+  * Retry: no orig upload.
+
+ -- root <erikolson1965@gmail.com>  Sun, 02 Nov 2025 15:57:06 +0000
+
+basil (1.1.0-0ubuntu10) noble; urgency=medium
+
+  * Build for Ubuntu noble.
+
+ -- root <erikolson1965@gmail.com>  Sun, 02 Nov 2025 15:29:04 +0000
+
+basil (1.1.0-0ubuntu9) focal; urgency=medium
+
+  * Build for Ubuntu focal.
+
+ -- root <erikolson1965@gmail.com>  Sun, 02 Nov 2025 15:21:28 +0000
+
+basil (1.1.0-0ubuntu8) jammy; urgency=medium
+
+  * Build for Ubuntu jammy.
+
+ -- root <erikolson1965@gmail.com>  Sun, 02 Nov 2025 15:12:59 +0000
+
 basil (1.1.0-0ubuntu7) noble; urgency=medium
 
   * Build for Ubuntu noble.
