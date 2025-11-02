@@ -1,3 +1,33 @@
+basil (1.1.0-0ubuntu6) noble; urgency=medium
+
+  * PPA: add debian/cargo-config and build --offline.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 14:14:27 +0000
+
+basil (1.1.0-0ubuntu5) noble; urgency=medium
+
+  * PPA: add debian/cargo-config and build --offline.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 14:11:25 +0000
+
+basil (1.1.0-0ubuntu4) jammy; urgency=medium
+
+  * Build for Ubuntu 22.04 (jammy).
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 01:26:23 +0000
+
+basil (1.1.0-0ubuntu3) noble; urgency=medium
+
+  * PPA: use dh-cargo vendor tarball without upstream .cargo/config.toml
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 01:11:27 +0000
+
+basil (1.1.0-0ubuntu2) noble; urgency=medium
+
+  * PPA: add vendored crates + checksum (dh-cargo offline)
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 01:01:22 +0000
+
 basil (1.1.0-0ubuntu1) noble; urgency=medium
 
   [ root ]

@@ -10,7 +10,7 @@ Build-Depends:
  dh-cargo,
  cargo,
  rustc,
- pkg-config,
+ pkgconf,
  libssl-dev
 
 Package: basil
