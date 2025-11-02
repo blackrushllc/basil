@@ -1,4 +1,3 @@
-BuiltContentOutput	E:\Projects\Yore\basil\installer\windows\wix\obj\cab1.cab
 BuiltPdbOutput	E:\Projects\Yore\basil\installer\windows\wix\obj\Basil.wixpdb
 BuiltTargetOutput	E:\Projects\Yore\basil\installer\windows\wix\obj\Basil.msi
 Input	E:\Projects\Yore\basil\favicon.ico
@@ -310,4 +309,4 @@ Input	E:\Projects\Yore\basil\installer\windows\_stage\examples\zip_demo.basil
 Input	E:\Projects\Yore\basil\target\release\basil-serve.exe
 Input	E:\Projects\Yore\basil\target\release\basilc.exe
 Input	E:\Projects\Yore\basil\target\release\bcc.exe
-Intermediate	E:\Projects\Yore\basil\installer\windows\wix\obj\cab1.cab
+Intermediate	E:\Projects\Yore\basil\installer\windows\wix\obj\#product.cab
