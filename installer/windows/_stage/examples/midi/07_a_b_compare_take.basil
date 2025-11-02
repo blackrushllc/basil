@@ -1,0 +1,14 @@
+REM Record two short takes and A/B them back-to-back;
+PRINTLN "Take A (3s)…";
+rc% = AUDIO_RECORD%("usb", "takeA.wav", 3);
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;
+
+PRINTLN "Take B (3s)…";
+rc% = AUDIO_RECORD%("usb", "takeB.wav", 3);
+IF rc% <> 0 THEN PRINTLN "Error: "; PRINTLN DAW_ERR$(); RETURN;
+
+PRINTLN "Playing A then B…";
+rc% = AUDIO_PLAY%("usb", "takeA.wav"); IF rc% <> 0 THEN PRINTLN DAW_ERR$();
+rc% = AUDIO_PLAY%("usb", "takeB.wav"); IF rc% <> 0 THEN PRINTLN DAW_ERR$();
+
+PRINTLN "A/B complete.";

@@ -10,3 +10,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 basil_web = { path = "../../crates/basil_web" }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[build-dependencies]
+winres = "0.1.12"

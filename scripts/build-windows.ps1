@@ -18,12 +18,15 @@ New-Item -ItemType Directory -Path $ExamplesStage | Out-Null
 Write-Host "1) Build Rust in Release..."
 # cargo build --release # <-- comment this out to avoid rebuilding
 
+
+Write-Host "Skipping build (Assume we've already done this!)..."
+
 # Build basilc with features
-cargo build -p basilc --release --features obj-all
+##cargo build -p basilc --release --features obj-all
 
 # Build the others normally (adjust features if needed)
-cargo build -p bcc --release
-cargo build -p basil-serve --release
+##cargo build -p bcc --release
+##cargo build -p basil-serve --release
 
 Write-Host "2) Stage DOCS (docs/** + README.md + WHATS_NEW.md)..."
 # Copy docs/**

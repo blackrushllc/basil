@@ -1,0 +1,2 @@
+PRINTLN AI.CHAT$("Explain bubble sort in 3 bullets");
+PRINTLN AI.LAST_ERROR$;

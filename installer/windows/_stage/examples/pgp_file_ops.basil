@@ -1,0 +1,13 @@
+// TODO: This hasn't been tested :/
+REM File encrypt/decrypt/sign/verify
+
+LET pub$ = READFILE$("pub.asc")
+LET sec$ = READFILE$("sec.asc")
+LET pass$ = ""
+
+DIM pgp@ AS CRYPTO_PGP()
+
+PRINTLN "Encrypt file: ", pgp@.EncryptFile$(pub$, "input.txt", "input.txt.asc")
+PRINTLN "Decrypt file: ", pgp@.DecryptFile$(sec$, pass$, "input.txt.asc", "input.out.txt")
+PRINTLN "Sign file: ", pgp@.SignFile$(sec$, pass$, "input.txt", "input.txt.sig")
+PRINTLN "Verify file: ", pgp@.VerifyFile$(pub$, "input.txt", "input.txt.sig")

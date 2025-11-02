@@ -1,0 +1,58 @@
+{
+  "format": 1,
+  "restore": {
+    "E:\\Projects\\Yore\\basil\\installer\\windows\\wix\\Basil.wixproj": {}
+  },
+  "projects": {
+    "E:\\Projects\\Yore\\basil\\installer\\windows\\wix\\Basil.wixproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "E:\\Projects\\Yore\\basil\\installer\\windows\\wix\\Basil.wixproj",
+        "projectName": "Basil",
+        "projectPath": "E:\\Projects\\Yore\\basil\\installer\\windows\\wix\\Basil.wixproj",
+        "packagesPath": "C:\\Users\\mechi\\.nuget\\packages\\",
+        "outputPath": "E:\\Projects\\Yore\\basil\\installer\\windows\\wix\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\mechi\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "native": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "native": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "WixToolset.Heat": {
+              "target": "Package",
+              "version": "[4.0.6, )"
+            },
+            "WixToolset.UI.wixext": {
+              "target": "Package",
+              "version": "[4.0.6, )"
+            },
+            "WixToolset.Util.wixext": {
+              "target": "Package",
+              "version": "[4.0.6, )"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+E:\Projects\Yore\basil\installer\windows\wix\bin\x64\Release\Basil.msi
+E:\Projects\Yore\basil\installer\windows\wix\bin\x64\Release\cab1.cab
+E:\Projects\Yore\basil\installer\windows\wix\bin\x64\Release\Basil.wixpdb
+E:\Projects\Yore\basil\installer\windows\wix\obj\Basil.wixproj.CoreCompileInputs.cache
+E:\Projects\Yore\basil\installer\windows\wix\obj\_DocsGroup_dir.wxs
+E:\Projects\Yore\basil\installer\windows\wix\obj\_ExamplesGroup_dir.wxs
+E:\Projects\Yore\basil\installer\windows\wix\obj\cab1.cab
+E:\Projects\Yore\basil\installer\windows\wix\obj\Basil.msi
+E:\Projects\Yore\basil\installer\windows\wix\obj\Basil.wixpdb
+E:\Projects\Yore\basil\installer\windows\wix\obj\Basil.wixproj.BindTracking-neutral.txt

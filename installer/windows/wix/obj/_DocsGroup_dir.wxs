@@ -1,0 +1,568 @@
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Fragment>
+        <DirectoryRef Id="DOCSFOLDER">
+            <Component Id="cmpZnDtnzVdtidICQxtAy6nS3Sm2No" Guid="*">
+                <File Id="filAVlC9VSkuUEDIhuyehjmcVmqfac" KeyPath="yes" Source="$(var.DocsStage)\APT_README.md" />
+            </Component>
+            <Component Id="cmp0zgaaTiZ8pkgCNQVmZ1j6apyGjQ" Guid="*">
+                <File Id="filiD7nsxjjhRY1nzo6Rhak0BY0hEQ" KeyPath="yes" Source="$(var.DocsStage)\BUILDING.md" />
+            </Component>
+            <Component Id="cmpf4TG08sKhilaidTq9dWp0MBLk4c" Guid="*">
+                <File Id="filsIBp8vX1qSNmqOoPqUyW_b4c3Wc" KeyPath="yes" Source="$(var.DocsStage)\index.html" />
+            </Component>
+            <Component Id="cmp2k.74RdHJW_cI.HU.TmUbB4k9nM" Guid="*">
+                <File Id="filg8.I.NbOn6qPEuD_WMVkk.BTJQQ" KeyPath="yes" Source="$(var.DocsStage)\README.md" />
+            </Component>
+            <Component Id="cmpPPmW9P6m1KGm2y8umOl40nCheG4" Guid="*">
+                <File Id="fil1gYE_lTQnckWQIt6nSyloSTnIpM" KeyPath="yes" Source="$(var.DocsStage)\WEB_SERVER.md" />
+            </Component>
+            <Component Id="cmpGUut3MTp2P6Fhmfv5NFydCTDTUk" Guid="*">
+                <File Id="filfDwSvoTGXYCyS2kT2O351F3yPEM" KeyPath="yes" Source="$(var.DocsStage)\WHATS_NEW.md" />
+            </Component>
+            <Directory Id="dirYol9YTp1c4QqCAV2P9N3gpSN0tA" Name="biz">
+                <Component Id="cmpaDODw_qDF8VbIPFD3krmNEVJ3wk" Guid="*">
+                    <File Id="filS7QvNdl5_chgc4BDEIBki5riNqA" KeyPath="yes" Source="$(var.DocsStage)\biz\ELONMUSK.md" />
+                </Component>
+                <Component Id="cmpX54RGch0c6hebUlWY6iYCTPs_B0" Guid="*">
+                    <File Id="filvxei77LKjQUre1ep1CZFdQ8rC60" KeyPath="yes" Source="$(var.DocsStage)\biz\elonmusk.pdf" />
+                </Component>
+                <Component Id="cmpXKHNhBxSS5zMbhoiPjbeC77_4aA" Guid="*">
+                    <File Id="filrJarbTpuIE2S38QARq3G3ZavXSw" KeyPath="yes" Source="$(var.DocsStage)\biz\MEDIA.md" />
+                </Component>
+                <Component Id="cmpb3t5YkIetOHQrOn1xY7vPCfek1s" Guid="*">
+                    <File Id="filaqtd.DTOVzCeWYBwIa8T1uP9dzg" KeyPath="yes" Source="$(var.DocsStage)\biz\OUTREACH.md" />
+                </Component>
+                <Component Id="cmpKzarpuksNIHQ1UNpePIfSibf7Ws" Guid="*">
+                    <File Id="filgtGdeQJ0k5Zz_rWtjdGp.sm6a1Q" KeyPath="yes" Source="$(var.DocsStage)\biz\PRESSKIT.md" />
+                </Component>
+            </Directory>
+            <Directory Id="dirdVih8yd_v6WsTVCrKP2FuWI6kiY" Name="CHAT_GPT">
+                <Component Id="cmpNpaF.eyDfqEg8phFzwnN4euHgr4" Guid="*">
+                    <File Id="fil8ppiMB5dmLIwbPOVpad2CIkFWsM" KeyPath="yes" Source="$(var.DocsStage)\CHAT_GPT\AI_BASIL_CODE_REQUESTS.md" />
+                </Component>
+                <Component Id="cmp0bKbptEZk7XFgo79MgGgEDi6poE" Guid="*">
+                    <File Id="fil2K_CPZQGrJzVFEMZWxRlmjf6i98" KeyPath="yes" Source="$(var.DocsStage)\CHAT_GPT\AI_BASIL_DROPIN2.md" />
+                </Component>
+                <Component Id="cmpc1wiUfiyTWil7DnYG4.di9SnPOU" Guid="*">
+                    <File Id="filQ1Gr7GNkFWx.EeHcM4rdpCwFHrA" KeyPath="yes" Source="$(var.DocsStage)\CHAT_GPT\AI_FEATURE_REQUESTS.md" />
+                </Component>
+                <Component Id="cmpODGLnuig57LEsO.lM6BOijYpVzQ" Guid="*">
+                    <File Id="filHHrSkU8KcLgg5jdEy4Yx1kkc_EE" KeyPath="yes" Source="$(var.DocsStage)\CHAT_GPT\AI_USING_AI_NOTES.md" />
+                </Component>
+            </Directory>
+            <Directory Id="dirqFqe6N_vePB1IUoU_vR1Hw.Yfu4" Name="compiler">
+                <Component Id="cmppoUAWi3CukxE4quIWiVpJvVprG0" Guid="*">
+                    <File Id="filOQKp_sF1YIT.3H9gNci3cz.DV7U" KeyPath="yes" Source="$(var.DocsStage)\compiler\AOT_COMPILER.md" />
+                </Component>
+                <Component Id="cmpUrOBeKS41t9UJiL9rXJBRQPTLRU" Guid="*">
+                    <File Id="fil1IwZhyGqz9fXBjrM70Lqs.I9Is4" KeyPath="yes" Source="$(var.DocsStage)\compiler\CHANGELOG_AOT.md" />
+                </Component>
+                <Component Id="cmppvsREZdwI7U8O1DslJ8tTm09gSk" Guid="*">
+                    <File Id="filx1mfQo4KPrF04vmYUxGWs0jaRTA" KeyPath="yes" Source="$(var.DocsStage)\compiler\COMPILER.md" />
+                </Component>
+                <Component Id="cmphvTlg9LWqrYCukXScP2d2diLz5Q" Guid="*">
+                    <File Id="filfmPUXSy_Lkrds67oURlHXuZXidQ" KeyPath="yes" Source="$(var.DocsStage)\compiler\COMPILER_DIST.md" />
+                </Component>
+                <Component Id="cmpXXl4kvnWplpOe0aPlEvci8TWTes" Guid="*">
+                    <File Id="filxbkVUGYXqi6bNpVFe4a2nIiZ0F0" KeyPath="yes" Source="$(var.DocsStage)\compiler\COMPILER_HMM.md" />
+                </Component>
+                <Component Id="cmp3UqGeo8eCg1p7PfJ1w9eNitxups" Guid="*">
+                    <File Id="fils6Wkg92g1SiTFu4xyqWsbv1CO7s" KeyPath="yes" Source="$(var.DocsStage)\compiler\COMPILER_NEXT_STEPS.md" />
+                </Component>
+                <Component Id="cmpvMWg85b2LvV2YE9vKHBpiHhQv0w" Guid="*">
+                    <File Id="filguRJjOKNfKeD9n_E0t.bBqbFGTk" KeyPath="yes" Source="$(var.DocsStage)\compiler\CRATES_IO.md" />
+                </Component>
+            </Directory>
+            <Directory Id="dirHFKkx1ss2fdWsUnm2BVjD2DcBVo" Name="data">
+                <Component Id="cmpfIdi9dFzQ84coLYsWGhpY6qPM1I" Guid="*">
+                    <File Id="filYR2jXUMYuk5drB0EzDVeRFKz23M" KeyPath="yes" Source="$(var.DocsStage)\data\basil_lexicon_for_ai.txt" />
+                </Component>
+            </Directory>
+            <Directory Id="dir.Hrec0F6RI6BvnNJzrvrAFwgDMw" Name="development">
+                <Component Id="cmpKhl.MaDLdaTecOMUA4JmxK1Ad6M" Guid="*">
+                    <File Id="filqL7LwQBiPH6KEtjq3_PHrqBvaIQ" KeyPath="yes" Source="$(var.DocsStage)\development\AI_MIDI.md" />
+                </Component>
+                <Component Id="cmp6jmD7fPaLN733TO1jzKAqi9bBiU" Guid="*">
+                    <File Id="fil3C_H_RI6FvGJsfl.73WUi8WrLec" KeyPath="yes" Source="$(var.DocsStage)\development\AI_PHASE_3_WIP.md" />
+                </Component>
+                <Component Id="cmp2YE_PZAL4.Y_thZPAK75wF93dFE" Guid="*">
+                    <File Id="filhQW5MnsF6aXl_eXyn.TULqyzq0Q" KeyPath="yes" Source="$(var.DocsStage)\development\APT_INSTALLER.md" />
+                </Component>
+                <Component Id="cmpy8YBuCk4j1FgOm9r1BBowZe.TL8" Guid="*">
+                    <File Id="filUT99Rotvme4En_g8THjz0b3yJI4" KeyPath="yes" Source="$(var.DocsStage)\development\ARRAY_NOTATION_BRACKETS.md" />
+                </Component>
+                <Component Id="cmpwInFTRtjf1qj6kXOirS6juXqU_U" Guid="*">
+                    <File Id="fileJ.9P.wlOA5BiX04_NK_lNLknhE" KeyPath="yes" Source="$(var.DocsStage)\development\ASTERISK.md" />
+                </Component>
+                <Component Id="cmpvIuaCc27xfZFcuvUInxH9S1FzrM" Guid="*">
+                    <File Id="fild2OWUTkNfbeFdkutlE0KVPU8wj8" KeyPath="yes" Source="$(var.DocsStage)\development\AWS.md" />
+                </Component>
+                <Component Id="cmph9t0_Bt48b2YitnKSxgMTBbyTU4" Guid="*">
+                    <File Id="filHTjz5lCX4Fn5Rpj1izpb4lBd5u0" KeyPath="yes" Source="$(var.DocsStage)\development\BASILICA_V0_JUNIE_PREP_PROMPT.md" />
+                </Component>
+                <Component Id="cmpi8WoSSeiQ6qKFBJwW2MMgHqmUNw" Guid="*">
+                    <File Id="filx4pOVD5j8jebXvL4ReSoo7NOqas" KeyPath="yes" Source="$(var.DocsStage)\development\BASILICA_V0_JUNIE_PROMPT.md" />
+                </Component>
+                <Component Id="cmpFqQkHruzsod0QED54BCh0RfAuXw" Guid="*">
+                    <File Id="filML1ZXbeyA9_yshtvuGTv1.Z_pcM" KeyPath="yes" Source="$(var.DocsStage)\development\BASIL_CGI.md" />
+                </Component>
+                <Component Id="cmpYYZ8G.2aOiI52GR2dIWNagoG.BA" Guid="*">
+                    <File Id="fil3atM8p3Gj.CLesGBjkywlTNUSSY" KeyPath="yes" Source="$(var.DocsStage)\development\BASIL_COMPILER_WEBSITE.md" />
+                </Component>
+                <Component Id="cmp6ltcyVz0VrENRbbbeswUsR6okY4" Guid="*">
+                    <File Id="filMRk07IxxiGGxkEbthrRyfJQQdD0" KeyPath="yes" Source="$(var.DocsStage)\development\BASIL_IN_APP.md" />
+                </Component>
+                <Component Id="cmpqnnDagWCuMssjagOM8l94X1VbSY" Guid="*">
+                    <File Id="filS1doa3WS7Zxh8Zeg.lF_EttdLv4" KeyPath="yes" Source="$(var.DocsStage)\development\BASIL_LINTER_FORMATTER.md" />
+                </Component>
+                <Component Id="cmp5EWcO1JXZn1tURTmMTWpeMzRSdY" Guid="*">
+                    <File Id="filVEODlCa.LzKZU8rpeaozOmpwFWA" KeyPath="yes" Source="$(var.DocsStage)\development\BASIL_NATIVE_MVC.md" />
+                </Component>
+                <Component Id="cmpeoiEwmlyIaRFrJRfsivlqqas6HU" Guid="*">
+                    <File Id="filUwRZ6nNT91LRN8MfkF6v5jI2a.Y" KeyPath="yes" Source="$(var.DocsStage)\development\CHATGPTS_IDEAS_FOR_MODS.md" />
+                </Component>
+                <Component Id="cmpCz7mcJkDREUo3jHTqfTgke86_SY" Guid="*">
+                    <File Id="filaKVnwg_4secW13.kGO8LSP3F8FA" KeyPath="yes" Source="$(var.DocsStage)\development\CRYPTO_THOUGHTS.md" />
+                </Component>
+                <Component Id="cmpS6QsnYO7hhG4QKzEY3GlD5fUAFc" Guid="*">
+                    <File Id="filOUzErStrdpBt1ssRHrEhB0VIGIA" KeyPath="yes" Source="$(var.DocsStage)\development\DATA_TYPES_PROMPT_FOR_JUNIE.md" />
+                </Component>
+                <Component Id="cmpYsrBvORggGBRZ07f75.SFWCGObE" Guid="*">
+                    <File Id="filPwTr1ew.SgJ_piDW.lMau3TTJkk" KeyPath="yes" Source="$(var.DocsStage)\development\DEV_CGI_SERVER_PHASE_1.md" />
+                </Component>
+                <Component Id="cmpFPhmYGimtJcCKIiL6FjoyP391bA" Guid="*">
+                    <File Id="filt3pJwPR9_N8hxndE9euLd9Sf46o" KeyPath="yes" Source="$(var.DocsStage)\development\DEV_WEB_SERVER_PHASE_2.md" />
+                </Component>
+                <Component Id="cmp4UcMjVQnB0aEhaRFXGMbOJdcAz4" Guid="*">
+                    <File Id="fillsbEhFUd..Ts6bJgzKVA1pPTPcU" KeyPath="yes" Source="$(var.DocsStage)\development\FIXED_LENGTH_STRINGS_JUNIE_PROMPT.md" />
+                </Component>
+                <Component Id="cmpFYJK50CWYvWIzrD6t9TtfL.7y9E" Guid="*">
+                    <File Id="filQZBIDT5WiUfCkJ2TK8K9kI6q4mk" KeyPath="yes" Source="$(var.DocsStage)\development\GEARMAN.md" />
+                </Component>
+                <Component Id="cmptYIqJZyJJw6ivI2wEpNpy2jPZUs" Guid="*">
+                    <File Id="fildPFBWsyd3Ef3mL7JAW7RJqZF3Cw" KeyPath="yes" Source="$(var.DocsStage)\development\JETBRAINS.md" />
+                </Component>
+                <Component Id="cmp7NErKzQSPXofaV5Ucz2OUXXCTrM" Guid="*">
+                    <File Id="fildNgrcEwQ.UEPvv8AWn5lAaGiz.s" KeyPath="yes" Source="$(var.DocsStage)\development\KEYWORD_RESEARCH_PROMPT_FOR_JUNIE.md" />
+                </Component>
+                <Component Id="cmpEglBoSheqzXMPVGqyxerZCPCdOw" Guid="*">
+                    <File Id="filyRV4Nh7b3USX21uPgPrnlJZrj5M" KeyPath="yes" Source="$(var.DocsStage)\development\MCP.md" />
+                </Component>
+                <Component Id="cmpB3HI23tBg2mGY0gG4Pi7sTHw1BU" Guid="*">
+                    <File Id="filre3FdFrLsU9DQtZyLYi_28eqElE" KeyPath="yes" Source="$(var.DocsStage)\development\NONTRIVIAL_JUNIE_TIRADE.md" />
+                </Component>
+                <Component Id="cmp6pBFgCgJoR9jf8DPVO.Ou1nMVvQ" Guid="*">
+                    <File Id="filrwjnFjtPi.K.KEH9xdofVcocP4M" KeyPath="yes" Source="$(var.DocsStage)\development\PORTABLE_LINUX.md" />
+                </Component>
+                <Component Id="cmpXwCx3TsKAYA9yCA05vGEN4etWvM" Guid="*">
+                    <File Id="fils2c7z2eVfkRFaCo0l4AS.JqqcC0" KeyPath="yes" Source="$(var.DocsStage)\development\SUGGESTIONS.md" />
+                </Component>
+                <Component Id="cmphvli15ZerPl3tLrZugYmGiutJPI" Guid="*">
+                    <File Id="filFAv7WszJ7kD.5BWHOHYPrAtMK6E" KeyPath="yes" Source="$(var.DocsStage)\development\WASM.md" />
+                </Component>
+                <Component Id="cmpTRIePBk01Bi0o5bbCGENv9v5jjw" Guid="*">
+                    <File Id="fil6VryHSaqQ2RVX1SxuVWEOvbhB4o" KeyPath="yes" Source="$(var.DocsStage)\development\WASM2.md" />
+                </Component>
+                <Directory Id="dirly1MlzFREjiX8LbuULdMnALBPO8" Name="games">
+                    <Component Id="cmpgaEFJb4fBYTKcqctEID5sKJzDMI" Guid="*">
+                        <File Id="filJr90GDYpyoPvlhnQgY0WZx_IVjg" KeyPath="yes" Source="$(var.DocsStage)\development\games\OBJ_GAME.md" />
+                    </Component>
+                </Directory>
+                <Directory Id="dir7B0SGi6d2GngY5YZhVPM39_zbYg" Name="history">
+                    <Component Id="cmpM.HJpoO40UwoOmlaXJwKwvBvimQ" Guid="*">
+                        <File Id="fil0yupc8sXi2YWExZ474jnv1WXM4U" KeyPath="yes" Source="$(var.DocsStage)\development\history\AWS_MOD_PROMPT_FOR_JUNIE.md" />
+                    </Component>
+                    <Component Id="cmpRrPLhW2yeWxylzwc9D.pSv0tYac" Guid="*">
+                        <File Id="filRTV3vz0rAts7nFFaFPpkP_zjLoY" KeyPath="yes" Source="$(var.DocsStage)\development\history\BASIL_ORM_PROMPT_FOR_JUNIE.md" />
+                    </Component>
+                    <Component Id="cmp07KDBKErpndAlS3KQO6hWc0Q3D4" Guid="*">
+                        <File Id="filOD0EeUNoJrO8YVTEH_T06PiWsGM" KeyPath="yes" Source="$(var.DocsStage)\development\history\CLASSES.md" />
+                    </Component>
+                    <Component Id="cmpfncmYCWmRXxl2CQcamrex3jhDxY" Guid="*">
+                        <File Id="fil5aMzrptSy0q1xvCqnPX6mKxuceo" KeyPath="yes" Source="$(var.DocsStage)\development\history\ELIZA.md" />
+                    </Component>
+                    <Component Id="cmprnW8zTueqNPC6AOqIM58kN4BfuI" Guid="*">
+                        <File Id="filEpW55ttgaeHmx1ZVm0ANJ0hSk2Q" KeyPath="yes" Source="$(var.DocsStage)\development\history\FILE_IO.md" />
+                    </Component>
+                    <Component Id="cmpFCIluAfYGl5dhcP08VSU9dVq47U" Guid="*">
+                        <File Id="fil.biKfGQjcOZqvPd1wMPe1BgLbeY" KeyPath="yes" Source="$(var.DocsStage)\development\history\GOALS.md" />
+                    </Component>
+                    <Component Id="cmpN7FgsVK8FPgJ3MDilDo8U0tJMoY" Guid="*">
+                        <File Id="filQMjNYbPetoPaS86tsCWIZvnsUqY" KeyPath="yes" Source="$(var.DocsStage)\development\history\HTTP_REST_PROMPT_FOR_JUNIE.md" />
+                    </Component>
+                    <Component Id="cmpArpXfnbA7FxxKwdzWxCHFjiDtPg" Guid="*">
+                        <File Id="filVDFDwYRX2wEXqByOH0xwE61gasc" KeyPath="yes" Source="$(var.DocsStage)\development\history\OBJECTS.md" />
+                    </Component>
+                    <Component Id="cmpPyAyU5do3PN72zUFM3idwRQRxM4" Guid="*">
+                        <File Id="filRmF92o1YbfbvdL27Xe_CEEFK4Uc" KeyPath="yes" Source="$(var.DocsStage)\development\history\PGP_ENCRYPT_PROMPT_FOR_JUNIE.md" />
+                    </Component>
+                    <Component Id="cmpLc1JLQycqe78WOK1Ku1wj.n_ETs" Guid="*">
+                        <File Id="filJyYjQwofB4tKOQvoVYI8gJIFBkw" KeyPath="yes" Source="$(var.DocsStage)\development\history\README_OLD.md" />
+                    </Component>
+                    <Component Id="cmp4vNxQ4go4qmKyyX8fsuYE2SZ0O0" Guid="*">
+                        <File Id="fil_ZmM8wCfzai70RqkO4MF2wsRrXI" KeyPath="yes" Source="$(var.DocsStage)\development\history\REPL.md" />
+                    </Component>
+                    <Component Id="cmpR8WPd.6e_8ZZrmH_gZnxcSiJxdk" Guid="*">
+                        <File Id="filxsFTbntjNnJ8fkRTguwa5Q6hD8w" KeyPath="yes" Source="$(var.DocsStage)\development\history\SMTP_SFTP_PROMPT_FOR_JUNIE.md" />
+                    </Component>
+                    <Component Id="cmplKuth3uRxYxL9YSUxRZA6GZL_SQ" Guid="*">
+                        <File Id="filMrrgnxnyTE_OZfmxTxxOLZGStXI" KeyPath="yes" Source="$(var.DocsStage)\development\history\SQL_CONNECTOR_PROMPT_FOR_JUNIE.md" />
+                    </Component>
+                    <Directory Id="dirRW9STUj_0ajECZrMM5gx94inmBE" Name="JUNIE_ULTIMATE">
+                        <Component Id="cmpFQxRaKyHzZ4Oevx22yJLLgzeSsc" Guid="*">
+                            <File Id="filrRSuibLaQQ3jnLOKPKfWAoaO0fc" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\CLASSES_JUNIE.md" />
+                        </Component>
+                        <Component Id="cmpvYxyinWLneXkbw1JZLe9VyPNnEQ" Guid="*">
+                            <File Id="fil8OShQzv4JrZaY1evk.Ko5cV.Kog" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_CONTEXT_IMPORTANT_README.md" />
+                        </Component>
+                        <Component Id="cmp3Z_tYuCh4yKFHXWqW.xk1yAjnY0" Guid="*">
+                            <File Id="filr3.9CTREC.tY4ghqVFDsnEzAK2U" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_PROMPT_FOR_COMPILER.md" />
+                        </Component>
+                        <Component Id="cmpc5JdefeBbdi.5M2L9bSMoYwMExg" Guid="*">
+                            <File Id="fil4LnzKGSv7U72q8p4GMKjyp3fqZs" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_PROMPT_FOR_CROSSTERM.md" />
+                        </Component>
+                        <Component Id="cmpyZXqhh06QY13Q4boOX2ifpymxnc" Guid="*">
+                            <File Id="fil.T2lKeofhGhjnxZzovUCEGouwvs" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_PROMPT_FOR_CROSSTERM_PART2.md" />
+                        </Component>
+                        <Component Id="cmpIqLKWKZ4XhFLLi8rGyHW0vtx2Lw" Guid="*">
+                            <File Id="filkoxdJs_dHDTvm6gB35fST7OQ1Nk" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_PROMPT_FOR_CROSSTERM_PART3.md" />
+                        </Component>
+                        <Component Id="cmp3GkUOEfrOo4KAHLigZd.bDiL7SM" Guid="*">
+                            <File Id="filXd_4HABL7IVKh69Wrs9j90azX6I" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_PROMPT_FOR_SQL.md" />
+                        </Component>
+                        <Component Id="cmpYIdyc9it_G4dsvIDo1h5bHNVHfs" Guid="*">
+                            <File Id="filhNE_z8A9Tl9n6tgUqmyeHvE7l_o" KeyPath="yes" Source="$(var.DocsStage)\development\history\JUNIE_ULTIMATE\JUNIE_PROMPT_MIDI.md" />
+                        </Component>
+                    </Directory>
+                </Directory>
+            </Directory>
+            <Directory Id="dir3kWUD4szI2pqvYoRTwO.bpvydOc" Name="educational">
+                <Component Id="cmp4RRGD2RBlP.hVP6cFLCH_yeB3g8" Guid="*">
+                    <File Id="filtEqspCr29g4OwBblYzn9t7Z4190" KeyPath="yes" Source="$(var.DocsStage)\educational\Basil Programming Language for Education.docx" />
+                </Component>
+                <Component Id="cmprvxcw_ZJH4Xi8SkGJ48KhqNU8lA" Guid="*">
+                    <File Id="filhk6tqte2OrN6xWDVntZ19l3pc9w" KeyPath="yes" Source="$(var.DocsStage)\educational\Basil Programming Language for Education.pdf" />
+                </Component>
+                <Component Id="cmpYpAm9n47rsSUrik0tudWfHq_AVI" Guid="*">
+                    <File Id="filpnwWBBEihkVAcCSICnsH6AYPBWM" KeyPath="yes" Source="$(var.DocsStage)\educational\basil_in_a_nutshell.pdf" />
+                </Component>
+                <Component Id="cmpjiU.YpZER0720sL2r_3YkasqS78" Guid="*">
+                    <File Id="filJW.iyWwcXkAZQ2uXV5PV4wT9U9k" KeyPath="yes" Source="$(var.DocsStage)\educational\BASIL_SHARP.md" />
+                </Component>
+                <Component Id="cmpLK0iN9g2FaD0E3oPIATsvMJUtDI" Guid="*">
+                    <File Id="filTy39Smi4GSwDQ6HoVts.cXOfqu0" KeyPath="yes" Source="$(var.DocsStage)\educational\PRESENTATION.md" />
+                </Component>
+                <Component Id="cmpjTiCdBBlulvnHQ30YSMb35bD51I" Guid="*">
+                    <File Id="filMWFJUBGVLWZ5JV8W3VhiMD7IAV8" KeyPath="yes" Source="$(var.DocsStage)\educational\presentation.pdf" />
+                </Component>
+            </Directory>
+            <Directory Id="dirMSwmslmRQB5j.cUPQC93YnkoRbk" Name="guides">
+                <Component Id="cmpPiwpdCCVO2r8cDksw.i9rIRMKb0" Guid="*">
+                    <File Id="filckpSBcdJfsPGvW40pzlPN1rsA_g" KeyPath="yes" Source="$(var.DocsStage)\guides\AMAZON_AWS.md" />
+                </Component>
+                <Component Id="cmp3Bm4T9tp31t8bTB6kTRZyveB_No" Guid="*">
+                    <File Id="filb.9keFKl1KxlYQ2whvZevxRHS0Y" KeyPath="yes" Source="$(var.DocsStage)\guides\AUDIO.md" />
+                </Component>
+                <Component Id="cmpD7thQV0jNmjsFpDP7y_tkPhCE68" Guid="*">
+                    <File Id="filXJrcdYayDXTaIx4wvBiDUZMWHzA" KeyPath="yes" Source="$(var.DocsStage)\guides\AWS.md" />
+                </Component>
+                <Component Id="cmp_akOXS_R8ibc_036PWXasSgOjQU" Guid="*">
+                    <File Id="fily9PMRxmd5NItQcKp8ygbXe7zatc" KeyPath="yes" Source="$(var.DocsStage)\guides\BASIL.md" />
+                </Component>
+                <Component Id="cmpJ.0dovniNUwsQpIRMhga_Eb0dZo" Guid="*">
+                    <File Id="filxk1jpf_UGgxXQSpAqG364vpPTqA" KeyPath="yes" Source="$(var.DocsStage)\guides\BASILICA.md" />
+                </Component>
+                <Component Id="cmprfqdL5cJneI.mWLkrGaib_ZBFzs" Guid="*">
+                    <File Id="fil1hZZQ4xsFO390u6CvoRC15FRCvA" KeyPath="yes" Source="$(var.DocsStage)\guides\BASIL_KEYWORDS_BY_CATEGORY.md" />
+                </Component>
+                <Component Id="cmpZOFji.jhAcRHIkGrYSZPbSM_274" Guid="*">
+                    <File Id="filhssAoAz.JO10IJxL5OIlv4AiZE4" KeyPath="yes" Source="$(var.DocsStage)\guides\BASIL_OK_PROMPT.md" />
+                </Component>
+                <Component Id="cmpSGt5bDBd5XU.W9WmyPG59AXVux4" Guid="*">
+                    <File Id="fil.9TV9AsFJlHZ2WEbhM1NoT7yk9g" KeyPath="yes" Source="$(var.DocsStage)\guides\BASIL_REFERENCE.md" />
+                </Component>
+                <Component Id="cmpxwhgSjA2YdYYm_64plEs4Gx.cs8" Guid="*">
+                    <File Id="filHlVby_zkGeVECZDZ6hG3f5M4Mh4" KeyPath="yes" Source="$(var.DocsStage)\guides\BEGIN_END.md" />
+                </Component>
+                <Component Id="cmp2pJv5JHURGjU2W8sZTyDuh3tExo" Guid="*">
+                    <File Id="filbhuUmWIQEGwi4XqEBz90CNulEz0" KeyPath="yes" Source="$(var.DocsStage)\guides\BMX.md" />
+                </Component>
+                <Component Id="cmpdshhbEBWmXOvjlz61HE3UO.pDbM" Guid="*">
+                    <File Id="filhNZdAAEXzNwTgmt6IxK9i7sf6YU" KeyPath="yes" Source="$(var.DocsStage)\guides\COMPILER_GUIDE.md" />
+                </Component>
+                <Component Id="cmpK9VPvcIRxRoDEGMECGGDjGKap_0" Guid="*">
+                    <File Id="filucPNql.nJ5irPdP2pFRcqV_G0YU" KeyPath="yes" Source="$(var.DocsStage)\guides\CRYPTO_PGP.md" />
+                </Component>
+                <Component Id="cmpwRGVtENrlbGRoJHJk9JpgVIy6_A" Guid="*">
+                    <File Id="fil.xRDUOyLepZXeTJ8mbt7OAylh3U" KeyPath="yes" Source="$(var.DocsStage)\guides\DAW.md" />
+                </Component>
+                <Component Id="cmpjU9SVWryAzQcHhr24EytfEBhrjU" Guid="*">
+                    <File Id="filSocGBf4WGvADLHn4VMWUikPPqTs" KeyPath="yes" Source="$(var.DocsStage)\guides\ENV_VARS.md" />
+                </Component>
+                <Component Id="cmpbDbkNYYxsMgY1u_F3EUivwyGfwQ" Guid="*">
+                    <File Id="filurh57D1B7hCYI8xR7Y15UtFRu1g" KeyPath="yes" Source="$(var.DocsStage)\guides\EXCEPTIONS.md" />
+                </Component>
+                <Component Id="cmpjz1SNfdOTzEZNIjOMWoiKs96Zr8" Guid="*">
+                    <File Id="filWqcv_UNamUv.otuRhgFsIul3pc0" KeyPath="yes" Source="$(var.DocsStage)\guides\FAQ_COMPILED_CLASSES.md" />
+                </Component>
+                <Component Id="cmpJdLjnsJJvJmvY9I8R1yU6UDnBZY" Guid="*">
+                    <File Id="fillPh2lK6q5d1uUVd1HRHn_icaV94" KeyPath="yes" Source="$(var.DocsStage)\guides\FILE_IO.md" />
+                </Component>
+                <Component Id="cmpkFBi9PdXVoZk5bIoG7p7v2u7lK8" Guid="*">
+                    <File Id="filzw.p8n4eFQXmf8E_YAGiZdLEemo" KeyPath="yes" Source="$(var.DocsStage)\guides\FUNCTIONS.md" />
+                </Component>
+                <Component Id="cmppr.ZSCpVyvos5coqd97dVmbOypQ" Guid="*">
+                    <File Id="fil8v8XA49WCiRN4AeW75tIyTmKuc8" KeyPath="yes" Source="$(var.DocsStage)\guides\HTTP.md" />
+                </Component>
+                <Component Id="cmp053uQzJoTF9kfJPfNOrWeGXpm5A" Guid="*">
+                    <File Id="filnnv34PVyzoCaN3ThayY3.FkWYmM" KeyPath="yes" Source="$(var.DocsStage)\guides\index.html" />
+                </Component>
+                <Component Id="cmpCTuNJIzGXSc1kAznqaTD2q9O_I8" Guid="*">
+                    <File Id="filiY_Wn7t3RgQRT6CWcBDs7YmzNWA" KeyPath="yes" Source="$(var.DocsStage)\guides\LIBRARY_OBJECTS.md" />
+                </Component>
+                <Component Id="cmpXD3HQy0JtnMjqROZRT3jsTD7BBQ" Guid="*">
+                    <File Id="filpdXPgLcj70N2I5sOSBGHzcE4j7s" KeyPath="yes" Source="$(var.DocsStage)\guides\MIDI.md" />
+                </Component>
+                <Component Id="cmpt752u_8_5P_YUi4lrh64P1lAKd4" Guid="*">
+                    <File Id="filzQ.TRqwPiU7g.oP_nnQ_EdsVr3k" KeyPath="yes" Source="$(var.DocsStage)\guides\MIDI_CODERS_GUIDE.md" />
+                </Component>
+                <Component Id="cmpFFAr4AnBK7xxToeS_x_eJUVOIds" Guid="*">
+                    <File Id="filWki15xkF3r6Ort4pE3bJdecnAag" KeyPath="yes" Source="$(var.DocsStage)\guides\NONSCALARS.md" />
+                </Component>
+                <Component Id="cmpzgnj51e22icJZTSuXxD8atTZugw" Guid="*">
+                    <File Id="filbepdexo0DJ63S3lfxIO8DSXrnFA" KeyPath="yes" Source="$(var.DocsStage)\guides\OBJ_AI_MOD.md" />
+                </Component>
+                <Component Id="cmpsFo.t4u7GXGCVpd0JR9kSNL3Brw" Guid="*">
+                    <File Id="filoZ8RDOwNcPxaGMg2ev0tS23__Z8" KeyPath="yes" Source="$(var.DocsStage)\guides\OBJ_TERM.md" />
+                </Component>
+                <Component Id="cmppRktqZebyVRy_tapKwWzW_2fsqQ" Guid="*">
+                    <File Id="filg_KQ.VyIm4FYnb99SK_nIYUwMK0" KeyPath="yes" Source="$(var.DocsStage)\guides\ORM.md" />
+                </Component>
+                <Component Id="cmpdzeiycsq7opdHpmQMkoxPTw6qBY" Guid="*">
+                    <File Id="filmyln_EcY0YnATA_hMRfFBzQRDIs" KeyPath="yes" Source="$(var.DocsStage)\guides\ORM_SQL.md" />
+                </Component>
+                <Component Id="cmp.KCZy0I972f3rbfZsW3v0uoOYco" Guid="*">
+                    <File Id="fil86V7oi9k_TtYeZRBTwtYfFTGVng" KeyPath="yes" Source="$(var.DocsStage)\guides\PGP.md" />
+                </Component>
+                <Component Id="cmpSNFMMaFuBXfpFzCjbT7B_oUZIAs" Guid="*">
+                    <File Id="filWPct_ylMVL915pGygu1g6adiHXo" KeyPath="yes" Source="$(var.DocsStage)\guides\PUNS.md" />
+                </Component>
+                <Component Id="cmpsCdPTDFDP4BlpeaplKh_mkSXGmI" Guid="*">
+                    <File Id="fil9ZHxlkTd6aJjiNkJ9bYpNXUZH84" KeyPath="yes" Source="$(var.DocsStage)\guides\reference.html" />
+                </Component>
+                <Component Id="cmp2EYORDkoeejz_gpere8n5XqTUog" Guid="*">
+                    <File Id="filRh7K2KAt8rxJdFX.b8fpa4SPXH8" KeyPath="yes" Source="$(var.DocsStage)\guides\SEMICOLONS.md" />
+                </Component>
+                <Component Id="cmpfQrInorCWg3cyH3RFIBhaVGHtRg" Guid="*">
+                    <File Id="fil0KiBjEGZ_hr.YAAAjxXyzI_48XY" KeyPath="yes" Source="$(var.DocsStage)\guides\SEMICOLONS_STYLE_GUIDE.md" />
+                </Component>
+                <Component Id="cmp0DP9XMET.uFWw96UFS_PnPm6ZH4" Guid="*">
+                    <File Id="filQ5CPGcKLYTwGX9wNUU2SkTLk_KY" KeyPath="yes" Source="$(var.DocsStage)\guides\SETUP_AI.md" />
+                </Component>
+                <Component Id="cmpDMgg0jz2TGWpjfTfd9gZ4UzPiQk" Guid="*">
+                    <File Id="filSviPeDTnpoOn1ruZXhituJEhl9s" KeyPath="yes" Source="$(var.DocsStage)\guides\SMTP_SFTP.md" />
+                </Component>
+                <Component Id="cmpJhZcrBWfqZWh2W5sZ5Feu7t0d0c" Guid="*">
+                    <File Id="filNhjBFC3WFIFPVkqLJQZd8Ux_BC0" KeyPath="yes" Source="$(var.DocsStage)\guides\SQL.md" />
+                </Component>
+                <Component Id="cmp93q.QFSVnOVZpPZH3HiZJIE3Wmk" Guid="*">
+                    <File Id="filL3JW45fYmL4R4ZbUGPynBUt7w3I" KeyPath="yes" Source="$(var.DocsStage)\guides\STRINGS.md" />
+                </Component>
+                <Component Id="cmpGKFZVeUx6Qq5RiFcF19QPkoTzgg" Guid="*">
+                    <File Id="filGqdcqr5SPNLreMYgEhfQWIoOiIw" KeyPath="yes" Source="$(var.DocsStage)\guides\STUDENTS.md" />
+                </Component>
+                <Component Id="cmpdpyYU.fBG0JhcijOkKhDRY_FSpA" Guid="*">
+                    <File Id="filjzRe75ZrBtp1YzhYtIZMMufGQHY" KeyPath="yes" Source="$(var.DocsStage)\guides\TECHNICAL.md" />
+                </Component>
+                <Component Id="cmps0p0qcdk1rz57eQ5lVjNHZxBRpU" Guid="*">
+                    <File Id="filjb0AhI4Me8m3910v91pW_SgQmSM" KeyPath="yes" Source="$(var.DocsStage)\guides\WEB_PAGES.md" />
+                </Component>
+                <Directory Id="diry2jNUbksYYvlPPD53zwLkcBzYPo" Name="assets">
+                    <Component Id="cmpmBKUykyuD2_vm7qVhU3CWDHkKU4" Guid="*">
+                        <File Id="filozsMiBvet1ObJXilu0xSFTIqjWM" KeyPath="yes" Source="$(var.DocsStage)\guides\assets\reference.css" />
+                    </Component>
+                    <Component Id="cmphkHPtadRBNA2tDGj4_iZ1bh9XTQ" Guid="*">
+                        <File Id="filOjIP.Prwij8xK._ff06SYCf4MYA" KeyPath="yes" Source="$(var.DocsStage)\guides\assets\reference.js" />
+                    </Component>
+                </Directory>
+            </Directory>
+            <Directory Id="dirmKY1TWQvvbEK2R_eZPrT5ww25.c" Name="IDE">
+                <Component Id="cmpwJTE1468ZlFKmPTEiYBsA.oyaDU" Guid="*">
+                    <File Id="filSwXarIC3rpDHdhYK7mkZFpfLDTA" KeyPath="yes" Source="$(var.DocsStage)\IDE\BASIC_IDE_STEP1.md" />
+                </Component>
+                <Component Id="cmpyB6ldzKKxx7QTrb6De7ip0Q8vCo" Guid="*">
+                    <File Id="filDvvJE7s5qxd9.7LMHnvOuMb4nGk" KeyPath="yes" Source="$(var.DocsStage)\IDE\BASIL_IDE.md" />
+                </Component>
+                <Component Id="cmpW77FyRkhfW3kM14G1h4St4Uy4xs" Guid="*">
+                    <File Id="filJUuxdaGt7LCbc8S3JNmmAf13agg" KeyPath="yes" Source="$(var.DocsStage)\IDE\BASIL_IDE_JUNIE_1.md" />
+                </Component>
+                <Component Id="cmpG4w7J9cVFfY4P8aDCieHUDuO0CA" Guid="*">
+                    <File Id="filMvREHYM15j6kOS5iibGhgJdt8Mg" KeyPath="yes" Source="$(var.DocsStage)\IDE\BASIL_IDE_JUNIE_2_3_LSP_DAP.md" />
+                </Component>
+                <Component Id="cmpFGRdXpc6BUbQAPdVAludJxxKRTI" Guid="*">
+                    <File Id="filuRRKBRzAljCV819L1WBi_kbU_ko" KeyPath="yes" Source="$(var.DocsStage)\IDE\BASIL_IDE_JUNIE_4_VSCODE.md" />
+                </Component>
+            </Directory>
+            <Directory Id="dirkEEvxMcg5Kr4vJMzV1cjkosatpk" Name="reference">
+                <Component Id="cmpzywFG8HKMwgzREZszdc51z_W29g" Guid="*">
+                    <File Id="filBj8GOC32pRDfbQT4rdUD6GvJsAA" KeyPath="yes" Source="$(var.DocsStage)\reference\STOP.md" />
+                </Component>
+            </Directory>
+            <Directory Id="dirOjg8lBriYUBHpbEejGbBEjFq.SQ" Name="troubleshooting">
+                <Component Id="cmpro2gzWArT6bYZmkMJ1LaGMNm14w" Guid="*">
+                    <File Id="filEJAz0CeEH00ZW8xanr4J1JVqC.g" KeyPath="yes" Source="$(var.DocsStage)\troubleshooting\AI_ERROR_429.md" />
+                </Component>
+                <Component Id="cmp5jCpTw2.EEA93xliWVR2MDy7aXk" Guid="*">
+                    <File Id="fil_4h64CY0O1E70GIJrIzz8lN9sQw" KeyPath="yes" Source="$(var.DocsStage)\troubleshooting\ALSA_DEPENDENCY_ERROR.md" />
+                </Component>
+                <Component Id="cmpOfDLaU_IIeB4uslUUJsWEsIkLMA" Guid="*">
+                    <File Id="filnOYp5hDH17YzIp.URUUtPtP78PE" KeyPath="yes" Source="$(var.DocsStage)\troubleshooting\PDB_LINKER_ERROR.md" />
+                </Component>
+                <Component Id="cmpv.3J0PeUFN3yP0F_nd84RJPAFlA" Guid="*">
+                    <File Id="filJhWZ97FzWJQTAxgNkhrXvPytnlg" KeyPath="yes" Source="$(var.DocsStage)\troubleshooting\WINDOWS_PDB_LINKER_ERROR.md" />
+                </Component>
+            </Directory>
+            <Directory Id="dir.WVcb1M6rQ1DBY.mgJkjdkVqW6o" Name="WEBSERVER.md">
+                <Component Id="cmpAR1qPPKg8pA3x._DoEOBXfADnW8" Guid="*">
+                    <File Id="filmwq9YVyEwmoJyKvXlLnd7jzVAOs" KeyPath="yes" Source="$(var.DocsStage)\WEBSERVER.md\README.md" />
+                </Component>
+            </Directory>
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <ComponentGroup Id="DocsGroup">
+            <ComponentRef Id="cmpZnDtnzVdtidICQxtAy6nS3Sm2No" />
+            <ComponentRef Id="cmp0zgaaTiZ8pkgCNQVmZ1j6apyGjQ" />
+            <ComponentRef Id="cmpf4TG08sKhilaidTq9dWp0MBLk4c" />
+            <ComponentRef Id="cmp2k.74RdHJW_cI.HU.TmUbB4k9nM" />
+            <ComponentRef Id="cmpPPmW9P6m1KGm2y8umOl40nCheG4" />
+            <ComponentRef Id="cmpGUut3MTp2P6Fhmfv5NFydCTDTUk" />
+            <ComponentRef Id="cmpaDODw_qDF8VbIPFD3krmNEVJ3wk" />
+            <ComponentRef Id="cmpX54RGch0c6hebUlWY6iYCTPs_B0" />
+            <ComponentRef Id="cmpXKHNhBxSS5zMbhoiPjbeC77_4aA" />
+            <ComponentRef Id="cmpb3t5YkIetOHQrOn1xY7vPCfek1s" />
+            <ComponentRef Id="cmpKzarpuksNIHQ1UNpePIfSibf7Ws" />
+            <ComponentRef Id="cmpNpaF.eyDfqEg8phFzwnN4euHgr4" />
+            <ComponentRef Id="cmp0bKbptEZk7XFgo79MgGgEDi6poE" />
+            <ComponentRef Id="cmpc1wiUfiyTWil7DnYG4.di9SnPOU" />
+            <ComponentRef Id="cmpODGLnuig57LEsO.lM6BOijYpVzQ" />
+            <ComponentRef Id="cmppoUAWi3CukxE4quIWiVpJvVprG0" />
+            <ComponentRef Id="cmpUrOBeKS41t9UJiL9rXJBRQPTLRU" />
+            <ComponentRef Id="cmppvsREZdwI7U8O1DslJ8tTm09gSk" />
+            <ComponentRef Id="cmphvTlg9LWqrYCukXScP2d2diLz5Q" />
+            <ComponentRef Id="cmpXXl4kvnWplpOe0aPlEvci8TWTes" />
+            <ComponentRef Id="cmp3UqGeo8eCg1p7PfJ1w9eNitxups" />
+            <ComponentRef Id="cmpvMWg85b2LvV2YE9vKHBpiHhQv0w" />
+            <ComponentRef Id="cmpfIdi9dFzQ84coLYsWGhpY6qPM1I" />
+            <ComponentRef Id="cmpKhl.MaDLdaTecOMUA4JmxK1Ad6M" />
+            <ComponentRef Id="cmp6jmD7fPaLN733TO1jzKAqi9bBiU" />
+            <ComponentRef Id="cmp2YE_PZAL4.Y_thZPAK75wF93dFE" />
+            <ComponentRef Id="cmpy8YBuCk4j1FgOm9r1BBowZe.TL8" />
+            <ComponentRef Id="cmpwInFTRtjf1qj6kXOirS6juXqU_U" />
+            <ComponentRef Id="cmpvIuaCc27xfZFcuvUInxH9S1FzrM" />
+            <ComponentRef Id="cmph9t0_Bt48b2YitnKSxgMTBbyTU4" />
+            <ComponentRef Id="cmpi8WoSSeiQ6qKFBJwW2MMgHqmUNw" />
+            <ComponentRef Id="cmpFqQkHruzsod0QED54BCh0RfAuXw" />
+            <ComponentRef Id="cmpYYZ8G.2aOiI52GR2dIWNagoG.BA" />
+            <ComponentRef Id="cmp6ltcyVz0VrENRbbbeswUsR6okY4" />
+            <ComponentRef Id="cmpqnnDagWCuMssjagOM8l94X1VbSY" />
+            <ComponentRef Id="cmp5EWcO1JXZn1tURTmMTWpeMzRSdY" />
+            <ComponentRef Id="cmpeoiEwmlyIaRFrJRfsivlqqas6HU" />
+            <ComponentRef Id="cmpCz7mcJkDREUo3jHTqfTgke86_SY" />
+            <ComponentRef Id="cmpS6QsnYO7hhG4QKzEY3GlD5fUAFc" />
+            <ComponentRef Id="cmpYsrBvORggGBRZ07f75.SFWCGObE" />
+            <ComponentRef Id="cmpFPhmYGimtJcCKIiL6FjoyP391bA" />
+            <ComponentRef Id="cmp4UcMjVQnB0aEhaRFXGMbOJdcAz4" />
+            <ComponentRef Id="cmpFYJK50CWYvWIzrD6t9TtfL.7y9E" />
+            <ComponentRef Id="cmptYIqJZyJJw6ivI2wEpNpy2jPZUs" />
+            <ComponentRef Id="cmp7NErKzQSPXofaV5Ucz2OUXXCTrM" />
+            <ComponentRef Id="cmpEglBoSheqzXMPVGqyxerZCPCdOw" />
+            <ComponentRef Id="cmpB3HI23tBg2mGY0gG4Pi7sTHw1BU" />
+            <ComponentRef Id="cmp6pBFgCgJoR9jf8DPVO.Ou1nMVvQ" />
+            <ComponentRef Id="cmpXwCx3TsKAYA9yCA05vGEN4etWvM" />
+            <ComponentRef Id="cmphvli15ZerPl3tLrZugYmGiutJPI" />
+            <ComponentRef Id="cmpTRIePBk01Bi0o5bbCGENv9v5jjw" />
+            <ComponentRef Id="cmpgaEFJb4fBYTKcqctEID5sKJzDMI" />
+            <ComponentRef Id="cmpM.HJpoO40UwoOmlaXJwKwvBvimQ" />
+            <ComponentRef Id="cmpRrPLhW2yeWxylzwc9D.pSv0tYac" />
+            <ComponentRef Id="cmp07KDBKErpndAlS3KQO6hWc0Q3D4" />
+            <ComponentRef Id="cmpfncmYCWmRXxl2CQcamrex3jhDxY" />
+            <ComponentRef Id="cmprnW8zTueqNPC6AOqIM58kN4BfuI" />
+            <ComponentRef Id="cmpFCIluAfYGl5dhcP08VSU9dVq47U" />
+            <ComponentRef Id="cmpN7FgsVK8FPgJ3MDilDo8U0tJMoY" />
+            <ComponentRef Id="cmpArpXfnbA7FxxKwdzWxCHFjiDtPg" />
+            <ComponentRef Id="cmpPyAyU5do3PN72zUFM3idwRQRxM4" />
+            <ComponentRef Id="cmpLc1JLQycqe78WOK1Ku1wj.n_ETs" />
+            <ComponentRef Id="cmp4vNxQ4go4qmKyyX8fsuYE2SZ0O0" />
+            <ComponentRef Id="cmpR8WPd.6e_8ZZrmH_gZnxcSiJxdk" />
+            <ComponentRef Id="cmplKuth3uRxYxL9YSUxRZA6GZL_SQ" />
+            <ComponentRef Id="cmpFQxRaKyHzZ4Oevx22yJLLgzeSsc" />
+            <ComponentRef Id="cmpvYxyinWLneXkbw1JZLe9VyPNnEQ" />
+            <ComponentRef Id="cmp3Z_tYuCh4yKFHXWqW.xk1yAjnY0" />
+            <ComponentRef Id="cmpc5JdefeBbdi.5M2L9bSMoYwMExg" />
+            <ComponentRef Id="cmpyZXqhh06QY13Q4boOX2ifpymxnc" />
+            <ComponentRef Id="cmpIqLKWKZ4XhFLLi8rGyHW0vtx2Lw" />
+            <ComponentRef Id="cmp3GkUOEfrOo4KAHLigZd.bDiL7SM" />
+            <ComponentRef Id="cmpYIdyc9it_G4dsvIDo1h5bHNVHfs" />
+            <ComponentRef Id="cmp4RRGD2RBlP.hVP6cFLCH_yeB3g8" />
+            <ComponentRef Id="cmprvxcw_ZJH4Xi8SkGJ48KhqNU8lA" />
+            <ComponentRef Id="cmpYpAm9n47rsSUrik0tudWfHq_AVI" />
+            <ComponentRef Id="cmpjiU.YpZER0720sL2r_3YkasqS78" />
+            <ComponentRef Id="cmpLK0iN9g2FaD0E3oPIATsvMJUtDI" />
+            <ComponentRef Id="cmpjTiCdBBlulvnHQ30YSMb35bD51I" />
+            <ComponentRef Id="cmpPiwpdCCVO2r8cDksw.i9rIRMKb0" />
+            <ComponentRef Id="cmp3Bm4T9tp31t8bTB6kTRZyveB_No" />
+            <ComponentRef Id="cmpD7thQV0jNmjsFpDP7y_tkPhCE68" />
+            <ComponentRef Id="cmp_akOXS_R8ibc_036PWXasSgOjQU" />
+            <ComponentRef Id="cmpJ.0dovniNUwsQpIRMhga_Eb0dZo" />
+            <ComponentRef Id="cmprfqdL5cJneI.mWLkrGaib_ZBFzs" />
+            <ComponentRef Id="cmpZOFji.jhAcRHIkGrYSZPbSM_274" />
+            <ComponentRef Id="cmpSGt5bDBd5XU.W9WmyPG59AXVux4" />
+            <ComponentRef Id="cmpxwhgSjA2YdYYm_64plEs4Gx.cs8" />
+            <ComponentRef Id="cmp2pJv5JHURGjU2W8sZTyDuh3tExo" />
+            <ComponentRef Id="cmpdshhbEBWmXOvjlz61HE3UO.pDbM" />
+            <ComponentRef Id="cmpK9VPvcIRxRoDEGMECGGDjGKap_0" />
+            <ComponentRef Id="cmpwRGVtENrlbGRoJHJk9JpgVIy6_A" />
+            <ComponentRef Id="cmpjU9SVWryAzQcHhr24EytfEBhrjU" />
+            <ComponentRef Id="cmpbDbkNYYxsMgY1u_F3EUivwyGfwQ" />
+            <ComponentRef Id="cmpjz1SNfdOTzEZNIjOMWoiKs96Zr8" />
+            <ComponentRef Id="cmpJdLjnsJJvJmvY9I8R1yU6UDnBZY" />
+            <ComponentRef Id="cmpkFBi9PdXVoZk5bIoG7p7v2u7lK8" />
+            <ComponentRef Id="cmppr.ZSCpVyvos5coqd97dVmbOypQ" />
+            <ComponentRef Id="cmp053uQzJoTF9kfJPfNOrWeGXpm5A" />
+            <ComponentRef Id="cmpCTuNJIzGXSc1kAznqaTD2q9O_I8" />
+            <ComponentRef Id="cmpXD3HQy0JtnMjqROZRT3jsTD7BBQ" />
+            <ComponentRef Id="cmpt752u_8_5P_YUi4lrh64P1lAKd4" />
+            <ComponentRef Id="cmpFFAr4AnBK7xxToeS_x_eJUVOIds" />
+            <ComponentRef Id="cmpzgnj51e22icJZTSuXxD8atTZugw" />
+            <ComponentRef Id="cmpsFo.t4u7GXGCVpd0JR9kSNL3Brw" />
+            <ComponentRef Id="cmppRktqZebyVRy_tapKwWzW_2fsqQ" />
+            <ComponentRef Id="cmpdzeiycsq7opdHpmQMkoxPTw6qBY" />
+            <ComponentRef Id="cmp.KCZy0I972f3rbfZsW3v0uoOYco" />
+            <ComponentRef Id="cmpSNFMMaFuBXfpFzCjbT7B_oUZIAs" />
+            <ComponentRef Id="cmpsCdPTDFDP4BlpeaplKh_mkSXGmI" />
+            <ComponentRef Id="cmp2EYORDkoeejz_gpere8n5XqTUog" />
+            <ComponentRef Id="cmpfQrInorCWg3cyH3RFIBhaVGHtRg" />
+            <ComponentRef Id="cmp0DP9XMET.uFWw96UFS_PnPm6ZH4" />
+            <ComponentRef Id="cmpDMgg0jz2TGWpjfTfd9gZ4UzPiQk" />
+            <ComponentRef Id="cmpJhZcrBWfqZWh2W5sZ5Feu7t0d0c" />
+            <ComponentRef Id="cmp93q.QFSVnOVZpPZH3HiZJIE3Wmk" />
+            <ComponentRef Id="cmpGKFZVeUx6Qq5RiFcF19QPkoTzgg" />
+            <ComponentRef Id="cmpdpyYU.fBG0JhcijOkKhDRY_FSpA" />
+            <ComponentRef Id="cmps0p0qcdk1rz57eQ5lVjNHZxBRpU" />
+            <ComponentRef Id="cmpmBKUykyuD2_vm7qVhU3CWDHkKU4" />
+            <ComponentRef Id="cmphkHPtadRBNA2tDGj4_iZ1bh9XTQ" />
+            <ComponentRef Id="cmpwJTE1468ZlFKmPTEiYBsA.oyaDU" />
+            <ComponentRef Id="cmpyB6ldzKKxx7QTrb6De7ip0Q8vCo" />
+            <ComponentRef Id="cmpW77FyRkhfW3kM14G1h4St4Uy4xs" />
+            <ComponentRef Id="cmpG4w7J9cVFfY4P8aDCieHUDuO0CA" />
+            <ComponentRef Id="cmpFGRdXpc6BUbQAPdVAludJxxKRTI" />
+            <ComponentRef Id="cmpzywFG8HKMwgzREZszdc51z_W29g" />
+            <ComponentRef Id="cmpro2gzWArT6bYZmkMJ1LaGMNm14w" />
+            <ComponentRef Id="cmp5jCpTw2.EEA93xliWVR2MDy7aXk" />
+            <ComponentRef Id="cmpOfDLaU_IIeB4uslUUJsWEsIkLMA" />
+            <ComponentRef Id="cmpv.3J0PeUFN3yP0F_nd84RJPAFlA" />
+            <ComponentRef Id="cmpAR1qPPKg8pA3x._DoEOBXfADnW8" />
+        </ComponentGroup>
+    </Fragment>
+</Wix>

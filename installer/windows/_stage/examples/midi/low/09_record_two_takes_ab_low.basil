@@ -1,0 +1,53 @@
+REM Two takes via low-level path, then play both via low-level playback;
+rate% = AUDIO_DEFAULT_RATE%(); ch% = AUDIO_DEFAULT_CHANS%();
+
+REM ---- record A
+PRINTLN "Take A (2s)…";
+inA@ = AUDIO_OPEN_IN@("usb"); rbA@ = AUDIO_RING_CREATE@(rate% * ch% * 4);
+ok% = AUDIO_CONNECT_IN_TO_RING%(inA@, rbA@); ok% = AUDIO_START%(inA@);
+wrA@ = WAV_WRITER_OPEN@("A_low.wav", rate%, ch%);
+
+DIM buf%[](rate% * ch% / 10);
+t0% = TIME%();
+WHILE TIME%() - t0% < 2 BEGIN
+  n% = AUDIO_RING_POP%(rbA@, buf%[]);
+  IF n% > 0 THEN ok% = WAV_WRITER_WRITE%(wrA@, buf%[]);
+END
+AUDIO_STOP%(inA@); WAV_WRITER_CLOSE%(wrA@); AUDIO_CLOSE%(inA@);
+
+REM ---- record B
+PRINTLN "Take B (2s)…";
+inB@ = AUDIO_OPEN_IN@("usb"); rbB@ = AUDIO_RING_CREATE@(rate% * ch% * 4);
+ok% = AUDIO_CONNECT_IN_TO_RING%(inB@, rbB@); ok% = AUDIO_START%(inB@);
+wrB@ = WAV_WRITER_OPEN@("B_low.wav", rate%, ch%);
+
+t1% = TIME%();
+WHILE TIME%() - t1% < 2 BEGIN
+  n% = AUDIO_RING_POP%(rbB@, buf%[]);
+  IF n% > 0 THEN ok% = WAV_WRITER_WRITE%(wrB@, buf%[]);
+END
+AUDIO_STOP%(inB@); WAV_WRITER_CLOSE%(wrB@); AUDIO_CLOSE%(inB@);
+
+REM ---- play A then B
+PRINTLN "Play A then B…";
+CALL PlayFileLow$("A_low.wav");
+CALL PlayFileLow$("B_low.wav");
+PRINTLN "Done.";
+
+SUB PlayFileLow$(p$)
+  samples%[] = WAV_READ_ALL%[](p$);
+  out@ = AUDIO_OPEN_OUT@("usb");
+  rb@  = AUDIO_RING_CREATE@(rate% * ch% * 2);
+  ok%  = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@);
+  ok%  = AUDIO_START%(out@);
+  i% = 0; chunk% = rate% * ch% / 10;
+  DIM win%[](chunk%);
+  WHILE i% < LEN(samples%[]) BEGIN
+    copy% = MIN(chunk%, LEN(samples%[]) - i%);
+    FOR k% = 0 TO copy% - 1 BEGIN win%[](k%) = samples%[](i% + k%); END
+    ok% = AUDIO_RING_PUSH%(rb@, win%[]);
+    i% = i% + copy%;
+  END
+  SLEEP 300;
+  AUDIO_STOP%(out@); AUDIO_CLOSE%(out@);
+END SUB

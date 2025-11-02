@@ -1,0 +1,32 @@
+REM Monitor ring under/overflows while relaying input->output, print stats each second;
+in@  = AUDIO_OPEN_IN@("usb");
+out@ = AUDIO_OPEN_OUT@("usb");
+rb@  = AUDIO_RING_CREATE@(AUDIO_DEFAULT_RATE%() * AUDIO_DEFAULT_CHANS%() * 2);
+
+ok% = AUDIO_CONNECT_IN_TO_RING%(in@, rb@);
+ok% = AUDIO_CONNECT_RING_TO_OUT%(rb@, out@);
+ok% = AUDIO_START%(in@);
+ok% = AUDIO_START%(out@);
+
+PRINTLN "Ring health (press any key to stop)…";
+lastT% = TIME%(); pushes% = 0; pops% = 0;
+
+DIM tmp%[](AUDIO_DEFAULT_RATE%() * AUDIO_DEFAULT_CHANS%() / 10);
+
+DO
+  n% = AUDIO_RING_POP%(rb@, tmp%[]);
+  IF n% > 0 THEN pops% = pops% + 1;
+  pushed% = AUDIO_RING_PUSH%(rb@, tmp%[]);
+  IF pushed% > 0 THEN pushes% = pushes% + 1;
+
+  IF TIME%() - lastT% >= 1 THEN
+    PRINT "sec: pushes="; PRINT pushes%; PRINT ", pops="; PRINTLN pops%;
+    pushes% = 0; pops% = 0; lastT% = TIME%();
+  ENDIF
+
+  k$ = INKEY$();
+LOOP UNTIL k$ <> "";
+
+ok% = AUDIO_STOP%(out@); ok% = AUDIO_STOP%(in@);
+AUDIO_CLOSE%(out@); AUDIO_CLOSE%(in@);
+PRINTLN "Done.";

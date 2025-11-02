@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "CqjZcE9hC3w=",
+  "success": true,
+  "projectFilePath": "E:\\Projects\\Yore\\basil\\installer\\windows\\wix\\Basil.wixproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\mechi\\.nuget\\packages\\wixtoolset.heat\\4.0.6\\wixtoolset.heat.4.0.6.nupkg.sha512",
+    "C:\\Users\\mechi\\.nuget\\packages\\wixtoolset.ui.wixext\\4.0.6\\wixtoolset.ui.wixext.4.0.6.nupkg.sha512",
+    "C:\\Users\\mechi\\.nuget\\packages\\wixtoolset.util.wixext\\4.0.6\\wixtoolset.util.wixext.4.0.6.nupkg.sha512"
+  ],
+  "logs": []
+}

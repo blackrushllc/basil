@@ -1,0 +1,27 @@
+#USE DB_MYSQL, ORM
+// Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+DIM orm@ AS ORM(db@)
+
+// Register the model explicitly (columns: id, name, email)
+orm@.ModelCsv$("users", "id%,name$,email$", "id%");
+
+TRY
+
+    // Insert a new user
+    orm@.Begin();
+    LET u@ = orm@.New("users");
+    LET u@.Name$="Txn";
+    LET u@.Email$="txn@example.com";
+    u@.Save();
+    orm@.Commit();
+
+CATCH e$
+
+    PRINTLN "ORM txn error: ", e$
+    orm@.Rollback()
+
+END TRY

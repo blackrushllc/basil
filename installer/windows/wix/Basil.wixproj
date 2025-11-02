@@ -1,7 +1,10 @@
-<Project Sdk="WixToolset.Sdk/1.0.0">
+<Project Sdk="WixToolset.Sdk/4.0.6">
   <PropertyGroup>
     <OutputName>Basil</OutputName>
     <Platform>x64</Platform>
+    <TargetFramework>net8.0</TargetFramework>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultItems>false</EnableDefaultItems>
 
     <!-- Passed in by the build script -->
     <DefineConstants>
@@ -11,11 +14,37 @@
       ExamplesStage=$(ExamplesStage)
     </DefineConstants>
 
+    <!-- Suppress ICE validation for per-user examples harvest -->
+    <LightAdditionalOptions>-sval -sice:ICE38 -sice:ICE64</LightAdditionalOptions>
+
     <IntermediateOutputPath>obj\</IntermediateOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Product.wxs" />
+  </ItemGroup>
+
+  <!-- Link WiX extensions explicitly to ensure resolver finds them -->
+  <ItemGroup>
+    <WixExtension Include="WixToolset.UI.wixext">
+      <HintPath>$(NuGetPackageRoot)wixtoolset.ui.wixext\4.0.6\wixext4\WixToolset.UI.wixext.dll</HintPath>
+    </WixExtension>
+    <WixExtension Include="WixToolset.Util.wixext">
+      <HintPath>$(NuGetPackageRoot)wixtoolset.util.wixext\4.0.6\wixext4\WixToolset.Util.wixext.dll</HintPath>
+    </WixExtension>
+  </ItemGroup>
+
+  <!-- WiX v4 packages (extensions + Heat for harvest) -->
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.6" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="4.0.6" />
+    <PackageReference Include="WixToolset.Heat" Version="4.0.6" />
+  </ItemGroup>
+
+  <!-- Suppress ICE rules for user-profile directory content (Examples) -->
+  <ItemGroup>
+    <SuppressIces Include="ICE38" />
+    <SuppressIces Include="ICE64" />
   </ItemGroup>
 
   <!-- Harvest docs -> DOCSFOLDER -->
@@ -25,21 +54,15 @@
       <DirectoryRefId>DOCSFOLDER</DirectoryRefId>
       <PreprocessorVariable>var.DocsStage</PreprocessorVariable>
       <SuppressRootDirectory>true</SuppressRootDirectory>
-      <HeatOutput>_harvest.docs.wxs</HeatOutput>
     </HarvestDirectory>
 
-    <!-- Harvest examples -> EXAMPLESDIR -->
+    <!-- Harvest examples -> EXAMPLESMSI (installed under Program Files) -->
     <HarvestDirectory Include="$(ExamplesStage)">
       <ComponentGroupName>ExamplesGroup</ComponentGroupName>
-      <DirectoryRefId>EXAMPLESDIR</DirectoryRefId>
+      <DirectoryRefId>EXAMPLESMSI</DirectoryRefId>
       <PreprocessorVariable>var.ExamplesStage</PreprocessorVariable>
       <SuppressRootDirectory>true</SuppressRootDirectory>
-      <HeatOutput>_harvest.examples.wxs</HeatOutput>
     </HarvestDirectory>
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Include="_harvest.docs.wxs" Condition="Exists('_harvest.docs.wxs')" />
-    <Compile Include="_harvest.examples.wxs" Condition="Exists('_harvest.examples.wxs')" />
-  </ItemGroup>
 </Project>

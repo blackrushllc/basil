@@ -1,0 +1,13 @@
+TERM.INIT; ALTSCREEN_ON; CLS;
+FOR i% = 1 TO 20
+  BEGIN
+      LOCATE(1,1);
+      PRINT "Frame ";
+      PRINT i%;
+      LOCATE(1,3);
+      PRINT STRING$(i% MOD 60, "#");
+      TERM.FLUSH;
+      SLEEP 33;
+  END
+NEXT i%;
+ALTSCREEN_OFF; TERM.END;

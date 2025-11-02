@@ -8,3 +8,6 @@ basil-frontend = { path = "../crates/basil-frontend" }
 basil-ir       = { path = "../crates/basil-ir" }
 backend-rs     = { path = "../crates/backend-rs" }
 sha2 = "0.10"
+
+[build-dependencies]
+winres = "0.1.12"

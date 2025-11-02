@@ -1,0 +1,128 @@
+REM Daily builds automation for Basil
+REM Steps:
+REM  0) git pull
+REM  1) Build Naked release (no features)
+REM  2) Upload Naked binary via SFTP
+REM  3) Build Full release (--features obj-all)
+REM  4) Upload Full binary via SFTP
+REM  5) Email a notice
+
+REM Note: When run via `basilc run examples\daily_builds.basil`, the working directory is examples\.
+REM       We use `cmd /C cd .. && ...` to operate at the repository root (one level up).
+
+REM Load environment variables from examples\.env (if present)
+LET _loaded% = LOADENV%();
+
+REM Pull latest changes
+PRINTLN "[0] git pull...";
+LET ec0% = SHELL("cmd /C cd .. && git pull");
+IF (ec0% <> 0) THEN BEGIN
+  PRINTLN "git pull failed with exit code ", ec0%, ". Aborting.";
+  EXIT ec0%;
+END IF
+
+REM Detect platform and set binary paths
+LET is_windows% = INSTR(ENV$("OS"), "Windows");
+IF (is_windows% > 0) THEN BEGIN
+  LET naked_bin$ = "..\\target\\release\\basilc.exe";
+  LET full_bin$  = "..\\target\\release\\basilc.exe";
+ELSE
+  LET naked_bin$ = "../target/release/basilc";
+  LET full_bin$  = "../target/release/basilc";
+END IF
+
+REM Helper to timestamp artifact names
+LET dt$ = DATE$();
+LET tm$ = TIME$();
+LET stamp$ = REPLACE$(REPLACE$(dt$ + "_" + REPLACE$(tm$, ":", ""), "-", ""), "/", "");
+REM Example: 20251016_174215
+
+REM Build Naked release (no features)
+PRINTLN "[1] Building Naked release (no features)...";
+LET ec1% = SHELL("cmd /C cd .. && cargo build -q -p basilc --release");
+IF (ec1% <> 0) THEN BEGIN
+  PRINTLN "Naked build failed with exit code ", ec1%, ". Aborting.";
+  EXIT ec1%;
+END IF
+
+REM Resolve SFTP configuration (from .env or environment)
+LET sftp_host$ = ENV$("SFTP_HOST");
+LET sftp_user$ = ENV$("SFTP_USER");
+LET sftp_pass$ = ENV$("SFTP_PASSWORD");
+IF (LEN(sftp_pass$) = 0) THEN LET sftp_pass$ = ENV$("SFTP_PASS");
+LET sftp_port$ = ENV$("SFTP_PORT");
+IF (LEN(sftp_port$) = 0) THEN LET sftp_port$ = "22";
+LET sftp_port% = VAL(sftp_port$);
+
+REM Remote directories (to be determined): set in .env as SFTP_DIR_NAKED and SFTP_DIR_FULL
+LET dir_naked$ = ENV$("SFTP_DIR_NAKED"); IF (LEN(dir_naked$) = 0) THEN LET dir_naked$ = "/incoming";
+LET dir_full$  = ENV$("SFTP_DIR_FULL");  IF (LEN(dir_full$)  = 0) THEN LET dir_full$  = "/incoming";
+
+REM Compose remote filenames
+LET remote_naked$ = dir_naked$ + "/basilc-naked-" + stamp$ + IIF$(is_windows%>0, ".exe", "");
+LET remote_full$  = dir_full$  + "/basilc-full-"  + stamp$ + IIF$(is_windows%>0, ".exe", "");
+
+REM Upload Naked binary via SFTP
+PRINTLN "[2] Uploading Naked binary to SFTP ", sftp_host$, ":", sftp_port$, " -> ", remote_naked$;
+DIM sftp@ AS NET_SFTP(sftp_host$, sftp_user$, sftp_pass$, "", sftp_port%);
+TRY
+  REM Ensure directory exists (best effort)
+  LET _mk% = sftp@.Mkdir(dir_naked$);
+  PRINTLN "MKDIR(" + dir_naked$ + ") => ", _mk%;
+  LET ok$ = sftp@.Put$(naked_bin$, remote_naked$);
+  PRINTLN "PUT => ", ok$;
+CATCH e$
+  PRINTLN "SFTP (naked) error: ", e$;
+  EXIT 10;
+END TRY
+
+REM Build Full release (--features obj-all)
+PRINTLN "[3] Building Full release (--features obj-all)...";
+LET ec3% = SHELL("cmd /C cd .. && cargo build -q -p basilc --release --features obj-all");
+IF (ec3% <> 0) THEN BEGIN
+  PRINTLN "Full build failed with exit code ", ec3%, ". Aborting.";
+  EXIT ec3%;
+END IF
+
+REM Upload Full binary via SFTP
+PRINTLN "[4] Uploading Full binary to SFTP ", sftp_host$, ":", sftp_port$, " -> ", remote_full$;
+TRY
+  LET _mk2% = sftp@.Mkdir(dir_full$);
+  PRINTLN "MKDIR(" + dir_full$ + ") => ", _mk2%;
+  LET ok2$ = sftp@.Put$(full_bin$, remote_full$);
+  PRINTLN "PUT => ", ok2$;
+CATCH e2$
+  PRINTLN "SFTP (full) error: ", e2$;
+  EXIT 11;
+END TRY
+
+REM Email a notice
+PRINTLN "[5] Sending email notice...";
+LET smtp_host$ = ENV$("SMTP_HOST");
+LET smtp_port$ = ENV$("SMTP_PORT"); IF (LEN(smtp_port$) = 0) THEN LET smtp_port$ = "587";
+LET smtp_port% = VAL(smtp_port$);
+LET smtp_mode$ = ENV$("SMTP_ENCRYPTION"); IF (LEN(smtp_mode$) = 0) THEN LET smtp_mode$ = "starttls";
+LET smtp_user$ = ENV$("SMTP_USERNAME");
+LET smtp_pass$ = ENV$("SMTP_PASSWORD");
+LET mail_to$   = ENV$("MAIL_TO");
+LET mail_from$ = ENV$("MAIL_FROM"); IF (LEN(mail_from$) = 0) THEN LET mail_from$ = smtp_user$;
+
+DIM smtp@ AS MAIL_SMTP(smtp_host$, smtp_user$, smtp_pass$, smtp_port%, smtp_mode$);
+LET subj$ = "Basil Daily Builds: " + dt$ + " " + tm$;
+LET body$ = "<p>Daily builds complete.</p>" +
+            "<ul>" +
+            "<li>Naked: <code>" + remote_naked$ + "</code></li>" +
+            "<li>Full: <code>" + remote_full$  + "</code></li>" +
+            "</ul>";
+TRY
+  IF (LEN(mail_to$) > 0) THEN BEGIN
+    PRINTLN smtp@.SendEmail(mail_to$, subj$, body$, mail_from$, 1);
+  ELSE
+    PRINTLN "MAIL_TO not set; skipping email.";
+  END IF
+CATCH e3$
+  PRINTLN "Email error: ", e3$;
+END TRY
+
+PRINTLN "All steps completed.";
+EXIT 0;

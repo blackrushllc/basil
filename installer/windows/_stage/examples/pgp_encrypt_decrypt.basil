@@ -1,0 +1,15 @@
+// TODO: This hasn't been tested :/
+REM Encrypt & decrypt strings with armored keys
+
+DIM pub$ = READFILE$("pub.asc")       REM provide these files locally
+DIM sec$ = READFILE$("sec.asc")
+LET pass$ = ""                         REM or "your-passphrase" if key is protected
+
+DIM pgp@ AS CRYPTO_PGP()
+LET msg$ = "Hello from Basil PGP!"
+
+LET cipher$ = pgp@.EncryptArmored$(pub$, msg$)
+PRINTLN "CIPHER:\n", cipher$
+
+LET plain$ = pgp@.DecryptArmored$(sec$, pass$, cipher$)
+PRINTLN "PLAIN:\n", plain$

@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)wixtoolset.util.wixext\4.0.6\build\WixToolset.Util.wixext.targets" Condition="Exists('$(NuGetPackageRoot)wixtoolset.util.wixext\4.0.6\build\WixToolset.Util.wixext.targets')" />
+    <Import Project="$(NuGetPackageRoot)wixtoolset.ui.wixext\4.0.6\build\WixToolset.UI.wixext.targets" Condition="Exists('$(NuGetPackageRoot)wixtoolset.ui.wixext\4.0.6\build\WixToolset.UI.wixext.targets')" />
+    <Import Project="$(NuGetPackageRoot)wixtoolset.heat\4.0.6\build\WixToolset.Heat.targets" Condition="Exists('$(NuGetPackageRoot)wixtoolset.heat\4.0.6\build\WixToolset.Heat.targets')" />
+  </ImportGroup>
+</Project>

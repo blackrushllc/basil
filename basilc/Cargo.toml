@@ -69,3 +69,7 @@ obj-safe = [
 
 # Enables building a fully static, portable Linux binary when used with the MUSL target
 portable = []
+
+
+[build-dependencies]
+winres = "0.1.12"

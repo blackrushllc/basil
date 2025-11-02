@@ -1,0 +1,42 @@
+REM Toy local semantic search using AI.EMBED (deterministic in --test)
+
+REM Documents
+DIM docs$[4]
+LET docs$(0) = "open a file"
+LET docs$(1) = "write a file"
+LET docs$(2) = "arrays"
+LET docs$(3) = "loops"
+
+REM Compute embeddings for each doc (assume 16-dim in test mode)
+DIM vecs(4,16)
+FOR i% = 0 TO 3
+  LET v = AI.EMBED(docs$(i%))
+  FOR j% = 0 TO 15
+    LET vecs(i%, j%) = v(j%)
+  NEXT
+NEXT
+
+REM Query
+LET q$ = "how do I write to a file?"
+LET qv = AI.EMBED(q$)
+
+FUNC DotRow16(qv, mat, r%)
+  LET s = 0
+  FOR k% = 0 TO 15
+    LET s = s + qv(k%) * mat(r%, k%)
+  NEXT
+  RETURN s
+END
+
+REM Find best match by dot product
+LET best% = 0
+LET best_score = -1e9
+FOR i% = 0 TO 3
+  LET score = DotRow16(qv, vecs, i%)
+  IF score > best_score THEN
+    LET best_score = score
+    LET best% = i%
+  END IF
+NEXT
+
+PRINT "Closest doc: "; PRINT docs$(best%);
