@@ -1,5 +1,5 @@
-# Work around MSVC PDB linker instability on large workspaces
-# Explicitly disable PDB generation at link time on Windows.
+[source.crates-io]
+replace-with = "vendored-sources"
 
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=/DEBUG:NONE"]
+[source.vendored-sources]
+directory = "vendor"
