@@ -2,7 +2,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Basil BASIC"
            Manufacturer="Blackrush LLC"
-           Version="!(bind.fileVersion.basilc_exe)"
+           Version="1.0.0"
            UpgradeCode="{F1C3EF7D-ABCD-4F11-9C77-111122223333}"
            ProductCode="*"
            Language="1033"
@@ -22,11 +22,10 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="BasilRoot" Name="Basil">
         <Directory Id="BINFOLDER" Name="bin" />
-        <Directory Id="DOCSFOLDER" Name="docs" />
-        <Directory Id="EXAMPLESMSI" Name="examples" />
       </Directory>
     </StandardDirectory>
 
+    <!-- No user-profile directories in MSI to avoid validation issues; external script can copy docs/examples -->
 
     <!-- Icon for ARP (you can replace with .ico later if desired) -->
     <Icon Id="AppIcon" SourceFile="$(var.RepoRoot)\favicon.ico" />
@@ -35,11 +34,6 @@
     <Feature Id="Core" Title="Basil Core" Level="1">
       <ComponentGroupRef Id="BasilBinGroup" />
       <ComponentRef Id="PathEnvComponent" />
-      <ComponentGroupRef Id="DocsGroup" />
-    </Feature>
-
-    <Feature Id="ExamplesFeature" Title="Examples and Guides" Level="1">
-      <ComponentGroupRef Id="ExamplesGroup" />
     </Feature>
 
     <!-- Binaries -->

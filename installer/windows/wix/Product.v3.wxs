@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="Basil BASIC"
+           Manufacturer="Blackrush LLC"
+           Version="1.0.0"
+           Language="1033"
+           UpgradeCode="{F1C3EF7D-ABCD-4F11-9C77-111122223333}">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"/>
+
+    <Media Id="1" Cabinet="product.cab" EmbedCab="yes" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Basil is already installed." />
+
+    <!-- Icon + ARP -->
+    <Icon Id="AppIcon" SourceFile="$(var.RepoRoot)\favicon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!-- Allow the user to choose Projects folder (via WixUI_Advanced InstallDir flow) -->
+    <Property Id="WIXUI_INSTALLDIR" Value="PROJECTSDIR" />
+
+    <!-- Directories (v3 requires TARGETDIR root) -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <!-- Per-machine binaries under Program Files (64-bit) -->
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="BasilRootMachine" Name="Basil">
+          <Directory Id="BINFOLDER_MACHINE" Name="bin" />
+        </Directory>
+      </Directory>
+
+      <!-- Per-user binaries under LocalAppData -->
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="BasilRootUser" Name="Basil">
+          <Directory Id="BINFOLDER_USER" Name="bin" />
+        </Directory>
+      </Directory>
+
+      <!-- User-selectable projects root under Documents -->
+      <Directory Id="PersonalFolder">
+        <Directory Id="PROJECTSDIR" Name="basil-projects">
+          <Directory Id="DOCSFOLDER" Name="docs" />
+          <Directory Id="EXAMPLESFOLDER" Name="examples" />
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- Features -->
+    <Feature Id="Core" Title="Basil Core" Level="1">
+      <ComponentGroupRef Id="BasilBinMachineGroup" />
+      <ComponentGroupRef Id="BasilBinUserGroup" />
+      <ComponentRef Id="PathEnvMachineComponent" />
+      <ComponentRef Id="PathEnvUserComponent" />
+      <ComponentGroupRef Id="DocsGroup" />
+    </Feature>
+
+    <Feature Id="ExamplesFeature" Title="Examples and Guides" Level="1">
+      <ComponentGroupRef Id="ExamplesGroup" />
+    </Feature>
+
+    <!-- Binaries (machine) -->
+    <ComponentGroup Id="BasilBinMachineGroup">
+      <Component Id="BasilcComponent_Machine" Guid="{7B5C0955-3210-4AF1-8B08-444455556666}" Directory="BINFOLDER_MACHINE" Win64="yes">
+        <Condition>ALLUSERS</Condition>
+        <File Id="basilc_exe" Source="$(var.BuildDir)\basilc.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="BccComponent_Machine" Guid="{8C595A0E-4321-4C24-9FBA-777788889999}" Directory="BINFOLDER_MACHINE" Win64="yes">
+        <Condition>ALLUSERS</Condition>
+        <File Id="bcc_exe" Source="$(var.BuildDir)\bcc.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="BasilServeComponent_Machine" Guid="{9D6F6F2E-5432-49B8-98AA-AAAA0000BBBB}" Directory="BINFOLDER_MACHINE" Win64="yes">
+        <Condition>ALLUSERS</Condition>
+        <File Id="basilserve_exe" Source="$(var.BuildDir)\basil-serve.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Binaries (user) -->
+    <ComponentGroup Id="BasilBinUserGroup">
+      <Component Id="BasilcComponent_User" Guid="{A1B2C3D4-E5F6-47A8-9012-111111111111}" Directory="BINFOLDER_USER">
+        <Condition>NOT ALLUSERS</Condition>
+        <File Id="basilc_exe_user" Source="$(var.BuildDir)\basilc.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="BccComponent_User" Guid="{22222222-3333-4444-8888-AAAAAAAAAAAA}" Directory="BINFOLDER_USER">
+        <Condition>NOT ALLUSERS</Condition>
+        <File Id="bcc_exe_user" Source="$(var.BuildDir)\bcc.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="BasilServeComponent_User" Guid="{BBBBBBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF}" Directory="BINFOLDER_USER">
+        <Condition>NOT ALLUSERS</Condition>
+        <File Id="basilserve_exe_user" Source="$(var.BuildDir)\basil-serve.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- PATH and registry -->
+    <Component Id="PathEnvMachineComponent" Guid="{2BAA1C00-19B7-4F1F-8D3F-CCCCDDDD0001}" Directory="BINFOLDER_MACHINE" Win64="yes">
+      <Condition>ALLUSERS</Condition>
+      <Environment Id="BasilPathMachine" Name="PATH" Action="set" Part="last" System="yes" Permanent="no" Value="[BINFOLDER_MACHINE]" />
+      <CreateFolder />
+      <RegistryValue Root="HKLM" Key="Software\Blackrush\Basil" Name="Installed" Value="1" Type="integer" KeyPath="yes"/>
+    </Component>
+
+    <Component Id="PathEnvUserComponent" Guid="{12345678-90AB-4F1F-8D3F-CCCCDDDD0001}" Directory="BINFOLDER_USER">
+      <Condition>NOT ALLUSERS</Condition>
+      <Environment Id="BasilPathUser" Name="PATH" Action="set" Part="last" System="no" Permanent="no" Value="[BINFOLDER_USER]" />
+      <CreateFolder />
+      <RegistryValue Root="HKCU" Key="Software\Blackrush\Basil" Name="Installed" Value="1" Type="integer" KeyPath="yes"/>
+    </Component>
+
+    <!-- Post-install: open What's New page -->
+    <CustomAction Id="OpenWhatsNew"
+                  Directory="SystemFolder"
+                  ExeCommand="[SystemFolder]cmd.exe /C start &quot;&quot; &quot;https://basilbasic.com/basil/&quot;"
+                  Execute="immediate"
+                  Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="OpenWhatsNew" After="InstallFinalize">NOT Installed</Custom>
+    </InstallExecuteSequence>
+
+    <!-- UI: InstallDir flow + per-user/per-machine support -->
+    <UIRef Id="WixUI_InstallDir" />
+    <UIRef Id="WixUI_SupportPerUser" />
+    <!-- Optional license screen: include your RTF if desired -->
+    <WixVariable Id="WixUILicenseRtf" Value="WixUI.license.rtf" />
+
+  </Product>
+</Wix>
