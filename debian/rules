@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@ --buildsystem=cargo
+
+# Let dh-cargo/cargo use the upstream .cargo/config.toml (vendored, offline).
+# If you like, you can omit this override entirely.
+override_dh_auto_configure:
+	dh_auto_configure
+
+override_dh_auto_build:
+	# Build only the basilc binary, in release mode, using vendored crates offline.
+	dh_auto_build -- --locked --offline -p basilc --release
+
+override_dh_auto_test:
+	# Skip tests to avoid any surprise network access or slow builds.
+	true
+
+override_dh_auto_install:
+	# Install just the basilc binary into /usr/bin for the basil package.
+	install -D -m0755 target/release/basilc debian/basil/usr/bin/basilc
+

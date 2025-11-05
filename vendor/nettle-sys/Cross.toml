@@ -1,0 +1,2 @@
+[target.arm-linux-androideabi]
+image = "nettle-sys/arm-linux-androideabi:1"

@@ -1,0 +1,180 @@
+basil (1.2.2+core1-0ubuntu11~noble11) noble; urgency=medium
+
+  * Offline vendored basilc-only build for Ubuntu 24.04 (noble).
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Tue, 04 Nov 2025 22:52:54 +0000
+
+basil (1.2.2+core1-0ubuntu1~noble1) noble; urgency=medium
+
+  * Offline vendored basilc-only build for Ubuntu 24.04 (noble).
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Tue, 04 Nov 2025 22:52:54 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu7) noble; urgency=medium
+
+  * Install via cargo wrapper by crate path to avoid missing target dir
+    on builder.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Mon, 03 Nov 2025 00:17:25 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu6) noble; urgency=medium
+
+  * Robust install step: copy from release or host-triple release dir.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Mon, 03 Nov 2025 00:07:02 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu5) noble; urgency=medium
+
+  * Override dh_auto_install to copy built workspace binaries; avoid
+    cargo install on virtual manifest.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 23:59:15 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu4) noble; urgency=medium
+
+  * Restore upstream Cargo.lock to match orig tarball; delete
+    .cargo/config.toml at build time.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 23:52:12 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu3) noble; urgency=medium
+
+  * Disable dh_auto_test on Launchpad to avoid registry resolution; keep
+    --locked builds.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 23:51:08 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu2) noble; urgency=medium
+
+  * Restore upstream Cargo.lock to match orig tarball; delete
+    .cargo/config.toml at build time.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 23:42:30 +0000
+
+basil (1.2.2-0ubuntu14~noble1ubuntu1) noble; urgency=medium
+
+  * Drop local .cargo/config.toml at build time for Launchpad.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 23:34:53 +0000
+
+basil (1.2.2-0ubuntu14~noble1) noble; urgency=medium
+
+  * Path A: drop vendoring/offline; let dh-cargo use Launchpad's mirror.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 23:29:04 +0000
+
+basil (1.2.2-0ubuntu13~noble1ubuntu1) noble; urgency=medium
+
+  * Vendor crates for offline Launchpad build.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 21:29:19 +0000
+
+basil (1.2.2-0ubuntu13~noble1) noble; urgency=medium
+
+  * Fix Launchpad build: adjust Cargo registry/offline settings.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 21:17:17 +0000
+
+basil (1.2.2-0ubuntu13~noble1) noble; urgency=medium
+
+  * Fix Launchpad build: adjust Cargo registry/offline settings.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 21:15:18 +0000
+
+basil (1.2.2-0ubuntu12~noble1) noble; urgency=medium
+
+  * Fix Launchpad build: adjust Cargo registry/offline settings.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 21:06:42 +0000
+
+basil (1.2.2-0ubuntu11~noble1ubuntu2) noble; urgency=medium
+
+  * Use Debian cargo registry instead of vendoring.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 21:00:13 +0000
+
+basil (1.2.2-0ubuntu11~noble1ubuntu1) noble; urgency=medium
+
+  * Use Debian cargo registry instead of vendoring.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 20:52:17 +0000
+
+basil (1.2.2-0ubuntu11~noble1) noble; urgency=medium
+
+  * New upstream snapshot.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 19:40:43 +0000
+
+basil (1.2.2-0ubuntu1~noble1) noble; urgency=medium
+
+  * New upstream snapshot.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 19:39:08 +0000
+
+basil (1.2.1-0ubuntu1~noble1) noble; urgency=medium
+
+  * New upstream snapshot.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 19:37:01 +0000
+
+basil (1.2.0-0ubuntu5~noble1ubuntu1) noble; urgency=medium
+
+  * Use top-level vendor/; drop debian/vendor + related rules/patches.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 19:31:01 +0000
+
+basil (1.2.0-0ubuntu5~noble1) noble; urgency=medium
+
+  * Fix Cargo vendored path and record as quilt patch; preserve
+    debian/vendor.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 19:10:05 +0000
+
+basil (1.2.0-0ubuntu5~noble1) noble; urgency=medium
+
+  * Fix Cargo vendored path: use relative ../vendor in config.toml.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 19:03:12 +0000
+
+basil (1.2.0-0ubuntu4~noble1) noble; urgency=medium
+
+  * Fix Cargo vendored path: use relative ../vendor in config.toml.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 18:36:23 +0000
+
+basil (1.2.0-0ubuntu3~noble1) noble; urgency=medium
+
+  * Fix Cargo vendored path: use relative ../vendor in config.toml.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 18:29:54 +0000
+
+basil (1.2.0-0ubuntu2~noble1) noble; urgency=medium
+
+  * Fix offline vendoring + install basilc,bcc,basil-serve.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 18:19:41 +0000
+
+basil (1.2.0-0ubuntu2~jammy1) jammy; urgency=medium
+
+  * Backport of 1.2.0 for Ubuntu jammy.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 17:28:34 +0000
+
+basil (1.2.0-0ubuntu1~noble1) noble; urgency=medium
+
+  * Initial 1.2.0 for Ubuntu noble.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 17:16:35 +0000
+
+basil (1.2.0-0ubuntu1~noble1) noble; urgency=medium
+
+  * Initial 1.2.0 for Ubuntu noble.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 17:12:12 +0000
+
+basil (1.2.0-0ubuntu1~noble1) noble; urgency=medium
+
+  * Initial 1.2.0 for Ubuntu noble.
+
+ -- Blackrush LLC <erikolson1965@gmail.com>  Sun, 02 Nov 2025 17:00:35 +0000
+

@@ -1,0 +1,36 @@
+name: Windows
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2019, windows-2022]
+        env:
+        - TARGET: x86_64-pc-windows-msvc
+        - TARGET: i686-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: ${{ matrix.env.TARGET }}
+    - name: Build and test
+      env:
+        TARGET: ${{ matrix.env.TARGET }}
+      run: |
+        rustc -V
+        cargo -V
+        cargo test --no-run --target %TARGET%
+        cargo run --manifest-path systest/Cargo.toml --target %TARGET%
+        cargo test --no-run --target %TARGET% --features openssl-on-win32,vendored-openssl
+      shell: cmd

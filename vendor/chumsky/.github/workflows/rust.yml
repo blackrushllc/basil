@@ -1,0 +1,36 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check Chumsky
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+            toolchain: stable
+            components: rustfmt, clippy
+      - name: Run cargo check
+        run: cargo check --verbose --no-default-features
+  test:
+    name: Test Chumsky
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+            toolchain: nightly
+            components: rustfmt, clippy
+      - name: Run cargo check
+        run: cargo test --verbose --all-features

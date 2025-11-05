@@ -1,0 +1,405 @@
+
+                                                              -*- org -*-
+#+TITLE: sequoia-openpgp NEWS – history of user-visible changes
+#+STARTUP: content hidestars
+
+
+* Changes in 1.22.0
+** New functionality
+   - DetachedVerifier::verify_buffered_reader
+** Notable fixes
+   - UserIdAmalgamation::attest_certifications2,
+     UserAttributeAmalgamation::attest_certifications2,
+     ValidUserIdAmalgamation::attest_certifications, and
+     ValidUserAttributeAmalgamation::attest_certifications now
+     correctly set the creation time of newly created signatures.
+* Changes in 1.21.2
+** Notable fixes
+   - A set of constructors for KeyFlags added in 1.21.0 mistakenly
+     consumed a KeyFlags.  This patch release fixes that, even though
+     it is technically an API break.
+* Changes in 1.21.1
+** Notable fixes
+   - Leftover debugging statements introduced in 1.21.0 printed
+     long-term Cv25519 secret key material to stderr during
+     decryption.  This patch release fixes that.
+* Changes in 1.21.0
+** Notable fixes
+   - The RawCertParser now correctly advance the input stream when
+     encountering unsupported cert (primary key) versions.  Previously,
+     this resulted in an infinite loop.
+   - Sequoia built with the OpenSSL backend or the RustCrypto backend
+     will now make sure that the secret primes of generated RSA keys
+     are ordered the way OpenPGP demands (i.e. `p` < `q`).
+   - Sequoia built with the OpenSSL backend, the CNG backend, or the
+     RustCrypto backend will now make sure that the secret primes of
+     imported RSA keys are ordered the way OpenPGP demands.
+   - Loosen trait bounds on Key::clone and Key4::clone.
+** Notable changes
+   - All signature verification methods now take an immutable
+     reference to the signature.  This will cause existing code to
+     emit warnings about unused mutability, but should not break
+     anything.
+   - Sequoia now lazily verifies self signatures in certificates.
+     Previously, they were eagerly verified during certificate
+     canonicalization, incurring a substantial cost even for
+     signatures that were not otherwise considered.
+** New functionality
+   - CipherSuite::variants.
+   - ComponentBundle::certifications2
+   - ComponentBundle::other_revocations2
+   - ComponentBundle::self_revocations2
+   - ComponentBundle::self_signatures2
+   - Key::<PublicParts, _>::steal_secret
+   - Key::<UnknownParts, _>::steal_secret
+   - Key4::<PublicParts, _>::steal_secret
+   - Key4::<UnknownParts, _>::steal_secret
+   - cert::raw::Error::UnsupportedCert
+   - packet::Unknown::into_error
+   - The RustCrypto backend now supports ECDH and ECDSA over the NIST
+     curve P-384.
+   - The RustCrypto backend now supports ECDH and ECDSA over the NIST
+     curve P-521.
+   - UserAttributeAmalgamation::attest_certifications2
+   - UserIDAmalgamation::attest_certifications2
+   - KeyFlags::certification
+   - KeyFlags::signing
+   - KeyFlags::transport_encryption
+   - KeyFlags::storage_encryption
+   - KeyFlags::authentication
+   - KeyFlags::split_key
+   - KeyFlags::group_key
+   - ValidKeyAmalgamation::primary_key_binding_signature
+   - Fingerprint::aliases
+   - KeyID::aliases
+** Deprecated functionality
+   - ComponentBundle::certifications
+   - ComponentBundle::other_revocations
+   - ComponentBundle::self_revocations
+   - ComponentBundle::self_signatures
+   - Add a signature verification cache, which is automatically
+     consulted by the low-level signature verification functions, like
+     `Signature::verify_digest`.
+     - openpgp::packet::signature::cache::SignatureVerificationCache
+     - openpgp::packet::signature::cache::Entry
+   - UserAttributeAmalgamation::attest_certifications
+   - UserIDAmalgamation::attest_certifications
+* Changes in 1.20.0
+** New functionality
+   - S2K::Implicit
+   - Signature::verify_signature
+* Changes in 1.19.0
+** Notable fixes
+   - Key4::import_secret_cv25519 will now clamp some bits of the given
+     secret scalar to make the generated secret key packet more
+     compatible with implementations that do not implicitly do the
+     clamping before decryption.
+   - Sequoia built with the OpenSSL backend will now use the correct
+     representation of points on Weierstrass curves.  OpenPGP uses the
+     uncompressed representation.  Previously, the OpenSSL backend
+     used the compressed representation by mistake.
+** New functionality
+   - Curve::variants
+* Changes in 1.18.0
+** New functionality
+   - ComponentAmalgamation::certifications_by_key
+   - UserIDAmalgamation::valid_certifications_by_key
+   - KeyAmalgamation::valid_certifications_by_key
+   - UserIDAmalgamation::active_certifications_by_key
+   - KeyAmalgamation::active_certifications_by_key
+   - UserIDAmalgamation::valid_third_party_revocations_by_key
+   - KeyAmalgamation::valid_third_party_revocations_by_key
+   - Parse::from_buffered_reader
+   - armor::Reader::from_buffered_reader
+   - Cert::exportable
+   - CertBuilder::set_exportable
+   - UserID::from_static_bytes
+   - Error::ShortKeyID
+   - Cert::into_packets2
+   - TSK::into_packets
+** Deprecated functionality
+   - Cert::into_packets
+* Changes in 1.17.0
+** Notable fixes
+   - Sequoia now ignores some formatting errors when reading secret
+     keys.  Being lenient in this case helps the user recover their
+     valuable key material.
+
+   - Previously, Sequoia would buffer packet bodies when mapping is
+     enabled in the parser, even if the packet parser is not
+     configured to buffer the bodies.  This adds considerable
+     overhead.
+
+     Starting with this version, Sequoia no longer includes the packet
+     bodies in the maps unless the parser is configured to buffer any
+     unread content.
+
+     This makes parsing packets faster if you don't rely on the packet
+     body in the map, but changes the default behavior.  If you need
+     the old behavior, please do adjust your code to buffer unread
+     content.
+
+   - To increase compatibility with early v4 certificates, if there is
+     no key flags subpacket on either the active binding signature or
+     the active direct key signature, we infer the key flags from the
+     key's role and public key algorithm.
+
+   - When creating an authentication-capable subkey, Sequoia now also
+     adds a primary key binding signature.
+
+   - The MSRV is now 1.67.
+
+   - serialize::stream::Encryptor2 replaces
+     serialize::stream::Encryptor, which fixes an issue with the
+     lifetimes.
+** New functionality
+   - The RustCrypto backend now supports DSA.
+   - cert::amalgamation::key::KeyAmalgamationIter::encrypted_secret
+   - cert::amalgamation::key::ValidKeyAmalgamationIter::encrypted_secret
+   - crypto::SessionKey::as_protected
+   - crypto::ecdh::decrypt_unwrap2
+   - packet::Key::generate_dsa
+   - packet::Key::generate_elgamal
+   - packet::UserID::comment2
+   - packet::UserID::email2
+   - packet::UserID::name2
+   - packet::UserID::uri2
+   - parse::PacketParser::start_hashing
+   - parse::PacketParserBuilder::automatic_hashing
+   - impl Eq, PartialEq for regex::Regex
+   - regex::Regex::as_str
+   - impl Eq, PartialEq for regex::RegexSet
+   - regex::RegexSet::as_bytes
+   - impl Default for types::AEADAlgorithm
+   - serialize::stream::Encryptor2
+   - types::AEADAlgorithm::GCM
+   - types::Bitfield
+   - types::Features::clear_seipdv1
+   - types::Features::set_seipdv1
+   - types::Features::supports_seipdv1
+   - types::Features::as_bitfield
+   - types::KeyFlags::as_bitfield
+   - types::KeyServerPreferences::as_bitfield
+** Deprecated functionality
+   - cert::Preferences::preferred_aead_algorithms
+   - crypto::ecdh::decrypt_unwrap
+   - packet::UserID::comment
+   - packet::UserID::email
+   - packet::UserID::name
+   - packet::UserID::uri
+   - packet::signature::SignatureBuilder::set_preferred_aead_algorithms
+   - packet::signature::subpacket::SubpacketAreas::preferred_aead_algorithms
+   - packet::signature::subpacket::SubpacketTag::PreferredAEADAlgorithms
+   - packet::signature::subpacket::SubpacketValue::PreferredAEADAlgorithms
+   - serialize::stream::Encryptor
+   - types::Curve::len, use types::Curve::bits instead
+   - types::Features::clear_mdc
+   - types::Features::set_mdc
+   - types::Features::supports_mdc
+   - types::Features::clear_aead
+   - types::Features::set_aead
+   - types::Features::supports_aead
+* Changes in 1.16.0
+** New functionality
+   - Add KeyFlags::set_certification_to.
+   - Add KeyFlags::set_signing_to.
+   - Add KeyFlags::set_transport_encryption_to.
+   - Add KeyFlags::set_storage_encryption_to.
+   - Add KeyFlags::set_split_key_to.
+   - Add KeyFlags::set_group_key_to.
+** Notable fixes
+   - Several parser bugs were fixed.  These are all low-severity as
+     Rust correctly detects the out of bounds access and panics.
+** Notable changes
+   - The crypto/botan feature now selects Botan's v3 interface.  The
+     crypt/botan2 feature can be used to select Botan's v2 interface.
+* Changes in 1.15.0
+** New functionality
+   - StandardPolicy::accept_hash_property
+** Notable changes
+   - Updated the crypto-rust backend.
+   - Updated the crypto-cng backend.
+* Changes in 1.14.0
+** New cryptographic backends
+   - We added a backend that uses Botan.
+** New functionality
+   - crypto::mem::Protected::new
+   - crypto::mpi::SecretKeyMaterial::from_bytes
+   - crypto::mpi::SecretKeyMaterial::from_bytes_with_checksum
+   - fmt::hex::Dumper::with_offset
+   - parse::buffered_reader re-export
+   - policy::AsymmetricAlgorithm::BrainpoolP384
+   - RawCert implements Parse
+** Deprecated functionality
+   - crypto::mpi::SecretKeyMaterial::parse
+   - crypto::mpi::SecretKeyMaterial::parse_with_checksum
+* Changes in 1.13.0
+** New cryptographic backends
+   - We added a backend that uses OpenSSL.
+** New functionality
+   - RawCertParser
+   - RawCert
+   - RawPacket
+* Changes in 1.12.0
+   - Bug fix release.
+* Changes in 1.11.0
+** New functionality
+   - Signature3 implements support for parsing, verifying, and
+     reserializing version 3 signature packages.
+   - AsymmetricAlgorithm implements PartialEq, Eq, and Copy.
+   - AsymmetricAlgorithm::variants.
+   - PublicKeyAlgorithm::variants.
+   - SymmetricAlgorithm::variants.
+   - AEADAlgorithm::variants.
+   - CompressionAlgorithm::variants.
+   - HashAlgorithm::variants.
+   - SignatureType::variants.
+   - ReasonForRevocation::variants.
+   - DataFormat::variants.
+   - packet::Tag::variants.
+   - SubpacketTag::variants.
+   - StandardPolicy::reject_all_hashes
+   - StandardPolicy::reject_all_critical_subpackets
+   - StandardPolicy::reject_all_asymmetric_algos
+   - StandardPolicy::reject_all_symmetric_algos
+   - StandardPolicy::reject_all_aead_algos
+   - StandardPolicy::reject_all_packet_tags
+   - StandardPolicy::accept_packet_tag_version
+   - StandardPolicy::reject_packet_tag_version
+   - StandardPolicy::reject_packet_tag_version_at
+   - StandardPolicy::packet_tag_version_cutoff
+** Deprecated functionality
+   - StandardPolicy::packet_tag_cutoff
+* Changes in 1.10.0
+** New functionality
+   - Cert::insert_packets2
+   - Cert::insert_packets_merge
+   - crypto::ecdh::aes_key_wrap
+   - crypto::ecdh::aes_key_unwrap
+   - Error::UnsupportedCert2
+   - TryFrom<Packet> for Unknown
+   - types::{Curve, SymmetricAlgorithm, AEADAlgorithm,
+     PublicKeyAlgorithm}'s Display implementation now provides short
+     names by default. The long descriptions are provided by the
+     alternate formatter (e.g. =format!("{:#}", ...)=)
+   - cert::KeyBuilder
+   - cert::SubkeyBuilder
+   - HashAlgorithm::oid is available on all crypto backends
+     (previously only on Nettle)
+** Deprecated functionality
+   - Error::UnsupportedCert, use Error::UnsupportedCert2 instead
+   - DataFormat::MIME, no replacement, see #863 for details
+   - PacketParser::encrypted, use the negation of PacketParser::processed
+* Changes in 1.9.0
+** New functionality
+   - AEADAlgorithm::nonce_size replaces AEADAlgorithm::iv_size
+   - crypto::backend
+   - Curve::field_size
+   - MPI::is_zero
+   - MPI::zero
+   - packet::Any
+   - Packet::version
+   - SignatureBuilder::set_reference_time
+   - SignatureBuilder::effective_signature_creation_time
+** Deprecated functionality
+   - armor::Reader::new, use armor::Reader::from_reader instead
+   - message::Token is not covered by SemVer guarantees, DO NOT match on it
+   - AEADAlgorithm::iv_size, use AEADAlgorithm::nonce_size
+* Changes in 1.8.0
+** New functionality
+   - crypto::Signer::acceptable_hashes
+   - Fingerprint::V5
+* Changes in 1.7.0
+** Notable fixes
+   - sequoia-openpgp can now be compiled to WASM.
+   - The MSRV is now 1.56.1.
+* Changes in 1.6.0
+** Notable fixes
+   - Decryption of encrypted messages and verification of
+     inline-signed messages is now considerably faster, as is ASCII
+     Armor encoding and decoding.
+** New functionality
+   - CertRevocationBuilder::add_notation
+   - CertRevocationBuilder::set_notation
+   - KeyFlags::clear_group_key
+   - SubkeyRevocationBuilder::add_notation
+   - SubkeyRevocationBuilder::set_notation
+   - UserAttributeRevocationBuilder::add_notation
+   - UserAttributeRevocationBuilder::set_notation
+   - UserIDRevocationBuilder::add_notation
+   - UserIDRevocationBuilder::set_notation
+* Changes in 1.5.0
+** Notable changes
+   - This crate is now licensed under the LGPL 2.0 or later.
+* Changes in 1.4.0
+** New cryptographic backends
+   - We added a backend based on the RustCrypto crates.
+** New functionality
+   - CipherSuite::is_supported
+   - MPI::value_padded
+   - Preferences::policy_uri
+   - ProtectedMPI::value_padded
+   - TSK::eq
+   - ValidAmalgamation::revocation_keys
+   - ValidCert::policy_uri
+   - ValidCert::revocation_keys
+** Notable fixes
+   - Filters set using CertParser::unvalidated_cert_filter are now
+     preserved during iterations.
+* Changes in 1.3.1
+** Notable fixes
+   - Fixed a crash resulting from unconstrained, attacker-controlled
+     heap allocations.
+* Changes in 1.3.0
+** New functionality
+   - CertBuilder::add_subkey_with
+   - CertBuilder::add_user_attribute_with
+   - CertBuilder::add_userid_with
+   - ComponentBundle::attestations
+   - Encryptor::with_session_key
+   - Signature::verify_user_attribute_attestation
+   - Signature::verify_userid_attestation
+   - SignatureBuilder::pre_sign
+   - SignatureBuilder::set_attested_certifications
+   - SignatureType::AttestationKey
+   - SubpacketAreas::MAX_SIZE
+   - SubpacketAreas::attested_certifications
+   - SubpacketTag::AttestedCertifications
+   - SubpacketValue::AttestedCertifications
+   - UserAttributeAmalgamation::attest_certifications
+   - UserIDAmalgamation::attest_certifications
+   - ValidUserAttributeAmalgamation::attest_certifications
+   - ValidUserAttributeAmalgamation::attestation_key_signatures
+   - ValidUserAttributeAmalgamation::attested_certifications
+   - ValidUserIDAmalgamation::attest_certifications
+   - ValidUserIDAmalgamation::attestation_key_signatures
+   - ValidUserIDAmalgamation::attested_certifications
+** Notable fixes
+   - Improve Cert::insert_packets runtime from O(n^2) to O(n log n).
+   - CertParser returned errors out of order (#699).
+* Changes in 1.1.0
+** New functionality
+   - The new regex module provides regular expression support for
+     scoping trust signatures.
+   - Sequoia now supports the Cleartext Signature Framework.
+   - ComponentAmalgamation::signatures
+   - ComponentBundle::signatures
+   - Fingerprint::to_spaced_hex
+   - HashAlgorithm::text_name
+   - KeyHandle now implements FromStr
+   - KeyHandle::is_invalid
+   - KeyHandle::to_hex
+   - KeyHandle::to_spaced_hex
+   - KeyID::to_spaced_hex
+   - Signature4::hash_for_confirmation
+   - Signature::hash_for_confirmation
+   - TSK::armored
+   - ValidComponentAmalgamation::signatures
+** Notable fixes
+   - Fixed two crashes related to detached signature verification.
+   - Fixed a parsing bug where the parser did not consume all data in
+     an compressed data packet.
+
+* Changes in 1.0.0
+
+This is the initial stable release.

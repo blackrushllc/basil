@@ -1,0 +1,25 @@
+stages:
+  - pre-check
+  - build
+  - test
+  - deploy
+
+
+include:
+  - component: "gitlab.com/sequoia-pgp/common-ci/sequoia-pipeline@main"
+
+variables:
+  NO_SEQUOIA_CRYPTO: true
+  RUN_WINDOWS: false
+
+pages:
+  stage: deploy
+  script:
+    - cargo doc
+    - mv target/doc public
+    - cp docs/index.html public/
+  artifacts:
+    paths:
+      - public
+  only:
+    - main

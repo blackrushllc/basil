@@ -1,0 +1,167 @@
+# These stanzas do some common management tasks before and after the
+# job-specific before_script and after_script stanzas are run.
+# before_script_start configures any default global state.  The
+# job-specific before_script can override this state, if required.
+# before_script_end prints out information about the environment to
+# improve debugging; it does not modify the environment.
+# after_script_end does some common management tasks after the
+# job-specific after_script is run.  It prints information about the
+# environment, and does some clean up.
+#
+# Add this to your stanza as follows:
+#
+#   before_script:
+#     - *before_script_start
+#     - *** YOUR CODE HERE ***
+#     - *before_script_end
+#   after_script:
+#     - *** YOUR CODE HERE ***
+#     - *after_script_end
+
+.before_script_start: &before_script_start
+  - 'if test "x${RUSTFLAGS+SET}" = xSET; then echo "\$RUSTFLAGS is set ($RUSTFLAGS)"; exit 1; fi'
+
+.before_script_end: &before_script_end
+  - 'if test "x${RUSTFLAGS+SET}" = xSET; then echo "WARNING: before_script set \$RUSTFLAGS ($RUSTFLAGS)"; fi'
+  - rustc --version --verbose
+  - cargo --version
+  - clang -v
+  - pkg-config --modversion nettle
+  - if [ -d $CARGO_TARGET_DIR ]; then find $CARGO_TARGET_DIR | wc --lines; du -sh $CARGO_TARGET_DIR; fi
+  - if [ -d $CARGO_HOME ]; then find $CARGO_HOME | wc --lines; du -sh $CARGO_HOME; fi
+
+.after_script_end: &after_script_end
+  - if [ -d $CARGO_TARGET_DIR ]; then find $CARGO_TARGET_DIR -type f -atime +7 -delete; fi
+  - if [ -d $CARGO_TARGET_DIR ]; then du -sh $CARGO_TARGET_DIR; fi
+  - if [ -d $CARGO_HOME ]; then du -sh $CARGO_HOME; fi
+
+before_script:
+  - *before_script_start
+  - *before_script_end
+
+after_script:
+  - *after_script_end
+
+image: 192.168.122.1:5000/sequoia-pgp/build-docker-image/trixie:latest
+
+test:
+  script:
+    - cargo run --example supported-algorithms
+    - cargo test --all
+
+# This tests with Nettle 3.8.1.
+test-bookworm:
+  image: rust:slim-bookworm
+  before_script:
+    - *before_script_start
+    - apt update -y -qq
+    - apt install -y -qq --no-install-recommends clang llvm pkg-config nettle-dev
+    - *before_script_end
+  script:
+    - cargo run --example supported-algorithms
+    - cargo test --all
+
+# Test on Debian Bullseye with Nettle 3.7.3.
+test-bullseye:
+  image: rust:slim-bullseye
+  before_script:
+    - *before_script_start
+    - apt update -y -qq
+    - apt install -y -qq --no-install-recommends clang llvm pkg-config nettle-dev
+    - *before_script_end
+  script:
+    - cargo run --example supported-algorithms
+    - cargo test --all
+
+# Test on Debian Buster with Nettle 3.4.1.
+test-buster:
+  image: rust:slim-buster
+  before_script:
+    - *before_script_start
+    - apt update -y -qq
+    - apt install -y -qq --no-install-recommends clang llvm pkg-config nettle-dev
+    - *before_script_end
+  script:
+    - cargo run --example supported-algorithms
+    - cargo test --all
+
+# Test on Windows with the GNU toolchain.
+test-windows-gnu:
+  tags:
+    - win
+    - win2019
+  image: 192.168.122.1:5000/sequoia-pgp/build-docker-image/windows-gnu
+  only:
+    variables:
+      # Forks of this project most likely use gitlab's shared windows runners, which
+      # do not use the docker executor, so disable the windows jobs for forks.
+      - $CI_PROJECT_NAMESPACE == "sequoia-pgp"
+  script:
+    - rustup override set stable
+    - cargo run --example supported-algorithms
+    - cargo test --all
+  # Windows uses Powershell, disable our scriptlets.
+  before_script: []
+  after_script: []
+
+# Test on Alpine Linux which uses the musl libc.
+test-alpine-musl:
+  image: alpine
+  before_script:
+    - *before_script_start
+    - apk add coreutils findutils rust cargo nettle nettle-dev pkgconfig clang-dev
+    - *before_script_end
+  script:
+    - cargo run --example supported-algorithms
+    - cargo test --all
+
+# Test on Alpine Linux Edge which features Nettle 3.9 (as of this
+# writing, later it likely has newer versions, which is also
+# interesting).
+test-alpine-edge:
+  image: alpine:edge
+  before_script:
+    - *before_script_start
+    - apk add coreutils findutils rust cargo nettle nettle-dev pkgconfig clang-dev
+    - *before_script_end
+  script:
+    - cargo run --example supported-algorithms
+    - cargo test --all
+
+sanitizer:
+  tags:
+    - linux
+  image: 192.168.122.1:5000/sequoia-pgp/build-docker-image/sanitizer-nightly:latest
+  stage: test
+  before_script:
+    - *before_script_start
+    - llvm-symbolizer --version
+    - *before_script_end
+  script:
+    - export RUSTFLAGS="-Z sanitizer=address"
+    - export RUSTDOCFLAGS="-Z sanitizer=address"
+    - export ASAN_OPTIONS=detect_stack_use_after_return=1
+    - cargo test --target x86_64-unknown-linux-gnu
+
+pages:
+  stage: deploy
+  script:
+    - cargo doc --no-deps -p nettle -p nettle-sys
+    - mv target/doc public
+    - cp docs/index.html public/
+  artifacts:
+    paths:
+      - public
+  only:
+    - main
+
+cache:
+  paths:
+    - cargo/
+
+variables:
+  DEBIAN_FRONTEND: noninteractive
+  CARGO_HOME: $CI_PROJECT_DIR/cargo
+  CARGO_TARGET_DIR: $CI_PROJECT_DIR/target
+  CARGO_FLAGS: --color always
+  CARGO_INCREMENTAL: 0
