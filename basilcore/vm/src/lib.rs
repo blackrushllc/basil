@@ -50,6 +50,7 @@ use crossterm::event::poll;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::io::copy;
 
 pub mod debug;
 
@@ -77,6 +78,69 @@ use basil_objects::audio as audio_utils;
 use basil_objects::midi as midi_utils;
 #[cfg(feature = "obj-daw")]
 use basil_objects::daw as daw_utils;
+
+// --- Network helper for NET_DOWNLOAD_FILE% ---
+// Status codes:
+// 0  = success
+// 1  = invalid or unsupported URL / parse error
+// 2  = HTTP error (non-2xx status)
+// 3  = network / TLS / IO error during transfer
+// 4  = file write / filesystem error
+// 99 = unexpected internal error
+fn net_download_file(url: &str, dest_path: &str) -> i32 {
+    // Parse URL
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return 1,
+    };
+
+    let dest = Path::new(dest_path);
+    if let Some(parent) = dest.parent() {
+        if let Err(_) = fs::create_dir_all(parent) {
+            return 4;
+        }
+    }
+
+    // Perform blocking GET
+    let resp = match reqwest::blocking::get(parsed) {
+        Ok(r) => r,
+        Err(_) => return 3,
+    };
+
+    if !resp.status().is_success() {
+        return 2;
+    }
+
+    // Write to temporary file then atomically move into place
+    let tmp_path = dest.with_extension("download.tmp");
+    // Remove any previous tmp
+    let _ = fs::remove_file(&tmp_path);
+
+    let mut file = match fs::File::create(&tmp_path) {
+        Ok(f) => f,
+        Err(_) => return 4,
+    };
+
+    let mut resp_reader = resp;
+    if let Err(_) = copy(&mut resp_reader, &mut file) {
+        let _ = fs::remove_file(&tmp_path);
+        return 3;
+    }
+
+    // Ensure file is flushed to disk
+    if let Err(_) = file.flush() { let _ = fs::remove_file(&tmp_path); return 4; }
+
+    // Overwrite if destination exists (Windows-friendly): remove dest first
+    if dest.exists() {
+        let _ = fs::remove_file(dest);
+    }
+    if let Err(_) = fs::rename(&tmp_path, dest) {
+        let _ = fs::remove_file(&tmp_path);
+        return 4;
+    }
+
+    0
+}
 
 #[cfg(feature = "obj-json")]
 fn value_to_jvalue(v: &Value) -> Result<JValue> {
@@ -1392,6 +1456,24 @@ impl VM {
                     args.reverse();
 
                     match bid {
+                        64 => { // EXEPATH$()
+                            if argc != 0 { return Err(BasilError("EXEPATH$ expects 0 arguments".into())); }
+                            let s = match std::env::current_exe() {
+                                Ok(p) => match p.parent() {
+                                    Some(dir) => dir.to_string_lossy().to_string(),
+                                    None => String::new(),
+                                },
+                                Err(_) => String::new(),
+                            };
+                            self.stack.push(Value::Str(s));
+                        }
+                        65 => { // NET_DOWNLOAD_FILE%(url$, destPath$) -> Int status code
+                            if argc != 2 { return Err(BasilError("NET_DOWNLOAD_FILE% expects 2 arguments (url$, destPath$)".into())); }
+                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=> format!("{}", other) };
+                            let dest = match &args[1] { Value::Str(s)=>s.clone(), other=> format!("{}", other) };
+                            let rc = net_download_file(&url, &dest);
+                            self.stack.push(Value::Int(rc as i64));
+                        }
                         1 => { // LEN(arg)
                             if argc != 1 { return Err(BasilError("LEN expects 1 argument".into())); }
                             match &args[0] {

@@ -67,9 +67,15 @@ obj-safe = [
     "obj-bmx", "obj-ai", "obj-term", "obj-aws", "obj-net-smtp", "obj-net-http", "obj-orm-all"
 ]
 
+# Test-only feature to enable integration tests that rely on embedded includes
+embed-test = []
+
 # Enables building a fully static, portable Linux binary when used with the MUSL target
 portable = []
 
 
 [build-dependencies]
 winres = "0.1.12"
+
+[dev-dependencies]
+tempfile = "3"
