@@ -72,6 +72,19 @@ impl Parser {
         // Skip any leading semicolons (useful with newline-as-semicolon)
         while self.match_k(TokenKind::Semicolon) {}
 
+        // CONST name = expr
+        if self.match_k(TokenKind::Const) {
+            let name = self.expect_ident()?;
+            // Disallow type suffixes on CONST names
+            if name.ends_with('$') || name.ends_with('%') || name.ends_with('@') {
+                return Err(BasilError("CONST name must not have a type suffix ($, %, @)".into()));
+            }
+            self.expect(TokenKind::Assign)?;
+            let init = self.parse_expr_bp(0)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Const { name, init });
+        }
+
         // SELECT CASE <expr> ... END [SELECT]
         if self.match_k(TokenKind::Select) {
             self.expect(TokenKind::Case)?;
@@ -968,6 +981,25 @@ impl Parser {
                 }
                 self.terminate_stmt()?;
                 return Ok(Stmt::DimObject { name, type_name: tname, args });
+            } else if self.check(TokenKind::Comma) || self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) {
+                // Simple scalar declarations possibly with multiple names: DIM a$, b$, c$
+                let mut names: Vec<String> = vec![name];
+                while self.match_k(TokenKind::Comma) {
+                    let nm = self.expect_ident()?;
+                    // Only allow plain identifiers in this multi-item DIM form
+                    if self.check(TokenKind::LParen) || self.check(TokenKind::As) || self.check(TokenKind::Assign) || (nm.ends_with('$') && self.check(TokenKind::LBracket)) {
+                        return Err(BasilError("Complex DIM forms (arrays/AS/initializers) are not allowed in comma-separated DIM; split into separate statements.".into()));
+                    }
+                    names.push(nm);
+                }
+                self.terminate_stmt()?;
+                // Desugar to a block of LET initializations with defaults
+                let mut inits: Vec<Stmt> = Vec::with_capacity(names.len());
+                for nm in names {
+                    let init = if nm.ends_with('$') { Expr::Str(String::new()) } else { Expr::Number(0.0) };
+                    inits.push(Stmt::Let { name: nm, indices: None, init });
+                }
+                return Ok(Stmt::Block(inits));
             } else if self.match_k(TokenKind::Assign) {
                 // Support: DIM name = expr
                 let init_expr = self.parse_expr_bp(0)?;
@@ -1041,8 +1073,8 @@ impl Parser {
             }
         }
 
-        // Fallback: detect assignment-like forms first to enforce LET for variable assignment,
-        // while still allowing obj.Prop = expr without LET. Otherwise, parse an expression statement.
+        // Fallback: detect assignment-like forms; allow implicit assignment without LET.
+        // Also allow obj.Prop = expr and square-bracket index sets.
         let save_i = self.i;
         // Probe a potential left-hand chain: prefix + postfix (calls and member access only)
         let lhs_probe = (|| {
@@ -1101,8 +1133,23 @@ impl Parser {
                     let value = self.parse_expr_bp(0)?;
                     self.terminate_stmt()?;
                     return Ok(Stmt::SetIndexSquare { target: *target, index: *index, value });
+                } else if let Expr::Var(name) = lhs {
+                    let _ = self.next(); // consume '='
+                    let value = self.parse_expr_bp(0)?;
+                    self.terminate_stmt()?;
+                    return Ok(Stmt::Let { name, indices: None, init: value });
+                } else if let Expr::Call { callee, args } = lhs {
+                    // Interpret NAME(args) = expr as array element assignment if callee is a variable
+                    if let Expr::Var(name) = *callee {
+                        let _ = self.next(); // consume '='
+                        let value = self.parse_expr_bp(0)?;
+                        self.terminate_stmt()?;
+                        return Ok(Stmt::Let { name, indices: Some(args), init: value });
+                    } else {
+                        return Err(BasilError("Left-hand side of assignment must be a variable or member/index target".into()));
+                    }
                 } else {
-                    return Err(BasilError("Use LET for assignment; '=' in expressions tests equality.".into()));
+                    return Err(BasilError("Left-hand side of assignment must be a variable or member/index target".into()));
                 }
             }
             // Not an assignment pattern; reset before parsing general expression

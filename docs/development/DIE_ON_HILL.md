@@ -234,112 +234,9 @@ CONST LIMIT = 3
 LIMIT = 4      ' should be an error
 ```
 
----
 
-## 4. (Exploratory) BEGIN-less blocks for multi-line IF and other constructs
 
-Current requirement (simplified):
-
-```basic
-IF targetDir$ = "" THEN BEGIN
-    PRINT "No target directory specified. Aborting."
-    EXIT SUB
-END IF
-```
-
-or:
-
-```basic
-IF targetDir$ = "" THEN
-    BEGIN
-        PRINT "No target directory specified. Aborting."
-        EXIT SUB
-END IF
-```
-
-We would *like* to support a more classic BASIC style:
-
-```basic
-IF targetDir$ = "" THEN
-    PRINT "No target directory specified. Aborting."
-    EXIT SUB
-END IF
-```
-
-**Important**: This is **optional and exploratory**. If it turns out to be too tightly coupled to the existing block parser (where `BEGIN`/`END` act like `{}`), then:
-
-* Do not ship a half-working version.
-* Prefer to leave:
-
-    * Clear TODO comments,
-    * A small design note describing what would need to change, and
-    * Possibly a feature flag or parser hook that we can revisit later.
-
-### Desired behavior (if feasible)
-
-* Still support the existing `BEGIN`/`END` style for backwards compatibility.
-
-* Additionally support “implicit blocks” for constructs like:
-
-  ```basic
-  IF cond THEN
-      ' body...
-  END IF
-
-  WHILE cond
-      ' body...
-  WEND or END WHILE (depending on what we use)
-
-  SUB Foo()
-      ' body...
-  END SUB
-  ```
-
-* In other words, treat:
-
-  ```basic
-  IF cond THEN BEGIN
-      ...
-  END IF
-  ```
-
-  and
-
-  ```basic
-  IF cond THEN
-      ...
-  END IF
-  ```
-
-  as equivalent.
-
-### Implementation sketch
-
-ONLY do this if the parser structure allows it without massive surgery.
-
-General idea:
-
-* Wherever we parse a **block** now, we currently expect something like `BEGIN ... END` (or the internal equivalents).
-* Enhance the block parser so that:
-
-    * It recognizes the existing `BEGIN ... END` braced form, **and also**
-    * Recognizes an implicit “block until matching END tag” form when `BEGIN` is omitted.
-* For IF specifically:
-
-    * After parsing `IF <expr> THEN`:
-
-        * If the next token is `BEGIN`, parse a braced block as we do now.
-        * Otherwise, parse a block that continues until `END IF` (handling `ELSE`/`ELSEIF` as needed, if we support them).
-
-If this requires making the parser newline-sensitive in ways that conflict with the rest of the language, or if it risks breaking existing behavior, then:
-
-1. Document what you found in a short design note / comment block.
-2. Leave the current `BEGIN` requirement in place.
-3. Add a TODO and maybe a stub function/enum that we can later use to switch between “braced blocks only” and “implicit or braced blocks”.
-
----
-
-## 5. Tests, examples, and documentation
+## 4. Tests, examples, and documentation
 
 For **both** projects, please:
 
@@ -349,14 +246,12 @@ For **both** projects, please:
     * Attempted reassignment of consts.
     * `DIM` with multiple variables and default initialization.
     * Assignments with and without `LET`.
-    * (If implemented) BEGIN-less IF blocks, ensuring backward compatibility with the existing `BEGIN ... END` style.
 
 2. Add or update language documentation / reference files to describe:
 
     * The `CONST` syntax and semantics.
     * The upgraded `DIM` behavior (multiple vars, defaults).
     * The fact that `LET` is now optional for assignments, but still allowed.
-    * The current status of `BEGIN` (required vs optional); if BEGIN-less blocks are not yet implemented, mention that as a future enhancement.
 
 3. Keep BASIC and Basil behavior aligned:
 
