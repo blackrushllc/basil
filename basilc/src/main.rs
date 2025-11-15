@@ -58,6 +58,7 @@ use serde_json;
 mod template;
 mod repl;
 mod runtime;
+mod embedded;
 use template::{precompile_template, parse_directives_and_bom, Directives};
 
 fn cmd_analyze(path: String, json: bool) {
@@ -162,6 +163,7 @@ fn print_help() {
     println!("  run  (sprout)      Parse → compile → run a .basil file");
     println!("  test (cultivate)   Run program in test mode with auto-mocked input");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
+    println!("  make               Write embedded includes to the current directory (see --list)\n");
     //println!("  init (seed)        Create a new Basil project");
     //println!("  build (harvest)    Build project (stub)");
     //println!("  fmt  (prune)       Format sources (stub)");
@@ -178,6 +180,10 @@ fn print_help() {
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
     println!("  basilc lex examples/hello.basil");
+    println!("  basilc make --list");
+    println!("  basilc make examples");
+    println!("  basilc make examples/hello.basil");
+    println!("  basilc make upgrade");
     println!("  basilc test testprogs/bigtest.basil");
     println!("  basilc --analyze examples/hello.basil --json");
     println!("  basilc --debug examples/hello.basil");
@@ -221,6 +227,68 @@ fn cmd_lex(path: Option<String>) {
         }
         Err(e) => { eprintln!("lex error: {}", e); std::process::exit(1); }
     }
+}
+
+fn print_embedded_inventory() {
+    println!("Embedded files:");
+    for p in embedded::list_all_paths() {
+        println!("  {}", p);
+    }
+    let dirs = embedded::list_top_level_dirs();
+    if !dirs.is_empty() {
+        println!("\nTop-level dirs: {}", dirs.join(", "));
+    }
+}
+
+fn cmd_make(args: Vec<String>) {
+    // basilc make --list | -l
+    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
+        println!("usage: basilc make [--list|-l] <target>\n\nTargets come from the built-in includes/ tree. Examples:\n  basilc make --list\n  basilc make examples\n  basilc make examples/hello.basil\n  basilc make upgrade");
+        return;
+    }
+
+    if args[0] == "--list" || args[0] == "-l" {
+        print_embedded_inventory();
+        return;
+    }
+
+    let target = &args[0];
+    if embedded::is_unsafe_target(target) {
+        eprintln!("Refusing unsafe target: {}", target);
+        std::process::exit(2);
+    }
+
+    let cwd = match env::current_dir() { Ok(p) => p, Err(e) => { eprintln!("cwd: {}", e); std::process::exit(1); } };
+
+    let file = embedded::find_file(target);
+    let is_dir = embedded::has_dir(target);
+
+    if let Some(_f) = file {
+        match embedded::write_single(target, &cwd) {
+            Ok(out) => {
+                println!("Wrote file: {}", out.display());
+                // Optionally run when it's a single file
+                let skip = env::var("BASILC_MAKE_SKIP_RUN").ok().unwrap_or_default();
+                if skip != "1" {
+                    cmd_run(Some(out.display().to_string()));
+                }
+            }
+            Err(e) => { eprintln!("write: {}", e); std::process::exit(1); }
+        }
+        return;
+    }
+
+    if is_dir {
+        if let Err(e) = embedded::extract_dir(target, &cwd) {
+            eprintln!("extract: {}", e);
+            std::process::exit(1);
+        }
+        println!("Wrote directory: {}/", target);
+        return;
+    }
+
+    eprintln!("No embedded file or dir named '{target}'. Try 'basilc make --list'.");
+    std::process::exit(2);
 }
 
 fn cmd_run(path: Option<String>) {
@@ -401,6 +469,9 @@ fn cli_main() {
         }
         "run" => {
             cmd_run(args.get(0).cloned());
+        }
+        "make" => {
+            cmd_make(args);
         }
         "cli" => {
             // basilc cli [path]

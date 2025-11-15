@@ -353,6 +353,24 @@ impl Parser {
             return Ok(Stmt::Try { try_body, catch_var, catch_body, finally_body });
         }
 
+        // DECLARE SUB/FUNC name(params) — prototype only, no body; treated as no-op (forward calls already supported)
+        if self.match_k(TokenKind::Declare) {
+            // optional SUB/FUNC/FUNCTION keyword
+            if self.check(TokenKind::Func) { let _ = self.next(); }
+            // name and params
+            let _name = self.expect_ident()?;
+            self.expect(TokenKind::LParen)?;
+            if !self.check(TokenKind::RParen) {
+                loop {
+                    let _ = self.expect_ident()?;
+                    if !self.match_k(TokenKind::Comma) { break; }
+                }
+            }
+            self.expect(TokenKind::RParen)?;
+            self.terminate_stmt()?;
+            return Ok(Stmt::Block(Vec::new()));
+        }
+
         // FUNC/SUB name(params) block
         if self.check(TokenKind::Func) {
             let kw = self.next().unwrap();
@@ -489,30 +507,46 @@ impl Parser {
         }
 
         if self.match_k(TokenKind::Print) {
-            // Support PRINT with comma-separated expressions joined by TABs
-            let mut e = self.parse_expr_bp(0)?;
+            // Parse PRINT as a sequence of prints so column-tracking (SPC/TAB/AT) works correctly
+            let mut exprs: Vec<Expr> = Vec::new();
+            let first = self.parse_expr_bp(0)?;
+            exprs.push(first);
             while self.match_k(TokenKind::Comma) {
+                // Insert a tab separator between comma-separated items for compatibility with prior behavior
+                exprs.push(Expr::Str("\t".to_string()));
                 let next = self.parse_expr_bp(0)?;
-                // e = e + "\t" + next
-                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(Expr::Str("\t".to_string())) };
-                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(next) };
+                exprs.push(next);
             }
             self.terminate_stmt()?;
-            return Ok(Stmt::Print { expr: e });
+            if exprs.len() == 1 {
+                return Ok(Stmt::Print { expr: exprs.remove(0) });
+            } else {
+                let mut body: Vec<Stmt> = Vec::with_capacity(exprs.len());
+                for e in exprs { body.push(Stmt::Print { expr: e }); }
+                return Ok(Stmt::Block(body));
+            }
         }
 
         if self.match_k(TokenKind::Println) {
-            // PRINTLN works like PRINT but always appends a newline
-            let mut e = self.parse_expr_bp(0)?;
+            // PRINTLN prints items and then a newline as a final print
+            let mut exprs: Vec<Expr> = Vec::new();
+            let first = self.parse_expr_bp(0)?;
+            exprs.push(first);
             while self.match_k(TokenKind::Comma) {
+                exprs.push(Expr::Str("\t".to_string()));
                 let next = self.parse_expr_bp(0)?;
-                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(Expr::Str("\t".to_string())) };
-                e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(next) };
+                exprs.push(next);
             }
-            // append newline
-            e = Expr::Binary { op: BinOp::Add, lhs: Box::new(e), rhs: Box::new(Expr::Str("\n".to_string())) };
+            // final newline
+            exprs.push(Expr::Str("\n".to_string()));
             self.terminate_stmt()?;
-            return Ok(Stmt::Print { expr: e });
+            if exprs.len() == 1 {
+                return Ok(Stmt::Print { expr: exprs.remove(0) });
+            } else {
+                let mut body: Vec<Stmt> = Vec::with_capacity(exprs.len());
+                for e in exprs { body.push(Stmt::Print { expr: e }); }
+                return Ok(Stmt::Block(body));
+            }
         }
 
         if self.match_k(TokenKind::Describe) {

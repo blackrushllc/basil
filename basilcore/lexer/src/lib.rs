@@ -75,6 +75,8 @@ pub enum TokenKind {
     Setenv, Exportenv, Shell, Exit, Stop,
     // Unstructured control flow
     Label, Goto, Gosub,
+    // DECLARE prototypes
+    Declare,
     // Dynamic code execution
     Exec, Eval,
     Eof,
@@ -600,6 +602,7 @@ impl<'a> Lexer<'a> {
             "EXEC"   => TokenKind::Exec,
             "EVAL"   => TokenKind::Eval,
             "TYPE"   => TokenKind::Type,
+            "DECLARE" => TokenKind::Declare,
             _        => TokenKind::Ident,
         };
 
@@ -706,4 +709,4 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_ident_start(c: char) -> bool { c.is_ascii_alphabetic() || c == '_' }
-fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' || c == '&' }
+fn is_ident_continue(c: char) -> bool { c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '%' || c == '@' || c == '&' || c == '!' }

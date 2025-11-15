@@ -50,6 +50,7 @@ use crossterm::event::poll;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::io::copy;
 
 pub mod debug;
 
@@ -77,6 +78,69 @@ use basil_objects::audio as audio_utils;
 use basil_objects::midi as midi_utils;
 #[cfg(feature = "obj-daw")]
 use basil_objects::daw as daw_utils;
+
+// --- Network helper for NET_DOWNLOAD_FILE% ---
+// Status codes:
+// 0  = success
+// 1  = invalid or unsupported URL / parse error
+// 2  = HTTP error (non-2xx status)
+// 3  = network / TLS / IO error during transfer
+// 4  = file write / filesystem error
+// 99 = unexpected internal error
+fn net_download_file(url: &str, dest_path: &str) -> i32 {
+    // Parse URL
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return 1,
+    };
+
+    let dest = Path::new(dest_path);
+    if let Some(parent) = dest.parent() {
+        if let Err(_) = fs::create_dir_all(parent) {
+            return 4;
+        }
+    }
+
+    // Perform blocking GET
+    let resp = match reqwest::blocking::get(parsed) {
+        Ok(r) => r,
+        Err(_) => return 3,
+    };
+
+    if !resp.status().is_success() {
+        return 2;
+    }
+
+    // Write to temporary file then atomically move into place
+    let tmp_path = dest.with_extension("download.tmp");
+    // Remove any previous tmp
+    let _ = fs::remove_file(&tmp_path);
+
+    let mut file = match fs::File::create(&tmp_path) {
+        Ok(f) => f,
+        Err(_) => return 4,
+    };
+
+    let mut resp_reader = resp;
+    if let Err(_) = copy(&mut resp_reader, &mut file) {
+        let _ = fs::remove_file(&tmp_path);
+        return 3;
+    }
+
+    // Ensure file is flushed to disk
+    if let Err(_) = file.flush() { let _ = fs::remove_file(&tmp_path); return 4; }
+
+    // Overwrite if destination exists (Windows-friendly): remove dest first
+    if dest.exists() {
+        let _ = fs::remove_file(dest);
+    }
+    if let Err(_) = fs::rename(&tmp_path, dest) {
+        let _ = fs::remove_file(&tmp_path);
+        return 4;
+    }
+
+    0
+}
 
 #[cfg(feature = "obj-json")]
 fn value_to_jvalue(v: &Value) -> Result<JValue> {
@@ -266,6 +330,10 @@ pub struct VM {
     current_exception: Option<String>,
     // Struct type descriptor registry
     struct_types: HashMap<String, VMTypeDesc>,
+    // Output column tracking for PRINT/TAB/SPC/AT
+    out_col: usize,
+    // RNG state for RND
+    rnd_state: u64,
 }
 
 // --- Lightweight Class Instance object ---
@@ -410,6 +478,12 @@ impl VM {
             _handlers: Vec::new(),
             current_exception: None,
             struct_types: HashMap::new(),
+            out_col: 0,
+            rnd_state: {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x9E3779B97F4A7C15);
+                if ns == 0 { 0x9E3779B97F4A7C15 } else { ns }
+            },
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -715,6 +789,30 @@ impl VM {
         }
     }
 
+    fn to_f64(&self, v: &Value) -> Result<f64> {
+        match v {
+            Value::Num(n) => Ok(*n),
+            Value::Int(i) => Ok(*i as f64),
+            other => Err(BasilError(format!("expected numeric value, got {}", self.type_of(other)))),
+        }
+    }
+
+    fn update_out_col_with(&mut self, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\n' => self.out_col = 0,
+                '\t' => {
+                    let next = ((self.out_col / 8) + 1) * 8;
+                    self.out_col = next;
+                }
+                _ => {
+                    // Treat each Unicode scalar as width 1 for now
+                    self.out_col = self.out_col.saturating_add(1);
+                }
+            }
+        }
+    }
+
     fn glob_match_simple(&self, pat: &str, name: &str) -> bool {
         #[allow(clippy::collapsible_else_if)]
         fn inner(p: &[u8], s: &[u8], case_insens: bool) -> bool {
@@ -950,7 +1048,14 @@ impl VM {
                     if self.frames.is_empty() { break; }
                 }
 
-                Op::Print => { let v = self.pop()?; if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Output(format!("{}", v))); } print!("{}", v); let _ = io::stdout().flush(); }
+                Op::Print => {
+                    let v = self.pop()?;
+                    let s = format!("{}", v);
+                    if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Output(s.clone())); }
+                    self.update_out_col_with(&s);
+                    print!("{}", s);
+                    let _ = io::stdout().flush();
+                }
                 Op::Pop   => { let _ = self.pop()?; }
                 Op::ToInt => {
                     let v = self.pop()?;
@@ -1351,6 +1456,24 @@ impl VM {
                     args.reverse();
 
                     match bid {
+                        64 => { // EXEPATH$()
+                            if argc != 0 { return Err(BasilError("EXEPATH$ expects 0 arguments".into())); }
+                            let s = match std::env::current_exe() {
+                                Ok(p) => match p.parent() {
+                                    Some(dir) => dir.to_string_lossy().to_string(),
+                                    None => String::new(),
+                                },
+                                Err(_) => String::new(),
+                            };
+                            self.stack.push(Value::Str(s));
+                        }
+                        65 => { // NET_DOWNLOAD_FILE%(url$, destPath$) -> Int status code
+                            if argc != 2 { return Err(BasilError("NET_DOWNLOAD_FILE% expects 2 arguments (url$, destPath$)".into())); }
+                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=> format!("{}", other) };
+                            let dest = match &args[1] { Value::Str(s)=>s.clone(), other=> format!("{}", other) };
+                            let rc = net_download_file(&url, &dest);
+                            self.stack.push(Value::Int(rc as i64));
+                        }
                         1 => { // LEN(arg)
                             if argc != 1 { return Err(BasilError("LEN expects 1 argument".into())); }
                             match &args[0] {
@@ -1812,6 +1935,148 @@ impl VM {
                                 }
                             };
                             let out = if unit.is_empty() || n == 0 { String::new() } else { unit.repeat(n) };
+                            self.stack.push(Value::Str(out));
+                        }
+                        // --- Math intrinsics ---
+                        70 => { // ABS(x)
+                            if argc != 1 { return Err(BasilError("ABS expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Int(i) => {
+                                    if *i >= 0 { self.stack.push(Value::Int(*i)); }
+                                    else if *i == i64::MIN { self.stack.push(Value::Num((-(i64::MIN as f64)).abs())); }
+                                    else { self.stack.push(Value::Int(-*i)); }
+                                }
+                                Value::Num(n) => { self.stack.push(Value::Num(n.abs())); }
+                                other => return Err(BasilError(format!("ABS: expected numeric, got {}", self.type_of(other)))),
+                            }
+                        }
+                        71 => { // ATN(x) -> radians
+                            if argc != 1 { return Err(BasilError("ATN expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.atan()));
+                        }
+                        72 => { // COS(x)
+                            if argc != 1 { return Err(BasilError("COS expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.cos()));
+                        }
+                        73 => { // EXP(x)
+                            if argc != 1 { return Err(BasilError("EXP expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.exp()));
+                        }
+                        74 => { // INT(x) -> floor for floats, identity for ints; returns integer
+                            if argc != 1 { return Err(BasilError("INT expects 1 argument".into())); }
+                            match &args[0] {
+                                Value::Int(i) => self.stack.push(Value::Int(*i)),
+                                Value::Num(n) => self.stack.push(Value::Int(n.floor() as i64)),
+                                other => return Err(BasilError(format!("INT: expected numeric, got {}", self.type_of(other)))),
+                            }
+                        }
+                        75 => { // LOG(x) natural log
+                            if argc != 1 { return Err(BasilError("LOG expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; if x <= 0.0 { return Err(BasilError("LOG domain error (x must be > 0)".into())); } self.stack.push(Value::Num(x.ln()));
+                        }
+                        76 => { // RND() or RND(n)
+                            fn xorshift64star(state: &mut u64) -> u64 {
+                                let mut x = *state;
+                                if x == 0 { x = 0x9E3779B97F4A7C15; }
+                                x ^= x >> 12;
+                                x ^= x << 25;
+                                x ^= x >> 27;
+                                *state = x;
+                                x.wrapping_mul(2685821657736338717)
+                            }
+                            if argc == 0 {
+                                let r = xorshift64star(&mut self.rnd_state);
+                                let f = (r as f64) / ((u64::MAX as f64) + 1.0);
+                                self.stack.push(Value::Num(f));
+                            } else if argc == 1 {
+                                let n = self.to_i64(&args[0])?;
+                                if n <= 0 { self.stack.push(Value::Int(0)); }
+                                else {
+                                    let r = xorshift64star(&mut self.rnd_state);
+                                    let v = (r % (n as u64)) as i64;
+                                    self.stack.push(Value::Int(v));
+                                }
+                            } else {
+                                return Err(BasilError("RND expects 0 or 1 argument".into()));
+                            }
+                        }
+                        77 => { // SIN(x)
+                            if argc != 1 { return Err(BasilError("SIN expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.sin()));
+                        }
+                        78 => { // SQR(x)
+                            if argc != 1 { return Err(BasilError("SQR expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; if x < 0.0 { return Err(BasilError("SQR domain error (x must be >= 0)".into())); } self.stack.push(Value::Num(x.sqrt()));
+                        }
+                        79 => { // TAN(x)
+                            if argc != 1 { return Err(BasilError("TAN expects 1 argument".into())); }
+                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.tan()));
+                        }
+                        // --- PRINT helpers ---
+                        80 => { // SPC(n) -> string of spaces
+                            if argc != 1 { return Err(BasilError("SPC expects 1 argument".into())); }
+                            let n = self.to_i64(&args[0])?; let n = if n <= 0 { 0usize } else { (n as usize).min(1_000_000) }; self.stack.push(Value::Str(" ".repeat(n)));
+                        }
+                        81 => { // TAB(n) -> spaces to reach column n (1-based)
+                            if argc != 1 { return Err(BasilError("TAB expects 1 argument".into())); }
+                            let target = self.to_i64(&args[0])?; let target = if target < 1 { 1 } else { target } as usize;
+                            let cur = self.out_col + 1; let spaces = if target > cur { target - cur } else { 0 };
+                            self.stack.push(Value::Str(" ".repeat(spaces.min(1_000_000))));
+                        }
+                        82 => { // AT(n) -> alias for TAB(n)
+                            if argc != 1 { return Err(BasilError("AT expects 1 argument".into())); }
+                            let target = self.to_i64(&args[0])?; let target = if target < 1 { 1 } else { target } as usize;
+                            let cur = self.out_col + 1; let spaces = if target > cur { target - cur } else { 0 };
+                            self.stack.push(Value::Str(" ".repeat(spaces.min(1_000_000))));
+                        }
+                        83 => { // USING$(fmt$, args...)
+                            if argc < 1 { return Err(BasilError("USING$ expects at least a format string".into())); }
+                            let fmt = match &args[0] { Value::Str(s)=>s.as_str(), other=> return Err(BasilError(format!("USING$: first arg must be string, got {}", self.type_of(other)))) };
+                            // Simple printf-like formatter: %d, %f, %s with optional width and precision (e.g. %8.2f). Supports %% for literal percent.
+                            let mut out = String::new();
+                            let mut i = 0usize; let mut ai = 1usize;
+                            let chars: Vec<char> = fmt.chars().collect();
+                            while i < chars.len() {
+                                if chars[i] != '%' { out.push(chars[i]); i += 1; continue; }
+                                i += 1; if i >= chars.len() { out.push('%'); break; }
+                                if chars[i] == '%' { out.push('%'); i += 1; continue; }
+                                // flags
+                                let mut left = false; let mut zero = false;
+                                loop {
+                                    if i < chars.len() && (chars[i] == '-' || chars[i] == '0') {
+                                        if chars[i] == '-' { left = true; } else { zero = true; }
+                                        i += 1; continue;
+                                    }
+                                    break;
+                                }
+                                // width
+                                let mut width: Option<usize> = None; let mut wv = 0usize; let mut saw_w = false;
+                                while i < chars.len() && chars[i].is_ascii_digit() {
+                                    saw_w = true; wv = wv * 10 + (chars[i] as u8 - b'0') as usize; i += 1;
+                                }
+                                if saw_w { width = Some(wv.min(1_000_000)); }
+                                // precision
+                                let mut prec: Option<usize> = None;
+                                if i < chars.len() && chars[i] == '.' { i += 1; let mut pv = 0usize; let mut saw_p=false; while i < chars.len() && chars[i].is_ascii_digit() { saw_p=true; pv = pv*10 + (chars[i] as u8 - b'0') as usize; i += 1; } if saw_p { prec = Some(pv.min(20)); } }
+                                if i >= chars.len() { break; }
+                                let ty = chars[i]; i += 1;
+                                if ai >= args.len() { return Err(BasilError("USING$: not enough arguments for format".into())); }
+                                let s = match ty {
+                                    'd' | 'i' => {
+                                        let v = self.to_i64(&args[ai])?; format!("{}", v)
+                                    }
+                                    'f' => {
+                                        let v = self.to_f64(&args[ai])?; let p = prec.unwrap_or(6); format!("{:.*}", p, v)
+                                    }
+                                    's' => {
+                                        match &args[ai] { Value::Str(s)=>s.clone(), other=> format!("{}", other) }
+                                    }
+                                    c => return Err(BasilError(format!("USING$: unsupported format type '%{}'", c))),
+                                };
+                                ai += 1;
+                                // apply width/padding/alignment
+                                if let Some(w) = width { if s.len() < w { let padc = if zero && !left { '0' } else { ' ' }; if left { let mut t=s.clone(); t.push_str(&padc.to_string().repeat(w - s.len())); out.push_str(&t); } else { out.push_str(&padc.to_string().repeat(w - s.len())); out.push_str(&s); } } else { out.push_str(&s); } } else { out.push_str(&s); }
+                            }
                             self.stack.push(Value::Str(out));
                         }
                         40 => { // FOPEN(path$, mode$) -> fh%

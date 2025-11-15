@@ -9,6 +9,10 @@ All features here are synchronous and portable across Windows, macOS, and Linux.
 - Binary modes read/write raw bytes (coerced to Basil strings when read).
 - Files are always flushed on FCLOSE and closed automatically at scope end and program exit.
 
+Note for Windows paths:
+- Backslash (\\) is the string escape character in Basil strings. Writing "\\splash.png" is a single backslash followed by "splash.png"; writing "\splash.png" will drop the backslash and yield "splash.png".
+- Prefer forward slashes (Windows accepts them), e.g. `EXEPATH$() + "/file.txt"`, or escape the backslash, e.g. `EXEPATH$() + "\\file.txt"`.
+
 Quick cheat sheet:
 
 - fh% = FOPEN(path$, mode$)
