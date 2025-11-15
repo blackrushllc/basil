@@ -1,0 +1,10 @@
+PRINTLN "Hello from Basil!"
+FOR i = 1 TO 3
+  PRINTLN "i=", i
+NEXT i
+
+println "Hello from Basil#!";
+for i% = 1 to 3 {
+  let i$ = i%;
+  println "i= {i$}";
+  } next i

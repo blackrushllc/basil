@@ -25,7 +25,7 @@ SQL(MySQL/Postgres, RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totall
 (Jolt Cola not included)
 
 >
-> Complete Online Reference: https://yobasic.com/basil/reference.html
+> Complete Online Reference: https://basilbasic.com/basil/reference.html
 >
 > Look at the /docs/ folder for guides, development notes, and more.
 >
@@ -157,17 +157,17 @@ See:
  + examples/website/ - a simple Basil CGI web app with login, register, user home, logout
  + Useful links:
 
-🌿 https://yobasic.com - The website for Basil
+🌿 https://basilbasic.com - The website for Basil
 
-🌿 https://yobasic.com/basil//basil.html - The original 15 Minute Presentation Handout (nicer one below)
+🌿 https://basilbasic.com/basil/basil.html - The original 15 Minute Presentation Handout (nicer one below)
 
-🌿 https://yobasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
+🌿 https://basilbasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
 
-🌿 https://yobasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
+🌿 https://basilbasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
 
-🌿 https://yobasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
+🌿 https://basilbasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
 
-🌿 https://yobasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
+🌿 https://basilbasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
 
 
 
@@ -309,7 +309,7 @@ projects, and friendly enough to keep students in the game—so more learners fi
 
 Github Repository: https://github.com/blackrushllc/basil
 
-Complete Online Reference: https://yobasic.com/basil/reference.html
+Complete Online Reference: https://basilbasic.com/basil/reference.html
 
 Email: BlackrushDrive@Gmail.com
 

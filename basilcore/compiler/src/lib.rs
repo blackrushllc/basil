@@ -58,8 +58,18 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
             c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
         }
     }
+    // Hoist: emit all function/sub definitions first so globals are populated before any top-level calls
     for s in ast {
-        c.emit_stmt_toplevel(s)?;
+        if let Stmt::Func { .. } = s {
+            c.emit_stmt_toplevel(s)?;
+        }
+    }
+    // Then emit all other top-level statements
+    for s in ast {
+        match s {
+            Stmt::Func { .. } => { /* already emitted above */ }
+            _ => c.emit_stmt_toplevel(s)?,
+        }
     }
     // Resolve top-level GOTO fixups now that all labels are known
     for (op_pos, u16_pos, label) in std::mem::take(&mut c.tl_goto_fixups) {
@@ -1789,6 +1799,23 @@ impl C {
                         "URLENCODE$" => Some(22u8),
                         "URLDECODE$" => Some(23u8),
                         "STRING$" => Some(26u8),
+                        // --- Math intrinsics ---
+                        "ABS" => Some(70u8),
+                        "ATN" => Some(71u8),
+                        "COS" => Some(72u8),
+                        "EXP" => Some(73u8),
+                        "INT" => Some(74u8),
+                        "LOG" => Some(75u8),
+                        "RND" => Some(76u8),
+                        "SIN" => Some(77u8),
+                        "SQR" => Some(78u8),
+                        "TAN" => Some(79u8),
+                        // --- PRINT helpers ---
+                        "SPC" => Some(80u8),
+                        "TAB" => Some(81u8),
+                        "AT"  => Some(82u8),
+                        // --- Formatting ---
+                        "USING$" => Some(83u8),
                         "SLEEP" => Some(24u8),
                         "FOPEN" => Some(40u8),
                         "FCLOSE" => Some(41u8),
@@ -1809,6 +1836,9 @@ impl C {
                         "DELETE" => Some(56u8),
                         "DIR$" => Some(57u8),
                         "ENV$" => Some(58u8),
+                        // New always-available builtins
+                        "EXEPATH$" => Some(64u8),
+                        "NET_DOWNLOAD_FILE%" => Some(65u8),
                         "LOADENV%" => Some(63u8),
                         "MKDIRS%" => Some(62u8),
                         #[cfg(feature = "obj-base64")] "BASE64_ENCODE$" => Some(90u8),

@@ -410,6 +410,13 @@ Returns the value of an environment variable named by its string argument, or an
 PRINTLN "PATH=", ENV$("PATH");
 ```
 
+## EXEPATH$
+*Type:* Function (returns String)
+Returns the absolute directory path of the currently running Basil executable. Returns an empty string on failure.
+```basil
+PRINTLN "EXEPATH = ", EXEPATH$();
+```
+
 ## LOADENV%
 *Type:* Function (returns Integer)
 Loads environment variables from a text file containing newline-separated `name=value` pairs. Lines starting with `#` or `;` are treated as comments; blank lines are ignored. Values are set for the current Basil process (so they are visible to ENV$ and to child processes you spawn).
@@ -424,6 +431,25 @@ IF LOADENV%() THEN PRINTLN "Loaded .env"; ELSE PRINTLN "No .env";
 ' Load from a specific file
 IF LOADENV%("config.env") THEN PRINTLN "Loaded config.env";
 PRINTLN "API_KEY=", ENV$("API_KEY");
+```
+
+## NET_DOWNLOAD_FILE%
+*Type:* Function (returns Integer)
+Downloads a file from an HTTP/HTTPS URL to a destination path on disk. Returns 0 on success, or a non-zero status code on failure. This call is blocking.
+
+- Parameters: `url$` (String), `destPath$` (String)
+- Returns: `0` on success; non-zero on failure. Status codes:
+  - `1` invalid/unsupported URL
+  - `2` HTTP error (non-2xx status)
+  - `3` network/TLS/IO error during transfer
+  - `4` file write/filesystem error
+  - `99` unexpected internal error
+
+```basil
+LET url$ = "https://example.com/index.html";
+LET dest$ = EXEPATH$() + "/example.html";
+LET rc% = NET_DOWNLOAD_FILE%(url$, dest$);
+PRINTLN "Download RC = ", rc%;
 ```
 
 ## ESCAPE$
