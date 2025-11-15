@@ -1,0 +1,24 @@
+REM Demo: CONST, multi-DIM defaults, and implicit LET assignments
+
+CONST DEFAULT_OS = "L";
+CONST MAX_RETRIES = 3;
+CONST PI = 3.14159;
+
+DIM a$, b$, c$;
+DIM i%, j%;
+DIM x, y;
+
+PRINTLN "DEFAULT_OS=", DEFAULT_OS;
+PRINTLN "MAX_RETRIES=", MAX_RETRIES;
+PRINTLN "PI=", PI;
+
+PRINTLN "Defaults: a$='", a$, "' i%=", i%, " x=", x;
+
+i% = 5    ; REM implicit LET
+x = 10     ; REM implicit LET
+a$ = "ok" ; REM implicit LET
+
+PRINTLN "After assigns: a$='", a$, "' i%=", i%, " x=", x;
+
+REM The following should be an error if uncommented (consts are immutable):
+REM MAX_RETRIES = 4

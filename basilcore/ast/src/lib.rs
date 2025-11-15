@@ -79,6 +79,8 @@ pub enum BinOp {
 pub enum Stmt {
     // LET for variables or array elements (if indices present)
     Let   { name: String, indices: Option<Vec<Expr>>, init: Expr },
+    // CONST declaration (immutable variable)
+    Const { name: String, init: Expr },
     // DIM statement to create arrays (1–4 dimensions)
     Dim   { name: String, dims: Vec<Expr> },
     // DIM x@ AS TYPE(args?) (scalar object)

@@ -58,6 +58,12 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
             c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
         }
     }
+    // Pre-scan to collect all global CONST names so we can enforce immutability inside functions even if CONST appears later
+    for s in ast {
+        if let Stmt::Const { name, .. } = s {
+            c.const_globs.insert(name.clone());
+        }
+    }
     // Hoist: emit all function/sub definitions first so globals are populated before any top-level calls
     for s in ast {
         if let Stmt::Func { .. } = s {
@@ -169,6 +175,8 @@ struct C {
     var_struct_globs: HashMap<String, String>,            // var -> TypeName (upper)
     // Arrays of struct element type bindings (globals)
     var_struct_array_globs: HashMap<String, String>,
+    // Constants declared at global scope (names as written)
+    const_globs: HashSet<String>,
 }
 
 impl C {
@@ -195,6 +203,7 @@ impl C {
             fixed_globs: HashMap::new(),
             var_struct_globs: HashMap::new(),
             var_struct_array_globs: HashMap::new(),
+            const_globs: HashSet::new(),
         }
     }
 
@@ -208,6 +217,15 @@ impl C {
 
     fn emit_stmt_toplevel(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            // CONST at top-level: evaluate once and store to a global; mark as const
+            Stmt::Const { name, init } => {
+                let mut chunk = std::mem::take(&mut self.chunk);
+                self.emit_expr_in(&mut chunk, init, None)?;
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.const_globs.insert(name.clone());
+                self.chunk = chunk;
+            }
             // Compile function to a Function value and store into a global.
             Stmt::Func { name, params, body, .. } => {
                 // remember function name for call vs array indexing disambiguation
@@ -270,6 +288,10 @@ impl C {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 match indices {
                     None => {
+                        // Disallow reassignment of constants
+                        if self.const_globs.contains(name) {
+                            return Err(BasilError(format!("cannot assign to constant '{}'; it was declared with CONST", name)));
+                        }
                         // Detect struct <-> string pack/unpack first
                         if let Some(ty_s) = self.var_struct_globs.get(name).cloned() {
                             // LET <struct> = <string>
@@ -314,6 +336,9 @@ impl C {
                         chunk.push_u8(g);
                     }
                     Some(idxs) => {
+                        if self.const_globs.contains(name) {
+                            return Err(BasilError(format!("cannot assign to constant '{}'; it was declared with CONST", name)));
+                        }
                         // array element assignment or whole-array assignment if idxs is empty: name$() = expr
                         if idxs.is_empty() {
                             // Evaluate RHS and convert from StrArray2D to real 2D string array via builtin 138
@@ -737,6 +762,10 @@ impl C {
             // FOR EACH at toplevel
             Stmt::ForEach { var, enumerable, body } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
+                // Reassignment to const loop control variable is not allowed
+                if self.const_globs.contains(var) {
+                    return Err(BasilError(format!("loop variable '{}' is a constant", var)));
+                }
                 // Evaluate enumerable and create enumerator
                 self.emit_expr_in(&mut chunk, enumerable, None)?;
                 chunk.push_op(Op::EnumNew);
@@ -767,6 +796,9 @@ impl C {
             // FOR at toplevel
             Stmt::For { var, start, end, step, body } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
+                if self.const_globs.contains(var) {
+                    return Err(BasilError(format!("loop variable '{}' is a constant", var)));
+                }
                 // init: var = start
                 self.emit_expr_in(&mut chunk, start, None)?;
                 if var.ends_with('%') { chunk.push_op(Op::ToInt); }
@@ -913,9 +945,20 @@ impl C {
 
     fn emit_stmt_func(&mut self, chunk: &mut Chunk, s: &Stmt, env: &mut LocalEnv) -> Result<()> {
         match s {
+            // Local constant: evaluate and store to local; remember name to forbid reassignment
+            Stmt::Const { name, init } => {
+                self.emit_expr_in(chunk, init, Some(env))?;
+                let slot = env.bind_next_if_absent(name.clone());
+                chunk.push_op(Op::StoreLocal); chunk.push_u8(slot);
+                env.consts.insert(name.clone());
+            }
             Stmt::Let { name, indices, init } => {
                 match indices {
                     None => {
+                        // Disallow assignment to consts (local or global)
+                        if env.consts.contains(name) || self.const_globs.contains(name) {
+                            return Err(BasilError(format!("cannot assign to constant '{}'", name)));
+                        }
                         // Detect struct <-> string conversions first
                         if let Some(ty_s) = env.var_struct.get(name).cloned().or_else(|| self.var_struct_globs.get(name).cloned()) {
                             if let Expr::Var(rn) = init {
@@ -980,6 +1023,9 @@ impl C {
                         }
                     }
                     Some(idxs) => {
+                        if env.consts.contains(name) || self.const_globs.contains(name) {
+                            return Err(BasilError(format!("cannot assign to constant '{}'", name)));
+                        }
                         if idxs.is_empty() {
                             // Whole-array assignment: name$() = expr
                             self.emit_expr_in(chunk, init, Some(env))?;
@@ -1386,6 +1432,9 @@ impl C {
             Stmt::Func { .. } => { /* no nested funcs in MVP */ }
             Stmt::ForEach { var, enumerable, body } => {
                 // Evaluate enumerable and create enumerator
+                if env.consts.contains(var) || self.const_globs.contains(var) {
+                    return Err(BasilError(format!("loop variable '{}' is a constant", var)));
+                }
                 self.emit_expr_in(chunk, enumerable, Some(env))?;
                 chunk.push_op(Op::EnumNew);
                 // Save enumerator handle in a temp local so the loop body can freely use the stack
@@ -1423,6 +1472,9 @@ impl C {
             }
             Stmt::For { var, start, end, step, body } => {
                 // init var
+                if env.consts.contains(var) || self.const_globs.contains(var) {
+                    return Err(BasilError(format!("loop variable '{}' is a constant", var)));
+                }
                 self.emit_expr_in(chunk, start, Some(env))?;
                 if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 if let Some(slot) = env.lookup(var) {
@@ -2096,9 +2148,11 @@ struct LocalEnv {
     fixed: HashMap<String, usize>,                 // local fixed-length strings
     var_struct: HashMap<String, String>,           // local struct vars: var -> TypeName (upper)
     var_struct_array: HashMap<String, String>,     // local arrays of struct: var -> ElemTypeName (upper)
+    // local constants (names as written)
+    consts: HashSet<String>,
 }
 impl LocalEnv {
-    fn new() -> Self { Self { map: HashMap::new(), next: 0, fixed: HashMap::new(), var_struct: HashMap::new(), var_struct_array: HashMap::new() } }
+    fn new() -> Self { Self { map: HashMap::new(), next: 0, fixed: HashMap::new(), var_struct: HashMap::new(), var_struct_array: HashMap::new(), consts: HashSet::new() } }
     fn bind(&mut self, name: String, slot: u8) { self.map.insert(name, slot); self.next = self.next.max(slot + 1); }
     fn bind_next_if_absent(&mut self, name: String) -> u8 {
         if let Some(&i) = self.map.get(&name) { return i; }
@@ -2235,14 +2289,27 @@ impl C {
 
     fn emit_stmt_tl_in_chunk(&mut self, chunk: &mut Chunk, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Const { name, init } => {
+                // top-level in-chunk CONST handling (inside blocks)
+                self.emit_expr_in(chunk, init, None)?;
+                let g = self.gslot(name);
+                chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.const_globs.insert(name.clone());
+            }
             Stmt::Let { name, indices, init } => {
                 match indices {
                     None => {
+                        if self.const_globs.contains(name) {
+                            return Err(BasilError(format!("cannot assign to constant '{}'", name)));
+                        }
                         self.emit_expr_in(chunk, init, None)?;
                         let g = self.gslot(name);
                         chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                     }
                     Some(idxs) => {
+                        if self.const_globs.contains(name) {
+                            return Err(BasilError(format!("cannot assign to constant '{}'", name)));
+                        }
                         let g = self.gslot(name);
                         chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                         for ix in idxs { self.emit_expr_in(chunk, ix, None)?; }
