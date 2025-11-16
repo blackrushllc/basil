@@ -341,7 +341,7 @@ impl<'a> Lexer<'a> {
         let content_end = loop {
             let ch = match self.cur {
                 Some(c) => c,
-                None => return Err(BasilError("unterminated string".into())),
+                None => return Err(BasilError(format!("parse error at line {}: unterminated string", tok_line))),
             };
             if ch == '"' {
                 // end should EXCLUDE the closing quote
