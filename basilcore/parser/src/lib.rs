@@ -711,7 +711,7 @@ impl Parser {
             }
         }
 
-        // WHILE <expr> BEGIN ... END  or  WHILE <expr> { ... }
+        // WHILE <expr> BEGIN ... END  or  WHILE <expr> { ... }  or  WHILE <expr> ... END [WHILE]
         if self.match_k(TokenKind::While) {
             let cond = self.parse_expr_bp(0)?;
             let mut body = Vec::new();
@@ -736,10 +736,25 @@ impl Parser {
                     body.push(stmt);
                 }
             } else {
-                return Err(BasilError(format!(
-                    "parse error at line {}: expected 'BEGIN' or '{{' after WHILE condition",
-                    self.peek_line()
-                )));
+                // Implicit body until END [WHILE]
+                loop {
+                    while self.match_k(TokenKind::Semicolon) {}
+                    if self.check(TokenKind::End) {
+                        let _ = self.next(); // consume END
+                        self.consume_optional_end_suffix(); // accept END WHILE
+                        break;
+                    }
+                    if self.check(TokenKind::Eof) {
+                        return Err(BasilError(format!(
+                            "parse error at line {}: unterminated WHILE body: expected 'END'",
+                            self.peek_line()
+                        )));
+                    }
+                    let line = self.peek_line();
+                    let stmt = self.parse_stmt()?;
+                    body.push(Stmt::Line(line));
+                    body.push(stmt);
+                }
             }
             return Ok(Stmt::While { cond, body: Box::new(Stmt::Block(body)) });
         }
@@ -816,7 +831,7 @@ impl Parser {
                 let var = self.expect_ident()?;
                 self.expect(TokenKind::In)?;
                 let enumerable = self.parse_expr_bp(0)?;
-                // Body: BEGIN..END, {..}, or single statement
+                // Body: BEGIN..END, {..}, or implicit until NEXT
                 let body: Stmt = if self.match_k(TokenKind::Begin) {
                     let mut inner = Vec::new();
                     loop {
@@ -842,9 +857,18 @@ impl Parser {
                     }
                     Stmt::Block(inner)
                 } else {
-                    let line = self.peek_line();
-                    let s = self.parse_stmt()?;
-                    Stmt::Block(vec![Stmt::Line(line), s])
+                    // Implicit multi-statement body until NEXT
+                    let mut inner = Vec::new();
+                    loop {
+                        while self.match_k(TokenKind::Semicolon) {}
+                        if self.check(TokenKind::Next) { break; }
+                        if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR EACH body: expected 'NEXT'", self.peek_line()))); }
+                        let line = self.peek_line();
+                        let s = self.parse_stmt()?;
+                        inner.push(Stmt::Line(line));
+                        inner.push(s);
+                    }
+                    Stmt::Block(inner)
                 };
                 // Expect NEXT [ident]
                 while self.match_k(TokenKind::Semicolon) {}
@@ -862,7 +886,7 @@ impl Parser {
             let end = self.parse_expr_bp(0)?;
             let step = if self.match_k(TokenKind::Step) { Some(self.parse_expr_bp(0)?) } else { None };
 
-            // Body: BEGIN..END, {..}, or single statement
+            // Body: BEGIN..END, {..}, or implicit until NEXT
             let body: Stmt = if self.match_k(TokenKind::Begin) {
                 let mut inner = Vec::new();
                 loop {
@@ -888,10 +912,18 @@ impl Parser {
                 }
                 Stmt::Block(inner)
             } else {
-                // Single statement body
-                let line = self.peek_line();
-                let s = self.parse_stmt()?;
-                Stmt::Block(vec![Stmt::Line(line), s])
+                // Implicit multi-statement body until NEXT
+                let mut inner = Vec::new();
+                loop {
+                    while self.match_k(TokenKind::Semicolon) {}
+                    if self.check(TokenKind::Next) { break; }
+                    if self.check(TokenKind::Eof) { return Err(BasilError(format!("parse error at line {}: unterminated FOR body: expected 'NEXT'", self.peek_line()))); }
+                    let line = self.peek_line();
+                    let stmt = self.parse_stmt()?;
+                    inner.push(Stmt::Line(line));
+                    inner.push(stmt);
+                }
+                Stmt::Block(inner)
             };
 
             // Expect NEXT [ident]
