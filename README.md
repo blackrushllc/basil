@@ -109,7 +109,7 @@ Modern brace style (THEN is implied when you open a brace):
 let i = 0;
 while true {
     let i = i + 1;
-    if i == 3 { // Block IF
+    if i == 2 { // Block IF
         break;
     }
     print i;
