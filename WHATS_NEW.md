@@ -31,6 +31,9 @@
 + New CLI "OK" prompt mode and immediate mode with class load
 + New IDE integration stuff
 + "GWBASIC" / "BASICA" style OK prompt interface (80's retro mode)
+ + CONST declarations: CONST NAME = value (string/int/float), immutable in scope; no type suffix allowed on NAME
+ + DIM supports multiple variables on a single line and default initialization (empty string or 0)
+ + LET is now optional for assignments (implicit assignment supported): x = 5 works alongside LET x = 5
 
 ### 🌿 STATUS UPDATE _COMPILER_ !!!
 

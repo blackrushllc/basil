@@ -736,7 +736,10 @@ impl Parser {
                     body.push(stmt);
                 }
             } else {
-                return Err(BasilError("Expected 'BEGIN' or '{' after WHILE condition".into()));
+                return Err(BasilError(format!(
+                    "parse error at line {}: expected 'BEGIN' or '{{' after WHILE condition",
+                    self.peek_line()
+                )));
             }
             return Ok(Stmt::While { cond, body: Box::new(Stmt::Block(body)) });
         }
