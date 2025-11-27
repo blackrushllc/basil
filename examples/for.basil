@@ -1,13 +1,26 @@
 FOR i = 1 TO 5
-    PRINTLN i;
-NEXT i;
+    PRINTLN i
+NEXT i
 
 FOR j = 5 TO 1 STEP -1
-    BEGIN
-        PRINT j;
+
+        IF j = 2 THEN
+            PRINTLN "j is 2"
+            PRINTLN "j that is a fact"
+            PRINTLN "j indeed"
+        ELSE
+            PRINTLN "j is", j
+
+        END IF
+
         FOR i = 1 TO 5
-            PRINTLN i;
-        NEXT i;
-    END
-NEXT j;
+            IF i = 2 THEN
+                PRINTLN "i is 2"
+                PRINTLN "i that is a fact"
+                PRINTLN "i indeed"
+            ELSE
+                PRINTLN "i is", i
+            END IF
+        NEXT i
+NEXT j
 
