@@ -1,3 +1,5 @@
+#include "hello.basil"
+
 FOR i = 1 TO 5
     PRINTLN i
 NEXT i

@@ -1,5 +1,6 @@
 use std::collections::{HashMap, BTreeMap};
 use std::fs;
+use std::env;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
@@ -11,6 +12,7 @@ use basil_vm::VM;
 use crate::template::{precompile_template, Directives};
 use basil_bytecode::{serialize_program, deserialize_program};
 use std::time::UNIX_EPOCH;
+use basil_preprocessor as pre;
 
 #[derive(Default)]
 pub struct SessionSettings {
@@ -72,7 +74,14 @@ impl Session {
             }
         }
         let program = if let Some(p) = program_opt { p } else {
-            let ast = parse(&pre.basil_source).map_err(|e| format!("parse error: {}", e))?;
+            // Preprocess prior to parsing
+            let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+                Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+                Err(_) => Vec::new(),
+            };
+            let pp_opts = crate::build_pre_opts(PathBuf::from(path), env_paths);
+            let preprocessed = pre::preprocess(&pre.basil_source, &pp_opts).map_err(|e| format!("preprocess error: {}", e))?;
+            let ast = parse(&preprocessed.text).map_err(|e| format!("parse error: {}", e))?;
             let prog = compile(&ast).map_err(|e| format!("compile error: {}", e))?;
             let body = serialize_program(&prog);
             let mut hdr = Vec::with_capacity(32 + body.len());
