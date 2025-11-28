@@ -212,8 +212,3 @@ Out of scope now
 - Runtime include() function. Consider later behind a flag and include‑once enforcement.
 
 If anything in your repo differs (names/paths), adapt identifiers accordingly while keeping the behavior exactly as specified above.
-
----
-
-Next steps in this repo (basil):
-- Once you confirm the prompt looks good, I will proceed to implement Phase 1 here as well, wiring to the existing basilc embedded includes generator.
