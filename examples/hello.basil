@@ -8,3 +8,7 @@ for i% = 1 to 3 {
   let i$ = i%;
   println "i=#{i$}";
   } next i
+
+func hello$() {
+  return "Hello from inside of a Basil function!";
+}
