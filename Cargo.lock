@@ -1358,6 +1358,7 @@ dependencies = [
  "basil-compiler",
  "basil-objects",
  "basil-parser",
+ "chrono",
  "crossterm",
  "csv",
  "reqwest",

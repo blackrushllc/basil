@@ -1851,6 +1851,15 @@ impl C {
                         "URLENCODE$" => Some(22u8),
                         "URLDECODE$" => Some(23u8),
                         "STRING$" => Some(26u8),
+                        // --- New string/collection/date-time builtins ---
+                        "REMOVE$" => Some(141u8),
+                        "REPLACE$" => Some(142u8),
+                        "INSERT$" => Some(143u8),
+                        "DATE$" => Some(144u8),
+                        "TIME$" => Some(145u8),
+                        "NOW$"  => Some(146u8),
+                        "EXPLODE" => Some(147u8),
+                        "IMPLODE$" => Some(148u8),
                         // --- Math intrinsics ---
                         "ABS" => Some(70u8),
                         "ATN" => Some(71u8),

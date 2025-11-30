@@ -669,20 +669,28 @@ impl<'a> Lexer<'a> {
                 }
 
                 // BASIC-style REM comment (case-insensitive): skip 'REM' and rest of line
+                // But only when 'REM' is a standalone keyword — not when it's a prefix of an identifier like REMOVE$.
                 Some('R') | Some('r') => {
                     let mut it = self.chars.clone();
                     let n1 = it.next();
                     let n2 = it.next();
                     if matches!(n1, Some('E') | Some('e')) && matches!(n2, Some('M') | Some('m')) {
-                        // consume R E M
-                        self.advance(); self.advance(); self.advance();
-                        while let Some(ch) = self.cur {
-                            if ch == '\n' { break; }
-                            self.advance();
+                        // Peek the next character after 'REM' without consuming from main iterator
+                        let n3 = it.next();
+                        // Treat as REM-comment only if the next char is not an identifier-continue char
+                        let is_ident_follow = matches!(n3, Some(c) if is_ident_continue(c));
+                        if !is_ident_follow {
+                            // consume R E M
+                            self.advance(); self.advance(); self.advance();
+                            while let Some(ch) = self.cur {
+                                if ch == '\n' { break; }
+                                self.advance();
+                            }
+                            continue;
                         }
-                    } else {
-                        break;
                     }
+                    // Not a REM comment; fall through to normal handling
+                    break;
                 }
 
                 _ => break,
