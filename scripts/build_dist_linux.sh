@@ -7,6 +7,10 @@
 # - --features "obj-json obj-daw obj-term obj-sqlite" -> basilc-daw, bcc-daw
 # - --features "obj-ai obj-csv obj-curl obj-json obj-zip obj-sqlite obj-aws obj-sql obj-orm obj-net" -> basilc-web, bcc-web
 
+
+#cargo build -p basilc --release --features obj-all
+#install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
+
 set -euo pipefail
 
 # Resolve repository root and move there (script may be invoked from anywhere)

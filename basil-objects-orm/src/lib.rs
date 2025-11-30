@@ -152,10 +152,13 @@ impl BasicObject for OrmObj {
                 let (cols_sql, pk_sql) = self.info_schema_sql(&table);
                 // columns
                 let cols_json = self.db.borrow_mut().call("QUERY$", &[Value::Str(cols_sql.clone()), Value::Str(table.clone())])?;
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
                 let mut cols: Vec<String> = Vec::new();
-                if let Value::Str(s) = cols_json { // parse very simply as JSON array of objects with column_name, data_type
-                    #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
-                    {
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                let cols: Vec<String> = Vec::new();
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                {
+                    if let Value::Str(s) = cols_json { // parse very simply as JSON array of objects with column_name, data_type
                         let val: serde_json::Value = serde_json::from_str(&s).map_err(|e| BasilError(format!("ORM.ModelFromTable$: parse error: {}", e)))?;
                         if let Some(arr) = val.as_array() {
                             for row in arr {
@@ -168,16 +171,20 @@ impl BasicObject for OrmObj {
                         }
                     }
                 }
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { let _ = cols_json; }
                 // pk
                 let pk_json = self.db.borrow_mut().call("QUERY$", &[Value::Str(pk_sql.clone()), Value::Str(table.clone())])?;
                 let mut pk = String::new();
-                if let Value::Str(s) = pk_json {
-                    #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
-                    {
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                {
+                    if let Value::Str(s) = pk_json {
                         let val: serde_json::Value = serde_json::from_str(&s).map_err(|e| BasilError(format!("ORM.ModelFromTable$: parse error: {}", e)))?;
                         if let Some(arr) = val.as_array() { if let Some(row0) = arr.first() { if let Some(cn) = row0.get("attname").or_else(|| row0.get("column_name")) { pk = format!("{}%", cn.as_str().unwrap_or("") ); } } }
                     }
                 }
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { let _ = pk_json; }
                 if cols.is_empty() { return Err(BasilError(format!("ORM.ModelFromTable$: no columns found for {}", table))); }
                 if pk.is_empty() { pk = format!("{}%", "id"); }
                 let mm = ModelMeta { table: table.clone(), cols: cols.clone(), pk: pk.clone(), relations: HashMap::new() };
@@ -226,8 +233,14 @@ impl BasicObject for OrmObj {
             ,"ROWFROMJSON$" => {
                 if args.len() != 2 { return Err(BasilError("ORM.RowFromJson$ expects (table$, json$)".into())); }
                 let table = as_str(&args[0]);
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
                 let meta = self.ensure_model(&table)?;
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                let _ = self.ensure_model(&table)?;
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
                 let json = as_str(&args[1]);
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                let _ = as_str(&args[1]);
                 #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
                 {
                     let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| BasilError(format!("ORM.RowFromJson$: {}", e)))?;
@@ -339,10 +352,13 @@ impl BasicObject for QueryObj {
                 call_args.push(Value::Str(sql));
                 for p in params.drain(..) { call_args.push(Value::Str(p)); }
                 let res = self.db.borrow_mut().call("QUERY$", &call_args)?;
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
                 let mut rows: Vec<Rc<RefCell<dyn BasicObject>>> = Vec::new();
-                if let Value::Str(json) = res {
-                    #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
-                    {
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                let rows: Vec<Rc<RefCell<dyn BasicObject>>> = Vec::new();
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                {
+                    if let Value::Str(json) = res {
                         let arr: serde_json::Value = serde_json::from_str(&json).map_err(|e| BasilError(format!("ORM.Query.Get JSON parse: {}", e)))?;
                         if let Some(v) = arr.as_array() {
                             for obj in v {
@@ -356,6 +372,8 @@ impl BasicObject for QueryObj {
                         }
                     }
                 }
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { let _ = res; }
                 Ok(make_array_of_objects(rows, Some("ORM_ROW")))
             }
             ,"FIND%" => {
@@ -368,9 +386,9 @@ impl BasicObject for QueryObj {
                 };
                 let mut call_args: Vec<Value> = vec![Value::Str(sql)]; for p in params { call_args.push(Value::Str(p)); }
                 let res = self.db.borrow_mut().call("QUERY$", &call_args)?;
-                if let Value::Str(json) = res {
-                    #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
-                    {
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                {
+                    if let Value::Str(json) = res {
                         let arr: serde_json::Value = serde_json::from_str(&json).map_err(|e| BasilError(format!("ORM.Query.Find% JSON parse: {}", e)))?;
                         if let Some(v) = arr.as_array() { if let Some(first) = v.first() {
                             let mut data = HashMap::new(); if let Some(map) = first.as_object() { for (k,vv) in map.iter() { data.insert(k.clone(), vv.to_string().trim_matches('"').to_string()); } }
@@ -379,6 +397,8 @@ impl BasicObject for QueryObj {
                         }}
                     }
                 }
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { let _ = res; }
                 Err(BasilError(format!("ORM.ModelNotFound: {} (pk=<value>)", self.table)))
             }
             ,"FIRST" => {
@@ -543,10 +563,13 @@ impl BasicObject for RowObj {
                             let (sql, params) = if self.dialect=="postgres" { (format!("SELECT * FROM {} WHERE {} = $1", rel.other, fk), vec![pkv]) } else { (format!("SELECT * FROM {} WHERE {} = ?", rel.other, fk), vec![pkv]) };
                             let mut call_args: Vec<Value> = vec![Value::Str(sql)]; for p in params { call_args.push(Value::Str(p)); }
                             let res = self.db.borrow_mut().call("QUERY$", &call_args)?;
+                            #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
                             let mut rows: Vec<Rc<RefCell<dyn BasicObject>>> = Vec::new();
-                            if let Value::Str(json) = res {
-                                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
-                                {
+                            #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                            let rows: Vec<Rc<RefCell<dyn BasicObject>>> = Vec::new();
+                            #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                            {
+                                if let Value::Str(json) = res {
                                     let arr: serde_json::Value = serde_json::from_str(&json).map_err(|e| BasilError(format!("ORM.Row.Relation JSON parse: {}", e)))?;
                                     if let Some(v) = arr.as_array() {
                                         for obj in v {
@@ -562,6 +585,8 @@ impl BasicObject for RowObj {
                                     }
                                 }
                             }
+                            #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                            { let _ = res; }
                             return Ok(make_array_of_objects(rows, Some("ORM_ROW")));
                         }
                         "belongs_to" => {
@@ -571,9 +596,9 @@ impl BasicObject for RowObj {
                             let (sql, params) = if self.dialect=="postgres" { (format!("SELECT * FROM {} WHERE {} = $1 LIMIT 1", rel.other, pk), vec![fkv]) } else { (format!("SELECT * FROM {} WHERE {} = ? LIMIT 1", rel.other, pk), vec![fkv]) };
                             let mut call_args: Vec<Value> = vec![Value::Str(sql)]; for p in params { call_args.push(Value::Str(p)); }
                             let res = self.db.borrow_mut().call("QUERY$", &call_args)?;
-                            if let Value::Str(json) = res {
-                                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
-                                {
+                            #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                            {
+                                if let Value::Str(json) = res {
                                     let arr: serde_json::Value = serde_json::from_str(&json).map_err(|e| BasilError(format!("ORM.Row.Relation JSON parse: {}", e)))?;
                                     if let Some(v) = arr.as_array() { if let Some(first) = v.first() {
                                         let mut data = HashMap::new(); if let Some(map) = first.as_object() { for (k, vv) in map.iter() { data.insert(k.clone(), vv.to_string().trim_matches('"').to_string()); } }
@@ -584,6 +609,8 @@ impl BasicObject for RowObj {
                                     }}
                                 }
                             }
+                            #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                            { let _ = res; }
                             Ok(Value::Null)
                         }
                         _ => Err(BasilError(format!("ORM.RelationMissing: {}.{}", self.meta.table, name)))

@@ -1519,9 +1519,11 @@ impl VM {
                             if argc == 2 {
                                 use std::cell::RefCell;
                                 let mut items: Vec<Value> = Vec::new();
+                                let _start = 0usize;
                                 if d1.is_empty() {
                                     items.push(Value::Str(src));
                                 } else {
+                                    let _cur = src.as_str();
                                     if d1.len() == 1 {
                                         let ch = d1.chars().next().unwrap();
                                         let mut tmp = String::new();
