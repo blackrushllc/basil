@@ -21,7 +21,10 @@ REM We don't support this syntax yet :(
 REM orm@.Model("users", ["id%","name$","email$"], "id%")
 
 REM Instantiate the model
-orm@.Model("users", A$, "id%")
+REM orm@.Model("users", A$, "id%")
+
+orm@.ModelFromTable$("users")
+
 
 REM Set values and save the model
 LET u@ = orm@.New("users")
