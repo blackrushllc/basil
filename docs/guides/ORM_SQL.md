@@ -12,7 +12,7 @@ This is the user-facing reference for the Phase 1 ORM shipped as a feature-gated
 
 ## What it provides
 - Dynamic models (explicit or introspected from DB)
-- Query builder with Where$/OrderBy$/Limit%/Offset%/Select$
+- Query builder with Where\$/OrderBy\$/Limit%/Offset%/Select\$
 - Row objects with Save()/Delete() and ToJson$()
 - Relations: HasMany / BelongsTo
 - Transactions delegating to DB.Begin/Commit/Rollback
