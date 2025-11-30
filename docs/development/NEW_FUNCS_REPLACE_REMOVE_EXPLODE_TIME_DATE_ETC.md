@@ -252,7 +252,8 @@ Create tests under `testprogs` or Rust unit tests in VM module, covering:
   - Unicode string where split is inside multi-byte glyph; verify integrity.
 
 - DATE$/TIME$/NOW$:
-  - Smoke test that strings parse and have expected lengths/shapes.
+  - With `BASIL_TEST_TIME` set to a fixed RFC3339: assert exact strings.
+  - Without env: smoke test that strings parse and have expected lengths/shapes.
 
 - EXPLODE (2 args → List):
   - Preserve empty tokens: `",,"` → 3 empties.
@@ -307,11 +308,17 @@ REM EXPLODE to dict
 LET params@ = EXPLODE(URLDECODE$(REQUEST$()), "&", "=")
 PRINT params@["name"]
 
-REM (Note: array-returning alias forms like EXPLODE$[]/EXPLODE2D$[] are not added.)
+REM EXPLODE to arrays (optional aliases)
+DIM items$(0)
+LET items$() = EXPLODE$[]("This,That,Other", ",")
+
+DIM pairs$(0,0)
+LET pairs$() = EXPLODE2D$[](URLDECODE$(REQUEST$()), "&", "=")
 
 REM IMPLODE$
 PRINT IMPLODE$(items@, ",")                  REM list -> string
 PRINT IMPLODE$(params@, "&", "=")           REM dict -> query string
+PRINT IMPLODE$(pairs$(), "&", "=")           REM 2-D array -> pairs string
 ```
 
 - Add keyword entries to `KEYWORDS.md` under “Core Built-in Functions”.
@@ -335,12 +342,14 @@ If the sister BASIC has a different internal architecture, preserve user-facing 
 ### Implementation checklist
 1) Compiler
 - Add name→id entries listed above.
+- For the `[]` aliases, mirror the `ZIP_ARRAY$[]` precedent mapping both names to their ids.
 
 2) VM
 - Add the builtin id cases with argument validation and behavior as specified.
 - Add helper(s):
   - `fn split_preserve_empty(src: &str, delim: &str) -> Vec<String>` (if not using `str::split` variants directly).
   - `fn make_string_array(Vec<String>) -> Value` already exists for 1‑D string arrays.
+- Add optional test-clock handling for DATE$/TIME$/NOW$ via `BASIL_TEST_TIME` env var in the VM.
 
 3) Tests
 - Unit tests for each function, including Unicode and edge cases.
