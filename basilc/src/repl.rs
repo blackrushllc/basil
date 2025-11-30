@@ -112,8 +112,7 @@ impl Session {
         let run_res = vm.run();
         if let Err(e) = run_res {
             let line = vm.current_line();
-            let msg = if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
-                      else { format!("runtime error: {}", e) };
+            let msg = format!("runtime error at line {}: {}", line, e);
             return Err(msg);
         }
         // Merge globals back into REPL session so they are visible while suspended
@@ -173,8 +172,7 @@ impl Session {
         }
         if let Err(e) = vm.run() {
             let line = vm.current_line();
-            let msg = if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
-                      else { format!("runtime error: {}", e) };
+            let msg = format!("runtime error at line {}: {}", line, e);
             return Err(msg);
         }
         let (names, values) = vm.globals_snapshot();
