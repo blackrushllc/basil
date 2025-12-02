@@ -25,12 +25,33 @@ REM orm@.Model("users", A$, "id%")
 
 orm@.ModelFromTable$("users")
 
+    REM letter$ = orm@.Table("users").Select$("UPPER(LEFT(name,1)) AS initial").Unique().Pluck("initial")
+    REM letter$ = orm@.Table("users").Select$("UPPER(LEFT(name,1)) AS initial").Get()
+    REM ^ Error - Select$ requires a string array
+    DIM galA$(0)
+    galA$(0) = "UPPER(LEFT(name,1)) AS initial"
 
-REM Set values and save the model
-LET u@ = orm@.New("users")
-LET u@.Name$="Bob"
-LET u@.Email$="bob@example.com"
-u@.Save()
+    ltter$ = orm@.Table("users").Select$(galA$).Unique().Get()
+    PRINT ltter$ // Outputs <array ORM_ROW 17>
 
-REM  Query the database
-PRINTLN orm@.Table("users").Where$("name$","LIKE","B%").OrderBy$("id%","ASC").ToJson$()
+    ltter$ = orm@.Table("users").Select$(galA$).Unique().Get()
+    PRINT ltter$ // Outputs <array ORM_ROW 5>
+
+    ltter$ = orm@.Table("users").Select$(galA$).Pluck("initial")
+    PRINT ltter$
+
+    ltter$ = orm@.Table("users").Select$("UPPER(LEFT(name,1)) AS initial").Pluck("initial")
+    PRINT ltter$
+
+
+IF 0 THEN
+    REM Set values and save the model
+    LET u@ = orm@.New("users")
+    LET u@.Name$="Bob"
+    LET u@.Email$="bob@example.com"
+    u@.Save()
+
+END IF
+
+    REM  Query the database
+    REM PRINTLN orm@.Table("users").Where$("name$","LIKE","B%").OrderBy$("id%","ASC").ToJson$()
