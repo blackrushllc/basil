@@ -219,7 +219,7 @@ impl BasicObject for OrmObj {
                 if args.len() != 1 { return Err(BasilError("ORM.Table expects (name$)".into())); }
                 let table = as_str(&args[0]);
                 let meta = self.ensure_model(&table)?;
-                let q = QueryObj { db: self.db.clone(), dialect: self.dialect.clone(), table, select_cols: Vec::new(), wheres: Vec::new(), order: None, limit: None, offset: None, with: Vec::new(), meta };
+                let q = QueryObj { db: self.db.clone(), dialect: self.dialect.clone(), table, select_cols: Vec::new(), wheres: Vec::new(), order: None, limit: None, offset: None, with: Vec::new(), distinct: false, meta };
                 Ok(Value::Object(Rc::new(RefCell::new(q))))
             }
             ,"NEW" => {
@@ -274,6 +274,7 @@ struct QueryObj {
     limit: Option<i64>,
     offset: Option<i64>,
     with: Vec<String>,
+    distinct: bool,
     meta: ModelMeta,
 }
 
@@ -291,6 +292,8 @@ impl QueryObj {
                 MethodDesc { name: "Offset%".into(), arity: 1, arg_names: vec!["n%".into()], return_type: "ORM_QUERY".into() },
                 MethodDesc { name: "With$".into(), arity: 1, arg_names: vec!["rel$".into()], return_type: "ORM_QUERY".into() },
                 MethodDesc { name: "Select$".into(), arity: 1, arg_names: vec!["cols$[]".into()], return_type: "ORM_QUERY".into() },
+                MethodDesc { name: "Unique".into(), arity: 0, arg_names: vec![], return_type: "ORM_QUERY".into() },
+                MethodDesc { name: "Pluck".into(), arity: 2, arg_names: vec!["value_col$".into(), "key_col$".into()], return_type: "ARRAY|DICT".into() },
                 MethodDesc { name: "Get".into(), arity: 0, arg_names: vec![], return_type: "ARRAY<ORM_ROW>".into() },
                 MethodDesc { name: "Find%".into(), arity: 1, arg_names: vec!["pk%".into()], return_type: "ORM_ROW".into() },
                 MethodDesc { name: "First".into(), arity: 0, arg_names: vec![], return_type: "ORM_ROW".into() },
@@ -313,7 +316,11 @@ impl QueryObj {
 
     fn compile_select(&self) -> (String, Vec<String>) {
         let cols = if self.select_cols.is_empty() { "*".to_string() } else { self.select_cols.join(", ") };
-        let mut sql = format!("SELECT {} FROM {}", cols, self.quote_ident(&self.table));
+        let mut sql = if self.distinct {
+            format!("SELECT DISTINCT {} FROM {}", cols, self.quote_ident(&self.table))
+        } else {
+            format!("SELECT {} FROM {}", cols, self.quote_ident(&self.table))
+        };
         let mut params: Vec<String> = Vec::new();
         if !self.wheres.is_empty() {
             sql.push_str(" WHERE ");
@@ -347,6 +354,73 @@ impl BasicObject for QueryObj {
             ,"OFFSET%" => { if args.len()!=1 { return Err(BasilError("Offset%(n%)".into())); } let n = match &args[0]{ Value::Int(i)=>*i, Value::Num(n)=>n.trunc() as i64, other=> { return Err(BasilError(format!("Offset% expects int, got {}", other))); } }; self.offset = Some(n); Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
             ,"WITH$" => { if args.len()!=1 { return Err(BasilError("With$(relation$)".into())); } self.with.push(as_str(&args[0])); Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
             ,"SELECT$" => { if args.len()!=1 { return Err(BasilError("Select$(cols$[])".into())); } let cols = match &args[0] { Value::Array(rc)=> rc.data.borrow().iter().map(|v| as_str(v)).collect(), _=> return Err(BasilError("Select$ expects array of strings".into())) }; self.select_cols = cols; Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
+            ,"UNIQUE" => { if !args.is_empty() { return Err(BasilError("Unique() expects 0 arguments".into())); } self.distinct = true; Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
+            ,"PLUCK" => {
+                if !(args.len()==1 || args.len()==2) { return Err(BasilError("Pluck(value_col$ [, key_col$])".into())); }
+                let value_name = as_str(&args[0]);
+                let key_name_opt = if args.len()==2 { Some(as_str(&args[1])) } else { None };
+                // Execute current SELECT and extract requested columns
+                let (sql, mut params) = self.compile_select();
+                let mut call_args: Vec<Value> = Vec::with_capacity(1 + params.len());
+                call_args.push(Value::Str(sql));
+                for p in params.drain(..) { call_args.push(Value::Str(p)); }
+                let res = self.db.borrow_mut().call("QUERY$", &call_args)?;
+                #[cfg(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres"))]
+                {
+                    let json = match res { Value::Str(s)=>s, other=> format!("{}", other) };
+                    let arr: serde_json::Value = serde_json::from_str(&json).map_err(|e| BasilError(format!("ORM.Query.Pluck JSON parse: {}", e)))?;
+                    let rows = arr.as_array().cloned().unwrap_or_default();
+                    // Type inference for the value column
+                    let infer_type = |col: &str| -> ElemType {
+                        if col.ends_with('%') { ElemType::Int }
+                        else if col.ends_with('$') { ElemType::Str }
+                        else {
+                            let base = col.trim_end_matches(['%','$']);
+                            if self.meta.cols.iter().any(|c| c.eq_ignore_ascii_case(&format!("{base}%"))) { ElemType::Int }
+                            else if self.meta.cols.iter().any(|c| c.eq_ignore_ascii_case(&format!("{base}$"))) { ElemType::Str }
+                            else { ElemType::Str }
+                        }
+                    };
+                    if let Some(key_name) = key_name_opt {
+                        // Return dict: key(string) -> value (typed)
+                        let vty = infer_type(&value_name);
+                        let mut map: HashMap<String, Value> = HashMap::new();
+                        for (i, obj) in rows.iter().enumerate() {
+                            let get_str = |name: &str| -> Option<String> {
+                                let k = name.trim_end_matches(['%','$']);
+                                obj.get(k).or_else(|| obj.get(name)).and_then(|v| Some(v.to_string().trim_matches('"').to_string()))
+                            };
+                            let key = get_str(&key_name).unwrap_or_default();
+                            let sval = get_str(&value_name).unwrap_or_default();
+                            let v = match vty {
+                                ElemType::Int => sval.parse::<i64>().map(Value::Int).map_err(|_| BasilError(format!("Pluck: value at row {} is not an integer: {}", i+1, sval)))?,
+                                ElemType::Num => sval.parse::<f64>().map(Value::Num).map_err(|_| BasilError(format!("Pluck: value at row {} is not a number: {}", i+1, sval)))?,
+                                _ => Value::Str(sval),
+                            };
+                            map.insert(key, v);
+                        }
+                        return Ok(Value::Dict(Rc::new(RefCell::new(map))));
+                    } else {
+                        // Return array of values
+                        let vty = infer_type(&value_name);
+                        let mut data: Vec<Value> = Vec::with_capacity(rows.len());
+                        for (i, obj) in rows.iter().enumerate() {
+                            let k = value_name.trim_end_matches(['%','$']);
+                            let sval = obj.get(k).or_else(|| obj.get(&value_name)).map(|v| v.to_string().trim_matches('"').to_string()).unwrap_or_default();
+                            let v = match vty {
+                                ElemType::Int => sval.parse::<i64>().map(Value::Int).map_err(|_| BasilError(format!("Pluck: value at row {} is not an integer: {}", i+1, sval)))?,
+                                ElemType::Num => sval.parse::<f64>().map(Value::Num).map_err(|_| BasilError(format!("Pluck: value at row {} is not a number: {}", i+1, sval)))?,
+                                _ => Value::Str(sval),
+                            };
+                            data.push(v);
+                        }
+                        let elem = match vty { ElemType::Int => ElemType::Int, ElemType::Num => ElemType::Num, _ => ElemType::Str };
+                        return Ok(Value::Array(Rc::new(ArrayObj { elem, dims: vec![data.len()], data: RefCell::new(data) })));
+                    }
+                }
+                #[cfg(not(any(feature = "obj-orm-mysql", feature = "obj-orm-postgres")))]
+                { let _ = res; return Err(BasilError("ORM.Query.Pluck requires SQL features".into())); }
+            }
             ,"GET" => {
                 let (sql, mut params) = self.compile_select();
                 // Execute via DB.Query$ and build Row[] from JSON
