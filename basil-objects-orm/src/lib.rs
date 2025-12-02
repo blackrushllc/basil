@@ -291,7 +291,8 @@ impl QueryObj {
                 MethodDesc { name: "Limit%".into(), arity: 1, arg_names: vec!["n%".into()], return_type: "ORM_QUERY".into() },
                 MethodDesc { name: "Offset%".into(), arity: 1, arg_names: vec!["n%".into()], return_type: "ORM_QUERY".into() },
                 MethodDesc { name: "With$".into(), arity: 1, arg_names: vec!["rel$".into()], return_type: "ORM_QUERY".into() },
-                MethodDesc { name: "Select$".into(), arity: 1, arg_names: vec!["cols$[]".into()], return_type: "ORM_QUERY".into() },
+                // Select$ now accepts: array of strings, single string, or List
+                MethodDesc { name: "Select$".into(), arity: 1, arg_names: vec!["cols".into()], return_type: "ORM_QUERY".into() },
                 MethodDesc { name: "Unique".into(), arity: 0, arg_names: vec![], return_type: "ORM_QUERY".into() },
                 MethodDesc { name: "Pluck".into(), arity: 2, arg_names: vec!["value_col$".into(), "key_col$".into()], return_type: "ARRAY|DICT".into() },
                 MethodDesc { name: "Get".into(), arity: 0, arg_names: vec![], return_type: "ARRAY<ORM_ROW>".into() },
@@ -353,7 +354,20 @@ impl BasicObject for QueryObj {
             ,"LIMIT%" => { if args.len()!=1 { return Err(BasilError("Limit%(n%)".into())); } let n = match &args[0]{ Value::Int(i)=>*i, Value::Num(n)=>n.trunc() as i64, other=> { return Err(BasilError(format!("Limit% expects int, got {}", other))); } }; self.limit = Some(n); Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
             ,"OFFSET%" => { if args.len()!=1 { return Err(BasilError("Offset%(n%)".into())); } let n = match &args[0]{ Value::Int(i)=>*i, Value::Num(n)=>n.trunc() as i64, other=> { return Err(BasilError(format!("Offset% expects int, got {}", other))); } }; self.offset = Some(n); Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
             ,"WITH$" => { if args.len()!=1 { return Err(BasilError("With$(relation$)".into())); } self.with.push(as_str(&args[0])); Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
-            ,"SELECT$" => { if args.len()!=1 { return Err(BasilError("Select$(cols$[])".into())); } let cols = match &args[0] { Value::Array(rc)=> rc.data.borrow().iter().map(|v| as_str(v)).collect(), _=> return Err(BasilError("Select$ expects array of strings".into())) }; self.select_cols = cols; Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
+            ,"SELECT$" => {
+                if args.len()!=1 { return Err(BasilError("Select$(cols): expects 1 argument".into())); }
+                // Accept Array (classic), single String (one column/expression), or List (dynamic list)
+                let cols: Vec<String> = match &args[0] {
+                    Value::Array(rc) => rc.data.borrow().iter().map(|v| as_str(v)).collect(),
+                    Value::List(items) => items.borrow().iter().map(|v| as_str(v)).collect(),
+                    Value::Str(s) => vec![s.clone()],
+                    other => {
+                        return Err(BasilError(format!("Select$ expects array, list, or string; got {}", other)));
+                    }
+                };
+                self.select_cols = cols;
+                Ok(Value::Object(Rc::new(RefCell::new(self.clone()))))
+            }
             ,"UNIQUE" => { if !args.is_empty() { return Err(BasilError("Unique() expects 0 arguments".into())); } self.distinct = true; Ok(Value::Object(Rc::new(RefCell::new(self.clone())))) }
             ,"PLUCK" => {
                 if !(args.len()==1 || args.len()==2) { return Err(BasilError("Pluck(value_col$ [, key_col$])".into())); }
