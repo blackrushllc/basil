@@ -36,7 +36,24 @@ pub struct PreprocessOptions<'a> {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SourceMap;
+pub struct SourceMap {
+    // Interned file names; index fits in u16 for compact line entries
+    pub files: Vec<String>,
+    // 1-based preprocessed line -> (file_idx, line_in_file)
+    pub lines: Vec<(u16, u32)>,
+}
+
+impl SourceMap {
+    pub fn new() -> Self { Self { files: Vec::new(), lines: vec![(0,0)] } } // slot 0 unused so indices are 1-based
+    fn intern_file(&mut self, name: &str) -> u16 {
+        if let Some(idx) = self.files.iter().position(|s| s == name) { return idx as u16; }
+        self.files.push(name.to_string());
+        (self.files.len() - 1) as u16
+    }
+    fn push_line(&mut self, file_idx: u16, line_in_file: u32) {
+        self.lines.push((file_idx, line_in_file));
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PreprocessResult {
@@ -78,6 +95,7 @@ pub fn preprocess<'a>(text: &str, opts: &PreprocessOptions<'a>) -> Result<Prepro
     let mut cond_stack: Vec<CondFrame> = Vec::new();
 
     let current_file = display_root_file(&opts.root_path);
+    let mut smap = SourceMap::new();
     expand(
         text,
         &root_dir,
@@ -92,9 +110,10 @@ pub fn preprocess<'a>(text: &str, opts: &PreprocessOptions<'a>) -> Result<Prepro
         &mut Vec::new(),
         &mut macros,
         &mut cond_stack,
+        &mut smap,
     )?;
 
-    Ok(PreprocessResult { text: out, source_map: SourceMap::default(), dependencies: deps })
+    Ok(PreprocessResult { text: out, source_map: smap, dependencies: deps })
 }
 
 fn expand<'a>(
@@ -111,6 +130,7 @@ fn expand<'a>(
     stack: &mut Vec<String>,
     macros: &mut HashMap<String, MacroValue>,
     cond_stack: &mut Vec<CondFrame>,
+    smap: &mut SourceMap,
 ) -> Result<(), PreprocessError> {
     if depth > max_depth { return Err(PreprocessError::Message(format!("maximum include depth ({}) exceeded", max_depth))); }
 
@@ -200,13 +220,13 @@ fn expand<'a>(
                                 deps.push(IncludeKey::Embedded(logical.clone()));
                                 stack.push(key.clone());
                                 let s = std::str::from_utf8(bytes).unwrap_or("");
-                                expand(s, cur_dir, &format!("<{}>", logical), opts, depth + 1, max_depth, out, size_left, visited, deps, stack, macros, cond_stack)?;
+                                expand(s, cur_dir, &format!("<{}>", logical), opts, depth + 1, max_depth, out, size_left, visited, deps, stack, macros, cond_stack, smap)?;
                                 stack.pop();
                             }
                             continue;
                         }
                         if let Some(res) = resolve_any(&logical, cur_dir, opts, /*allow_embedded_fallback=*/false) {
-                            include_resolved(res, opts, depth, max_depth, out, size_left, visited, deps, stack, macros, cond_stack)?;
+                            include_resolved(res, opts, depth, max_depth, out, size_left, visited, deps, stack, macros, cond_stack, smap)?;
                         } else {
                             return Err(PreprocessError::NotFound(format!("{} (angle include)", logical)));
                         }
@@ -215,7 +235,7 @@ fn expand<'a>(
                     IncludeForm::Quoted | IncludeForm::Bare => {
                         // Quoted/bare: search FS first, then env/CLI, then embedded as fallback
                         if let Some(res) = resolve_any(&logical, cur_dir, opts, /*allow_embedded_fallback=*/true) {
-                            include_resolved(res, opts, depth, max_depth, out, size_left, visited, deps, stack, macros, cond_stack)?;
+                            include_resolved(res, opts, depth, max_depth, out, size_left, visited, deps, stack, macros, cond_stack, smap)?;
                         } else {
                             return Err(PreprocessError::NotFound(logical));
                         }
@@ -234,6 +254,9 @@ fn expand<'a>(
             out.push_str(raw_line);
             out.push('\n');
             *size_left -= need;
+            // record mapping for this newly appended line
+            let file_idx = smap.intern_file(current_file);
+            smap.push_line(file_idx, lineno as u32);
         }
     }
 
@@ -338,6 +361,7 @@ fn include_resolved<'a>(
     stack: &mut Vec<String>,
     macros: &mut HashMap<String, MacroValue>,
     cond_stack: &mut Vec<CondFrame>,
+    smap: &mut SourceMap,
 ) -> Result<(), PreprocessError> {
     match res {
         Resolved::Fs(abs, content) => {
@@ -351,7 +375,7 @@ fn include_resolved<'a>(
                 deps.push(IncludeKey::Fs(abs.clone()));
                 stack.push(key.clone());
                 let child_file = abs.to_string_lossy().to_string();
-                expand(&content, abs.parent().unwrap_or(Path::new(".")).as_ref(), &child_file, opts, depth + 1, max_depth, out, size_left, visited, deps, stack, macros, cond_stack)?;
+                expand(&content, abs.parent().unwrap_or(Path::new(".")).as_ref(), &child_file, opts, depth + 1, max_depth, out, size_left, visited, deps, stack, macros, cond_stack, smap)?;
                 stack.pop();
             }
         }
@@ -365,7 +389,7 @@ fn include_resolved<'a>(
             if visited.insert(key.clone()) {
                 deps.push(IncludeKey::Embedded(logical.clone()));
                 stack.push(key.clone());
-                expand(&content, Path::new("."), &format!("<{}>", logical), opts, depth + 1, max_depth, out, size_left, visited, deps, stack, macros, cond_stack)?;
+                expand(&content, Path::new("."), &format!("<{}>", logical), opts, depth + 1, max_depth, out, size_left, visited, deps, stack, macros, cond_stack, smap)?;
                 stack.pop();
             }
         }

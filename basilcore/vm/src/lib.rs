@@ -395,7 +395,7 @@ impl basil_bytecode::BasicObject for ClassInstance {
         // Build a tiny program with empty top chunk (HALT) and same globals names
         let mut top = Chunk::default();
         top.push_op(Op::Halt);
-        let prog = BCProgram { chunk: top, globals: self.globals_names.clone() };
+        let prog = BCProgram { chunk: top, globals: self.globals_names.clone(), source_map: None };
         let mut vm = VM::new(prog);
         // Move persistent file handles into inner VM and disable auto-close-on-ret for methods
         vm.file_table = std::mem::take(&mut self.file_table);

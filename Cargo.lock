@@ -1173,6 +1173,7 @@ dependencies = [
  "basil-compiler",
  "basil-host",
  "basil-parser",
+ "basil-preprocessor",
  "basil-vm",
  "crossbeam-channel",
  "gag",

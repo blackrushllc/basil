@@ -111,7 +111,7 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
         }
     }
     c.chunk.push_op(Op::Halt);
-    Ok(BCProgram { chunk: c.chunk, globals: c.globals })
+    Ok(BCProgram { chunk: c.chunk, globals: c.globals, source_map: None })
 }
 
 struct RoutineInfo { arity: usize, is_sub: bool }

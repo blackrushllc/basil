@@ -52,6 +52,7 @@ use basil_vm::{VM, MockInputProvider};
 use basil_vm::debug::{Debugger, DebugEvent};
 use basil_lexer::Lexer; // add this near the other use lines
 use basil_bytecode::{serialize_program, deserialize_program};
+use basil_bytecode::SourceMapMini;
 use std::collections::HashMap;
 use serde_json;
 use once_cell::sync::OnceCell;
@@ -206,7 +207,10 @@ fn cmd_debug(path: Option<String>) {
         Err(e) => { eprintln!("preprocess error: {}", e); std::process::exit(1); }
     };
     let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-    let program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+    let mut program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+    // Phase B: embed source map
+    let debug_smap = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+    program.source_map = Some(debug_smap.clone());
     let dbg = Debugger::new();
     let rx = dbg.subscribe();
     // Spawn a thread to print JSON events
@@ -226,9 +230,17 @@ fn cmd_debug(path: Option<String>) {
     vm.set_script_path(abs_path.to_string_lossy().to_string());
     vm.set_debugger(dbg);
     if let Err(e) = vm.run() {
-        let line = vm.current_line();
-        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
-        else { eprintln!("runtime error: {}", e); }
+        let line = vm.current_line() as usize;
+        if line > 0 {
+            let sm = &debug_smap;
+            if line < sm.lines.len() {
+                let (fi, ln) = sm.lines[line];
+                let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                eprintln!("runtime error at line {} in {}: {}", ln, fname, e);
+            } else {
+                eprintln!("runtime error at line {}: {}", line, e);
+            }
+        } else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
     }
 }
@@ -508,17 +520,25 @@ fn cmd_run(path: Option<String>) {
             let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
             let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
             let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 2 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
                 let prog_bytes = &bytes[32..];
                 match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
             }
         }
     }
 
-    let program = if let Some(p) = program_opt { p } else {
+    // Keep a local copy of the source map for error mapping even if loading from cache
+    let (program, local_smap_opt) = if let Some(p) = program_opt {
+        // Program from cache; reuse embedded source map
+        let sm = p.source_map.clone();
+        (p, sm)
+    } else {
         // Parse → compile the precompiled Basil source
         let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        let prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+        // Phase B: attach source map
+        let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        prog.source_map = Some(map.clone());
         // Write cache atomically
         let body = serialize_program(&prog);
         let mut hdr = Vec::with_capacity(32 + body.len());
@@ -535,7 +555,7 @@ fn cmd_run(path: Option<String>) {
             let _ = f.sync_all();
             let _ = fs::rename(&tmp, &cache_path);
         }
-        prog
+        (prog, Some(map))
     };
 
     // Run VM
@@ -543,9 +563,16 @@ fn cmd_run(path: Option<String>) {
     // Provide script path so CLASS() can resolve relative class files
     vm.set_script_path(abs_path.to_string_lossy().to_string());
     if let Err(e) = vm.run() {
-        let line = vm.current_line();
-        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
-        else { eprintln!("runtime error: {}", e); }
+        let line = vm.current_line() as usize;
+        if line > 0 {
+            if let Some(sm) = &local_smap_opt {
+                if line < sm.lines.len() {
+                    let (fi, ln) = sm.lines[line];
+                    let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                    eprintln!("runtime error at line {} in {}: {}", ln, fname, e);
+                } else { eprintln!("runtime error at line {}: {}", line, e); }
+            } else { eprintln!("runtime error at line {}: {}", line, e); }
+        } else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
     } else if vm.is_suspended() {
         // In RUN mode, when STOP is encountered, remain suspended with no prompt.
@@ -735,7 +762,13 @@ fn cgi_main() {
             println!("Status: 500 Internal Server Error");
             println!("Content-Type: text/plain; charset=utf-8");
             println!();
-            println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
+            let stderr_text = String::from_utf8_lossy(&output.stderr);
+            let first_line = stderr_text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+            if first_line.is_empty() {
+                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
+            } else {
+                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER. - {}", first_line.trim());
+            }
         }
         return;
     }
@@ -973,7 +1006,7 @@ fn cmd_test(mut args: Vec<String>) {
             let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
             let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
             let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 2 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
                 let prog_bytes = &bytes[32..];
                 if let Ok(p) = deserialize_program(prog_bytes) { program_opt = Some(p); }
             }
