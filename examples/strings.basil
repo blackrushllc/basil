@@ -12,3 +12,37 @@ PRINTLN RIGHT$(C$, 5); // expected There
 PRINTLN INSTR(C$, "e"); // expected 4
 PRINTLN INSTR(C$, "e", 5); // expected 6
 PRINTLN INSTR(C$, "x"); // expected 0
+
+REM REMOVE$
+LET a$ = "Hello World";
+LET a$ = REMOVE$(a$, "World");
+PRINTLN a$
+
+REM REPLACE$
+LET a$ = "Hello World";
+LET a$ = REPLACE$("Hello", "Hi", a$);
+PRINTLN a$           REM -> Hi World
+
+REM INSERT$
+PRINTLN INSERT$("Hello World", "Cruel ", 6)  REM -> Hello Cruel World
+
+REM DATE$/TIME$/NOW$
+PRINTLN DATE$(), TIME$(), NOW$()
+
+REM EXPLODE to list
+LET items@ = EXPLODE("This,That,Other", ",")
+FOR i% = 1 TO LEN(items@)
+    PRINTLN items@[i%]
+NEXT
+
+REM EXPLODE to dict
+REQUEST$ = "name=John+Doe&age=30&city=New+York"
+
+LET params@ = EXPLODE(URLDECODE$(REQUEST$), "&", "=");
+PRINTLN params@["name"]
+
+REM (Note: array-returning alias forms like EXPLODE$[]/EXPLODE2D$[] are not added.)
+
+REM IMPLODE$
+PRINTLN IMPLODE$(items@, ",")                  REM list -> string
+PRINTLN IMPLODE$(params@, "&", "=")           REM dict -> query string

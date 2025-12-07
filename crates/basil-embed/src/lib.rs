@@ -11,7 +11,8 @@ use parking_lot::Mutex;
 
 use basil_parser::parse;
 use basil_compiler::compile;
-use basil_bytecode::{Program as BCProgram, Value};
+use basil_bytecode::{Program as BCProgram, Value, SourceMapMini};
+use basil_preprocessor as pre;
 use basil_vm::VM;
 
 use basil_host::{HostRequest, PendingConfig};
@@ -129,6 +130,18 @@ fn seed_globals(vm: &mut VM, sess: &Session) {
     }
 }
 
+fn build_pre_opts(root_path: PathBuf, env_paths: Vec<PathBuf>) -> pre::PreprocessOptions<'static> {
+    pre::PreprocessOptions {
+        root_path,
+        include_paths: Vec::new(),
+        env_paths,
+        embedded: None,
+        defines: HashMap::new(),
+        engine_name: Some("basil-embed".to_string()),
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+    }
+}
+
 fn run_file_simple(opts: &RunnerOptions, sess: &mut Session, path: &str, tx_evt: &Sender<RunnerEvent>) {
     let pbuf = PathBuf::from(path);
     let script_path = match std::fs::canonicalize(&pbuf) { Ok(p)=>p, Err(_)=>pbuf.clone() };
@@ -136,8 +149,18 @@ fn run_file_simple(opts: &RunnerOptions, sess: &mut Session, path: &str, tx_evt:
         Ok(s) => s,
         Err(e) => { let _ = tx_evt.send(RunnerEvent::Error(format!("read {}: {}", script_path.display(), e))); return; }
     };
-    let ast = match parse(&src) { Ok(a)=>a, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("parse error: {}", e))); return; } };
-    let prog: BCProgram = match compile(&ast) { Ok(p)=>p, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("compile error: {}", e))); return; } };
+    // Phase A: preprocess to build source map
+    let env_paths: Vec<PathBuf> = match std::env::var("BASIL_PATH") {
+        Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+        Err(_) => Vec::new(),
+    };
+    let pp_opts = build_pre_opts(script_path.clone(), env_paths);
+    let preprocessed = match pre::preprocess(&src, &pp_opts) { Ok(p)=>p, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("preprocess error: {}", e))); return; } };
+    let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("parse error: {}", e))); return; } };
+    let mut prog: BCProgram = match compile(&ast) { Ok(p)=>p, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("compile error: {}", e))); return; } };
+    // Phase B: embed map
+    let local_smap = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+    prog.source_map = Some(local_smap.clone());
     let mut vm = VM::new(prog);
     // Register host surfaces so APP.*, WEB.*, BASILICA.MENU.* are available when enabled via thread context
     basil_host::register_hosts(vm.registry_mut());
@@ -153,7 +176,16 @@ fn run_file_simple(opts: &RunnerOptions, sess: &mut Session, path: &str, tx_evt:
     let mut handle = _stdout;
     let _ = handle.read_to_string(&mut out);
     if !out.is_empty() { let _ = tx_evt.send(RunnerEvent::Output(out)); }
-    if let Err(e) = result { let line = vm.current_line(); let _ = tx_evt.send(RunnerEvent::Error(if line>0 { format!("runtime error at line {}: {}", line, e) } else { format!("runtime error: {}", e) })); }
+    if let Err(e) = result {
+        let line = vm.current_line() as usize;
+        if line > 0 && line < local_smap.lines.len() {
+            let (fi, ln) = local_smap.lines[line];
+            let fname = local_smap.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+            let _ = tx_evt.send(RunnerEvent::Error(format!("runtime error at line {} in {}: {}", ln, fname, e)));
+        } else {
+            let _ = tx_evt.send(RunnerEvent::Error(if line>0 { format!("runtime error at line {}: {}", line, e) } else { format!("runtime error: {}", e) }));
+        }
+    }
     merge_globals(sess, &vm, Some(path));
     if vm.is_suspended() { sess.suspended_vm = Some(vm); let _ = tx_evt.send(RunnerEvent::Suspended); }
 }

@@ -75,9 +75,9 @@ function Build-Variant {
 
 # Variants per requirements
 Build-Variant -Label 'naked' -Features ''
-Build-Variant -Label 'all'   -Features 'obj-all'
 Build-Variant -Label 'bmx'   -Features 'obj-bmx'
 Build-Variant -Label 'daw'   -Features 'obj-json obj-daw obj-term obj-sqlite'
-Build-Variant -Label 'web'   -Features 'obj-ai obj-csv obj-curl obj-json obj-zip obj-sqlite obj-aws obj-sql obj-orm obj-net'
+Build-Variant -Label 'all'   -Features 'obj-all'
+#Build-Variant -Label 'web'   -Features 'obj-ai obj-csv obj-curl obj-json obj-zip obj-sqlite obj-aws obj-sql obj-orm obj-net'
 
 Write-Host "`nAll Windows builds completed. Output directory: $DistDir" -ForegroundColor Yellow

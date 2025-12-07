@@ -1,5 +1,6 @@
 use std::collections::{HashMap, BTreeMap};
 use std::fs;
+use std::env;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
@@ -11,6 +12,8 @@ use basil_vm::VM;
 use crate::template::{precompile_template, Directives};
 use basil_bytecode::{serialize_program, deserialize_program};
 use std::time::UNIX_EPOCH;
+use basil_preprocessor as pre;
+use basil_bytecode::SourceMapMini;
 
 #[derive(Default)]
 pub struct SessionSettings {
@@ -71,9 +74,23 @@ impl Session {
                 }
             }
         }
-        let program = if let Some(p) = program_opt { p } else {
-            let ast = parse(&pre.basil_source).map_err(|e| format!("parse error: {}", e))?;
-            let prog = compile(&ast).map_err(|e| format!("compile error: {}", e))?;
+        let (program, local_smap_opt) = if let Some(p) = program_opt {
+            // Reuse embedded source map when loading from cache
+            let sm = p.source_map.clone();
+            (p, sm)
+        } else {
+            // Preprocess prior to parsing
+            let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+                Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+                Err(_) => Vec::new(),
+            };
+            let pp_opts = crate::build_pre_opts(PathBuf::from(path), env_paths);
+            let preprocessed = pre::preprocess(&pre.basil_source, &pp_opts).map_err(|e| format!("preprocess error: {}", e))?;
+            let ast = parse(&preprocessed.text).map_err(|e| format!("parse error: {}", e))?;
+            let mut prog = compile(&ast).map_err(|e| format!("compile error: {}", e))?;
+            // Embed source map for Phase B and keep local map for formatting errors
+            let sm = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+            prog.source_map = Some(sm);
             let body = serialize_program(&prog);
             let mut hdr = Vec::with_capacity(32 + body.len());
             hdr.extend_from_slice(b"BSLX");
@@ -89,7 +106,7 @@ impl Session {
                 let _ = f.sync_all();
                 let _ = fs::rename(&tmp, &cache_path);
             }
-            prog
+            (prog, Some(SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() }))
         };
         let mut vm = VM::new(program);
         vm.set_script_path(path.to_string());
@@ -102,9 +119,16 @@ impl Session {
         }
         let run_res = vm.run();
         if let Err(e) = run_res {
-            let line = vm.current_line();
-            let msg = if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
-                      else { format!("runtime error: {}", e) };
+            let line = vm.current_line() as usize;
+            let msg = if line > 0 {
+                if let Some(sm) = &local_smap_opt {
+                    if line < sm.lines.len() {
+                        let (fi, ln) = sm.lines[line];
+                        let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                        format!("runtime error at line {} in {}: {}", ln, fname, e)
+                    } else { format!("runtime error at line {}: {}", line, e) }
+                } else { format!("runtime error at line {}: {}", line, e) }
+            } else { format!("runtime error: {}", e) };
             return Err(msg);
         }
         // Merge globals back into REPL session so they are visible while suspended

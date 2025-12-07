@@ -7,6 +7,10 @@ pub struct Directives {
     pub short_tags_on: bool,
     pub reserved_basil_dev: bool,
     pub reserved_basil_debug: bool,
+    /// Preprocessor directives found in the top-of-file prelude (outside of any template tags)
+    /// that should be forwarded verbatim into the synthesized Basil source before preprocessing.
+    /// Example: `#include "..."`, `#define ...`, `#if ...`.
+    pub preproc_prelude: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +58,10 @@ pub fn parse_directives_and_bom(src: &str) -> (Directives, usize) {
         else if line.starts_with("#BASIL_DEV") { dir.reserved_basil_dev = true; }
         else if line.starts_with("#BASIL_DEBUG") { dir.reserved_basil_debug = true; }
         else {
-            // Unknown # line at prelude: ignore (kept as prelude semantics)
+            // Unknown # line at prelude: treat it as a preprocessor directive to be forwarded
+            // into the synthesized Basil source before running the preprocessor. This allows
+            // `#include`, `#define`, and conditionals outside of template tags.
+            dir.preproc_prelude.push(line.to_string());
         }
         i = line_end;
     }
@@ -65,6 +72,20 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
     let (directives, mut i) = parse_directives_and_bom(src);
     let bytes = src.as_bytes();
     let mut out = String::new();
+
+    // Forward any preprocessor directives captured from the top-of-file prelude
+    // so the preprocessor can act on them (e.g., #include outside of tags).
+    if !directives.preproc_prelude.is_empty() {
+        for (idx, line) in directives.preproc_prelude.iter().enumerate() {
+            out.push_str(line);
+            // Ensure each directive ends with a single newline
+            if !line.ends_with('\n') { out.push('\n'); }
+            // Defensive: avoid double-blank lines between prelude and first emitted code
+            if idx + 1 == directives.preproc_prelude.len() {
+                // leave exactly one newline separator; subsequent code emission will add its own newlines
+            }
+        }
+    }
 
 
     // Helper to append PRINT of raw text

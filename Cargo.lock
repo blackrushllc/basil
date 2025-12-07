@@ -1173,6 +1173,7 @@ dependencies = [
  "basil-compiler",
  "basil-host",
  "basil-parser",
+ "basil-preprocessor",
  "basil-vm",
  "crossbeam-channel",
  "gag",
@@ -1329,6 +1330,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "basil-preprocessor"
+version = "0.0.1"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "basil-serve"
 version = "0.0.1"
 dependencies = [
@@ -1351,6 +1359,7 @@ dependencies = [
  "basil-compiler",
  "basil-objects",
  "basil-parser",
+ "chrono",
  "crossterm",
  "csv",
  "reqwest",
@@ -1402,6 +1411,7 @@ dependencies = [
  "basil-compiler",
  "basil-lexer",
  "basil-parser",
+ "basil-preprocessor",
  "basil-vm",
  "once_cell",
  "rustyline",

@@ -52,21 +52,118 @@ use basil_vm::{VM, MockInputProvider};
 use basil_vm::debug::{Debugger, DebugEvent};
 use basil_lexer::Lexer; // add this near the other use lines
 use basil_bytecode::{serialize_program, deserialize_program};
+use basil_bytecode::SourceMapMini;
 use std::collections::HashMap;
 use serde_json;
+use once_cell::sync::OnceCell;
 
 mod template;
 mod repl;
 mod runtime;
 mod embedded;
 use template::{precompile_template, parse_directives_and_bom, Directives};
+use basil_preprocessor as pre;
+
+#[derive(Clone, Default)]
+struct PreprocCliCfg {
+    include_paths: Vec<PathBuf>,
+    embedded_allowed: bool,
+    defines: HashMap<String, pre::MacroValue>,
+}
+
+static PREPROC_CFG: OnceCell<PreprocCliCfg> = OnceCell::new();
+
+pub(crate) fn current_preproc_cli_cfg() -> PreprocCliCfg {
+    PREPROC_CFG.get().cloned().unwrap_or_else(|| PreprocCliCfg { include_paths: Vec::new(), embedded_allowed: true, defines: HashMap::new() })
+}
+
+fn parse_preproc_flags(args: &mut Vec<String>) {
+    let mut cfg = PreprocCliCfg { include_paths: Vec::new(), embedded_allowed: true, defines: HashMap::new() };
+    let mut out: Vec<String> = Vec::with_capacity(args.len());
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "-I" || a == "--include-path" {
+            if i + 1 >= args.len() { eprintln!("{} requires a directory", a); std::process::exit(2); }
+            cfg.include_paths.push(PathBuf::from(args[i+1].clone()));
+            i += 2; continue;
+        } else if a.starts_with("-I") && a.len() > 2 {
+            cfg.include_paths.push(PathBuf::from(a[2..].to_string()));
+            i += 1; continue;
+        } else if let Some(rest) = a.strip_prefix("--include-path=") {
+            cfg.include_paths.push(PathBuf::from(rest.to_string()));
+            i += 1; continue;
+        } else if a == "--no-embedded-includes" {
+            cfg.embedded_allowed = false;
+            i += 1; continue;
+        } else if a == "--D" {
+            if i + 1 >= args.len() { eprintln!("--D requires NAME or NAME=VALUE"); std::process::exit(2); }
+            add_define(&mut cfg, &args[i+1]);
+            i += 2; continue;
+        } else if let Some(rest) = a.strip_prefix("--D=") {
+            add_define(&mut cfg, rest);
+            i += 1; continue;
+        } else {
+            out.push(a.clone());
+            i += 1; continue;
+        }
+    }
+    *args = out; // keep only unconsumed args
+    let _ = PREPROC_CFG.set(cfg);
+}
+
+fn add_define(cfg: &mut PreprocCliCfg, spec: &str) {
+    if spec.is_empty() { return; }
+    if let Some((name, val)) = spec.split_once('=') {
+        if let Ok(iv) = val.parse::<i64>() {
+            cfg.defines.insert(name.to_string(), pre::MacroValue::Int(iv));
+        } else if (val.starts_with('"') && val.ends_with('"') && val.len() >= 2) || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2) {
+            let trimmed = &val[1..val.len()-1];
+            cfg.defines.insert(name.to_string(), pre::MacroValue::Str(trimmed.to_string()));
+        } else {
+            cfg.defines.insert(name.to_string(), pre::MacroValue::Str(val.to_string()));
+        }
+    } else {
+        cfg.defines.insert(spec.to_string(), pre::MacroValue::Bool(true));
+    }
+}
+
+// Global embedded provider adapter for the preprocessor
+struct EmbeddedAdapter;
+impl pre::IncludeProvider for EmbeddedAdapter {
+    fn try_read(&self, logical: &str) -> Option<&'static [u8]> {
+        if let Some(f) = crate::embedded::find_file(logical) { Some(f.contents) } else { None }
+    }
+}
+static EMBEDDED_ADAPTER: EmbeddedAdapter = EmbeddedAdapter;
+
+pub(crate) fn build_pre_opts(root_path: PathBuf, env_paths: Vec<PathBuf>) -> pre::PreprocessOptions<'static> {
+    let cfg = current_preproc_cli_cfg();
+    pre::PreprocessOptions {
+        root_path,
+        include_paths: cfg.include_paths.clone(),
+        env_paths,
+        embedded: if cfg.embedded_allowed { Some(&EMBEDDED_ADAPTER) } else { None },
+        defines: cfg.defines.clone(),
+        engine_name: Some("basilc".to_string()),
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+    }
+}
 
 fn cmd_analyze(path: String, json: bool) {
-    let src = match std::fs::read_to_string(&path) {
+    let abs_path: PathBuf = match fs::canonicalize(&path) { Ok(p)=>p, Err(_)=>PathBuf::from(&path) };
+    let src = match std::fs::read_to_string(&abs_path) {
         Ok(s) => s,
-        Err(e) => { eprintln!("read {}: {}", path, e); std::process::exit(1); }
+        Err(e) => { eprintln!("read {}: {}", abs_path.display(), e); std::process::exit(1); }
     };
-    let diags: CompilerDiagnostics = analyze_source(&src, &path);
+    // Preprocess prior to analysis
+    let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+        Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+        Err(_) => Vec::new(),
+    };
+    let pp_opts = build_pre_opts(abs_path.clone(), env_paths);
+    let preprocessed = match pre::preprocess(&src, &pp_opts) { Ok(p)=>p, Err(e)=>{ eprintln!("preprocess error: {}", e); std::process::exit(1);} };
+    let diags: CompilerDiagnostics = analyze_source(&preprocessed.text, &path);
     if json {
         match serde_json::to_string_pretty(&diags) {
             Ok(s) => println!("{}", s),
@@ -96,8 +193,24 @@ fn cmd_debug(path: Option<String>) {
     let abs_path: PathBuf = match fs::canonicalize(&input_path) { Ok(p)=>p, Err(_)=>PathBuf::from(&input_path) };
     let src = match std::fs::read_to_string(&abs_path) { Ok(s)=>s, Err(e)=>{ eprintln!("{}", e); std::process::exit(1);} };
     let pre = template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() };
-    let ast = match parse(&pre.basil_source) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-    let program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+    // Preprocess
+    let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+        Ok(val) => {
+            let sep = if cfg!(windows) { ';' } else { ':' };
+            val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect()
+        },
+        Err(_) => Vec::new(),
+    };
+    let pp_opts = build_pre_opts(abs_path.clone(), env_paths);
+    let preprocessed = match pre::preprocess(&pre.basil_source, &pp_opts) {
+        Ok(p) => p,
+        Err(e) => { eprintln!("preprocess error: {}", e); std::process::exit(1); }
+    };
+    let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
+    let mut program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+    // Phase B: embed source map
+    let debug_smap = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+    program.source_map = Some(debug_smap.clone());
     let dbg = Debugger::new();
     let rx = dbg.subscribe();
     // Spawn a thread to print JSON events
@@ -117,9 +230,17 @@ fn cmd_debug(path: Option<String>) {
     vm.set_script_path(abs_path.to_string_lossy().to_string());
     vm.set_debugger(dbg);
     if let Err(e) = vm.run() {
-        let line = vm.current_line();
-        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
-        else { eprintln!("runtime error: {}", e); }
+        let line = vm.current_line() as usize;
+        if line > 0 {
+            let sm = &debug_smap;
+            if line < sm.lines.len() {
+                let (fi, ln) = sm.lines[line];
+                let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                eprintln!("runtime error at line {} in {}: {}", ln, fname, e);
+            } else {
+                eprintln!("runtime error at line {}: {}", line, e);
+            }
+        } else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
     }
 }
@@ -217,8 +338,16 @@ fn cmd_init(target: Option<String>) -> io::Result<()> {
 
 fn cmd_lex(path: Option<String>) {
     let Some(path) = path else { eprintln!("usage: basilc lex <file.basil>"); std::process::exit(2) };
-    let src = std::fs::read_to_string(&path).expect("read file");
-    let mut lx = Lexer::new(&src);
+    let abs_path: PathBuf = match fs::canonicalize(&path) { Ok(p)=>p, Err(_)=>PathBuf::from(&path) };
+    let src = std::fs::read_to_string(&abs_path).expect("read file");
+    // Preprocess before lexing
+    let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+        Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+        Err(_) => Vec::new(),
+    };
+    let pp_opts = build_pre_opts(abs_path.clone(), env_paths);
+    let preprocessed = match pre::preprocess(&src, &pp_opts) { Ok(p)=>p, Err(e)=>{ eprintln!("preprocess error: {}", e); std::process::exit(1);} };
+    let mut lx = Lexer::new(&preprocessed.text);
     match lx.tokenize() {
         Ok(toks) => {
             for t in toks {
@@ -352,6 +481,20 @@ fn cmd_run(path: Option<String>) {
         template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() }
     };
 
+    // Phase 1 preprocessor (scaffold): call preprocessor before parsing
+    let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+        Ok(val) => {
+            let sep = if cfg!(windows) { ';' } else { ':' };
+            val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect()
+        },
+        Err(_) => Vec::new(),
+    };
+    let pp_opts = build_pre_opts(abs_path.clone(), env_paths);
+    let preprocessed = match pre::preprocess(&pre.basil_source, &pp_opts) {
+        Ok(p) => p,
+        Err(e) => { eprintln!("preprocess error: {}", e); std::process::exit(1); }
+    };
+
     // Prepare cache fingerprint
     let meta = match fs::metadata(&abs_path) { Ok(m)=>m, Err(e)=>{ eprintln!("stat {}: {}", abs_path.display(), e); std::process::exit(1);} };
     let source_size = meta.len();
@@ -377,17 +520,25 @@ fn cmd_run(path: Option<String>) {
             let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
             let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
             let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 2 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
                 let prog_bytes = &bytes[32..];
                 match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
             }
         }
     }
 
-    let program = if let Some(p) = program_opt { p } else {
+    // Keep a local copy of the source map for error mapping even if loading from cache
+    let (program, local_smap_opt) = if let Some(p) = program_opt {
+        // Program from cache; reuse embedded source map
+        let sm = p.source_map.clone();
+        (p, sm)
+    } else {
         // Parse → compile the precompiled Basil source
-        let ast = match parse(&pre.basil_source) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        let prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+        let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
+        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
+        // Phase B: attach source map
+        let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        prog.source_map = Some(map.clone());
         // Write cache atomically
         let body = serialize_program(&prog);
         let mut hdr = Vec::with_capacity(32 + body.len());
@@ -404,7 +555,7 @@ fn cmd_run(path: Option<String>) {
             let _ = f.sync_all();
             let _ = fs::rename(&tmp, &cache_path);
         }
-        prog
+        (prog, Some(map))
     };
 
     // Run VM
@@ -412,9 +563,16 @@ fn cmd_run(path: Option<String>) {
     // Provide script path so CLASS() can resolve relative class files
     vm.set_script_path(abs_path.to_string_lossy().to_string());
     if let Err(e) = vm.run() {
-        let line = vm.current_line();
-        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
-        else { eprintln!("runtime error: {}", e); }
+        let line = vm.current_line() as usize;
+        if line > 0 {
+            if let Some(sm) = &local_smap_opt {
+                if line < sm.lines.len() {
+                    let (fi, ln) = sm.lines[line];
+                    let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                    eprintln!("runtime error at line {} in {}: {}", ln, fname, e);
+                } else { eprintln!("runtime error at line {}: {}", line, e); }
+            } else { eprintln!("runtime error at line {}: {}", line, e); }
+        } else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
     } else if vm.is_suspended() {
         // In RUN mode, when STOP is encountered, remain suspended with no prompt.
@@ -436,6 +594,8 @@ fn is_cgi_invocation() -> bool {
 fn cli_main() {
     // === BEGIN: your old main() body ===
     let mut args = env::args().skip(1).collect::<Vec<_>>();
+    // Parse and strip preprocessor-related flags early so they don't confuse subcommand parsing
+    parse_preproc_flags(&mut args);
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_help();
         let path = args.get(0).cloned();
@@ -602,7 +762,13 @@ fn cgi_main() {
             println!("Status: 500 Internal Server Error");
             println!("Content-Type: text/plain; charset=utf-8");
             println!();
-            println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
+            let stderr_text = String::from_utf8_lossy(&output.stderr);
+            let first_line = stderr_text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+            if first_line.is_empty() {
+                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
+            } else {
+                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER. - {}", first_line.trim());
+            }
         }
         return;
     }
@@ -840,14 +1006,21 @@ fn cmd_test(mut args: Vec<String>) {
             let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
             let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
             let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 2 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
                 let prog_bytes = &bytes[32..];
                 if let Ok(p) = deserialize_program(prog_bytes) { program_opt = Some(p); }
             }
         }
     }
     let program = if let Some(p) = program_opt { p } else {
-        let ast = match parse(&pre.basil_source) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
+        // Preprocess before parsing
+        let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
+            Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+            Err(_) => Vec::new(),
+        };
+        let pp_opts = build_pre_opts(PathBuf::from(&path), env_paths);
+        let preprocessed = match pre::preprocess(&pre.basil_source, &pp_opts) { Ok(p)=>p, Err(e)=>{ eprintln!("preprocess error: {}", e); std::process::exit(1);} };
+        let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
         match compile(&ast) { Ok(p)=>{
             let body = serialize_program(&p);
             let mut hdr = Vec::with_capacity(32 + body.len());

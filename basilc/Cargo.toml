@@ -13,6 +13,7 @@ basil-compiler= { workspace = true }
 basil-vm = { workspace = true }
 basil-bytecode = { workspace = true }
 basil-ast = { workspace = true }
+basil-preprocessor = { workspace = true }
 rustyline = "13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

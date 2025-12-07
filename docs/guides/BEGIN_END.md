@@ -17,7 +17,7 @@ Looking at the parser logic (updated):
     - Block forms supported today:
         - `IF cond THEN BEGIN ... [ELSE ...] END [IF]`
         - `IF cond { ... } [ELSE { ... }]`
-    - BEGIN-less multi-line IF (implicit until `END IF`) is currently deferred/experimental and NOT enabled by default.
+    - BEGIN-less multi-line IF (implicit until `END IF`) is not currently allowed.
 - WHILE
     - Three forms are accepted:
         1) `WHILE cond BEGIN ... END [WHILE]`

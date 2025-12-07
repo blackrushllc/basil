@@ -348,6 +348,14 @@ pub struct Function {
 pub struct Program {
     pub chunk:   Chunk,        // top-level code
     pub globals: Vec<String>,  // names → indices for global array
+    // Optional compact source map: preprocessed line -> (file_idx, line)
+    pub source_map: Option<SourceMapMini>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SourceMapMini {
+    pub files: Vec<String>,
+    pub lines: Vec<(u16, u32)>, // 1-based indexing; lines[pre_line]
 }
 
 // --- Simple (de)serializer for Program used by .basilx cache ---
@@ -384,6 +392,21 @@ pub fn serialize_program(p: &Program) -> Vec<u8> {
     ser_chunk(&mut b, &p.chunk);
     w_u32(&mut b, p.globals.len() as u32);
     for g in &p.globals { w_str(&mut b, g); }
+    // Source map block (optional). Layout:
+    // u8 flag (0/1); if 1 then: u32 nfiles; [files]; u32 nlines; [u16 file_idx, u32 line] * nlines
+    match &p.source_map {
+        None => { w_u8(&mut b, 0); }
+        Some(sm) => {
+            w_u8(&mut b, 1);
+            w_u32(&mut b, sm.files.len() as u32);
+            for f in &sm.files { w_str(&mut b, f); }
+            w_u32(&mut b, sm.lines.len() as u32);
+            for (fi, ln) in &sm.lines {
+                b.extend_from_slice(&fi.to_le_bytes());
+                w_u32(&mut b, *ln as u32);
+            }
+        }
+    }
     b
 }
 
@@ -426,5 +449,28 @@ pub fn deserialize_program(data: &[u8]) -> basil_common::Result<Program> {
     let chunk = de_chunk(&mut p, data)?;
     let n = r_u32(&mut p,data)? as usize; let mut globals = Vec::with_capacity(n);
     for _ in 0..n { globals.push(r_str(&mut p,data)?); }
-    Ok(Program { chunk, globals })
+    // Optional source map tail; if missing or truncated, ignore.
+    let mut source_map: Option<SourceMapMini> = None;
+    if p < data.len() {
+        if let Ok(flag) = r_u8(&mut p, data) {
+            if flag == 1 {
+                // files
+                if let Ok(nf) = r_u32(&mut p, data) {
+                    let mut files = Vec::with_capacity(nf as usize);
+                    for _ in 0..nf { files.push(r_str(&mut p, data)?); }
+                    // lines
+                    let nl = r_u32(&mut p, data)? as usize;
+                    let mut lines: Vec<(u16,u32)> = Vec::with_capacity(nl);
+                    for _ in 0..nl {
+                        if p+2 > data.len() { break; }
+                        let fi = u16::from_le_bytes([data[p], data[p+1]]); p+=2;
+                        let ln = r_u32(&mut p, data)?;
+                        lines.push((fi, ln));
+                    }
+                    source_map = Some(SourceMapMini { files, lines });
+                }
+            }
+        }
+    }
+    Ok(Program { chunk, globals, source_map })
 }
