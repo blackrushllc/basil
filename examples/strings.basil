@@ -46,3 +46,22 @@ REM (Note: array-returning alias forms like EXPLODE$[]/EXPLODE2D$[] are not adde
 REM IMPLODE$
 PRINTLN IMPLODE$(items@, ",")                  REM list -> string
 PRINTLN IMPLODE$(params@, "&", "=")           REM dict -> query string
+
+rem multi-line example
+LET longString$ = "This is a long string that " +
+                  "spans multiple lines for " +
+                  "better readability."
+
+rem true multi-line example
+MyDoc$ = "This is a long string that
+spans multiple lines for
+better readability."
+
+print MyDoc$
+
+rem true multi-line example with single quotes
+MyDoc$ = 'This is a long string that
+spans multiple lines for better readability.
+'
+
+print MyDoc$

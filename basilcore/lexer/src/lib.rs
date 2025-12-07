@@ -219,7 +219,8 @@ impl<'a> Lexer<'a> {
                 else { self.make(TokenKind::Gt) }
             }
 
-            '"' => self.string()?,
+            '"' => self.string_with_delim('"')?,
+            '\'' => self.string_with_delim('\'')?,
             c if c.is_ascii_digit() => self.number()?,
             c if is_ident_start(c)  => self.ident_or_kw()?,
             _ => return Err(BasilError(format!("unexpected char '{}': pos {}", ch, self.pos))),
@@ -327,12 +328,14 @@ impl<'a> Lexer<'a> {
         true
     }
 
-    fn string(&mut self) -> Result<Token> {
+    fn string_with_delim(&mut self, delim: char) -> Result<Token> {
         // Two-pass approach to avoid leaking outside the string when parsing interpolation.
         // 1) Capture the raw content between quotes without interpreting escapes.
-        // 2) Parse that raw content into literal and expression parts; cook escapes only in literals.
+        // 2) Parse that raw content into literal and expression parts; cook escapes per delimiter rules.
         let tok_line = self.tok_line as u32;
         let outer_start = self.start;
+        let is_double = delim == '"';
+
         // Record the byte index just AFTER the opening quote
         let content_start = self.pos;
         // Step into the first character (if any)
@@ -341,16 +344,20 @@ impl<'a> Lexer<'a> {
         let content_end = loop {
             let ch = match self.cur {
                 Some(c) => c,
-                None => return Err(BasilError(format!("parse error at line {}: unterminated string", tok_line))),
+                None => return Err(BasilError(format!(
+                    "parse error at line {}: unterminated {}-quoted string",
+                    tok_line,
+                    if is_double { "double" } else { "single" }
+                ))),
             };
-            if ch == '"' {
+            if ch == delim {
                 // end should EXCLUDE the closing quote
-                let end = self.pos - '"'.len_utf8();
+                let end = self.pos - delim.len_utf8();
                 self.advance();     // step past closing quote
                 break end;
             }
             if ch == '\\' {
-                // skip escaped char
+                // skip escaped char so an escaped delimiter doesn't terminate the string
                 self.advance();
                 if self.cur.is_some() { self.advance(); }
                 continue;
@@ -358,8 +365,10 @@ impl<'a> Lexer<'a> {
             self.advance();
         };
         let raw = &self.src[content_start..content_end];
-        // Helper to decode escapes in literal segments (" \ n t r, \#{ → "#{", \} → '}', and generic \x → x)
-        fn push_escape(dst: &mut String, next: Option<char>, iter: &mut std::str::CharIndices) {
+
+        // Helper to decode escapes in literal segments for double-quoted strings only.
+        // Supported: \n, \t, \r, \", \#{ → "#{", \} → '}', and generic \x → x including \\ → \
+        fn push_escape_double(dst: &mut String, next: Option<char>, iter: &mut std::str::CharIndices) {
             if let Some(nc) = next {
                 match nc {
                     '"' => dst.push('"'),
@@ -378,10 +387,14 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     '}' => dst.push('}'),
-                    c => dst.push(c),
+                    c => dst.push(c), // includes \\ → \
                 }
+            } else {
+                // trailing backslash followed by nothing: keep backslash
+                dst.push('\\');
             }
         }
+
         let mut literal_buf = String::new();
         let mut built: Vec<Token> = Vec::new();
         let mut saw_interpolation = false;
@@ -391,30 +404,58 @@ impl<'a> Lexer<'a> {
         while i < raw.len() {
             // read next char
             let (ci, ch) = {
-                let mut it = raw[ i.. ].char_indices();
+                let mut it = raw[i..].char_indices();
                 let (off, c) = it.next().unwrap();
                 (i + off, c)
             };
             if ch == '\\' {
                 // decode escape into literal buffer
-                let mut it = raw[ ci + ch.len_utf8() .. ].char_indices();
-                let next = it.next().map(|(_,c)| c);
-                push_escape(&mut literal_buf, next, &mut it);
-                // advance i past backslash and the consumed char(s)
-                // Compute advancement: one for '\\' and one for the immediate next char; optional third for '{' if present
-                let mut adv = ch.len_utf8();
-                if let Some(nc) = next { adv += nc.len_utf8(); if nc == '#' { if raw[ ci + adv .. ].starts_with("{") { adv += '{'.len_utf8(); } } }
-                i = ci + adv;
+                let mut it = raw[ci + ch.len_utf8()..].char_indices();
+                let next = it.next().map(|(_, c)| c);
+                if is_double {
+                    push_escape_double(&mut literal_buf, next, &mut it);
+                    // advance past backslash + consumed char; optional third for '{' if present
+                    let mut adv = ch.len_utf8();
+                    if let Some(nc) = next {
+                        adv += nc.len_utf8();
+                        if nc == '#' {
+                            if raw[ci + adv..].starts_with("{") { adv += '{'.len_utf8(); }
+                        }
+                    }
+                    i = ci + adv;
+                } else {
+                    // single-quoted: only \' is special; otherwise keep backslash literally
+                    match next {
+                        Some('\'') => {
+                            literal_buf.push('\'');
+                            i = ci + '\\'.len_utf8() + '\'' .len_utf8();
+                        }
+                        Some(nc) => {
+                            // keep backslash and the next char literally
+                            literal_buf.push('\\');
+                            literal_buf.push(nc);
+                            i = ci + '\\'.len_utf8() + nc.len_utf8();
+                        }
+                        None => {
+                            // trailing backslash at end of raw: keep it
+                            literal_buf.push('\\');
+                            i = ci + '\\'.len_utf8();
+                        }
+                    }
+                }
                 continue;
             }
-            if ch == '#' {
-                // possible interpolation start
+
+            if is_double && ch == '#' {
+                // possible interpolation start (double-quoted only)
                 let after_hash = ci + ch.len_utf8();
                 if raw[after_hash..].starts_with("{") {
                     // start of interpolation
                     saw_interpolation = true;
                     // flush current literal
-                    if need_plus { built.push(Token { kind: TokenKind::Plus, lexeme: "+".into(), literal: None, span: Span::new(outer_start, self.pos), line: tok_line }); }
+                    if need_plus {
+                        built.push(Token { kind: TokenKind::Plus, lexeme: "+".into(), literal: None, span: Span::new(outer_start, self.pos), line: tok_line });
+                    }
                     need_plus = true;
                     let lit = std::mem::take(&mut literal_buf);
                     built.push(Token { kind: TokenKind::String, lexeme: lit.clone(), literal: Some(Literal::Str(lit)), span: Span::new(outer_start, self.pos), line: tok_line });
@@ -423,7 +464,8 @@ impl<'a> Lexer<'a> {
                     // scan inner expression in raw starting at after '{'
                     let mut j = after_hash + '{'.len_utf8();
                     let mut depth: usize = 1;
-                    let mut in_str = false;
+                    let mut in_dq = false;
+                    let mut in_sq = false;
                     let mut expr_end_opt: Option<usize> = None;
                     while j < raw.len() {
                         let (cj, ch2) = {
@@ -431,16 +473,20 @@ impl<'a> Lexer<'a> {
                             let (off, c) = it2.next().unwrap();
                             (j + off, c)
                         };
-                        if in_str {
+                        if in_dq || in_sq {
                             if ch2 == '\\' {
                                 // skip escaped char inside inner string
-                                let mut it3 = raw[cj + ch2.len_utf8() ..].char_indices();
+                                let mut it3 = raw[cj + ch2.len_utf8()..].char_indices();
                                 if let Some((_, _)) = it3.next() { /* skip next char */ }
                                 j = cj + ch2.len_utf8();
-                                if let Some((off,_)) = raw[j..].char_indices().next() { j += off; }
+                                if let Some((off, _)) = raw[j..].char_indices().next() { j += off; }
                                 continue;
-                            } else if ch2 == '"' {
-                                in_str = false;
+                            } else if in_dq && ch2 == '"' {
+                                in_dq = false;
+                                j = cj + ch2.len_utf8();
+                                continue;
+                            } else if in_sq && ch2 == '\'' {
+                                in_sq = false;
                                 j = cj + ch2.len_utf8();
                                 continue;
                             } else {
@@ -449,7 +495,8 @@ impl<'a> Lexer<'a> {
                             }
                         } else {
                             match ch2 {
-                                '"' => { in_str = true; j = cj + ch2.len_utf8(); }
+                                '"' => { in_dq = true; j = cj + ch2.len_utf8(); }
+                                '\'' => { in_sq = true; j = cj + ch2.len_utf8(); }
                                 '{' => { depth += 1; j = cj + ch2.len_utf8(); }
                                 '}' => {
                                     depth -= 1;
@@ -460,12 +507,21 @@ impl<'a> Lexer<'a> {
                             }
                         }
                     }
-                    let expr_end = match expr_end_opt { Some(p) => p, None => {
-                        return Err(BasilError(format!("Unterminated interpolation: missing '}}' after '#{{' at line {}.", tok_line)));
-                    } };
-                    let expr_src = &raw[ after_hash + '{'.len_utf8() .. expr_end ];
+                    let expr_end = match expr_end_opt {
+                        Some(p) => p,
+                        None => {
+                            return Err(BasilError(format!(
+                                "Unterminated interpolation: missing '}}' after '#{{' at line {}.",
+                                tok_line
+                            )));
+                        }
+                    };
+                    let expr_src = &raw[after_hash + '{'.len_utf8()..expr_end];
                     if expr_src.trim().is_empty() {
-                        return Err(BasilError(format!("Empty interpolation not allowed: expected expression after '#{{' at line {}.", tok_line)));
+                        return Err(BasilError(format!(
+                            "Empty interpolation not allowed: expected expression after '#{{' at line {}.",
+                            tok_line
+                        )));
                     }
                     // Tokenize inner expression and wrap in parentheses
                     let mut sub = Lexer::new(expr_src);
@@ -479,6 +535,7 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
             }
+
             // regular char for literal
             literal_buf.push(ch);
             i = ci + ch.len_utf8();
@@ -486,7 +543,9 @@ impl<'a> Lexer<'a> {
 
         if saw_interpolation {
             // flush tail literal
-            if need_plus { built.push(Token { kind: TokenKind::Plus, lexeme: "+".into(), literal: None, span: Span::new(outer_start, self.pos), line: tok_line }); }
+            if need_plus {
+                built.push(Token { kind: TokenKind::Plus, lexeme: "+".into(), literal: None, span: Span::new(outer_start, self.pos), line: tok_line });
+            }
             let tail = std::mem::take(&mut literal_buf);
             built.push(Token { kind: TokenKind::String, lexeme: tail.clone(), literal: Some(Literal::Str(tail)), span: Span::new(outer_start, self.pos), line: tok_line });
             for t in built.drain(..) { self.pending.push_back(t); }
@@ -494,7 +553,13 @@ impl<'a> Lexer<'a> {
             unreachable!("pending should have at least one token");
         } else {
             // simple string token (no interpolation)
-            let tok = Token { kind: TokenKind::String, lexeme: self.src[outer_start..self.pos].to_string(), literal: Some(Literal::Str(literal_buf)), span: Span::new(outer_start, self.pos), line: tok_line };
+            let tok = Token {
+                kind: TokenKind::String,
+                lexeme: self.src[outer_start..self.pos].to_string(),
+                literal: Some(Literal::Str(literal_buf)),
+                span: Span::new(outer_start, self.pos),
+                line: tok_line,
+            };
             return Ok(tok);
         }
     }
@@ -640,13 +705,7 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
 
-                // BASIC-style single-quote comment
-                Some('\'') => {
-                    while let Some(ch) = self.cur {
-                        if ch == '\n' { break; }
-                        self.advance();
-                    }
-                }
+                // (removed) Apostrophe-based comments are no longer supported because single quotes now start strings
 
                 // C++-style line comment: //
                 Some('/') if self.peek() == Some('/') => {
