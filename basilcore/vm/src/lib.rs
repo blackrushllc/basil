@@ -54,6 +54,7 @@ use std::io::copy;
 use chrono::Local;
 
 pub mod debug;
+mod render; // template rendering engine
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj, ObjectDescriptor, PropDesc, MethodDesc};
@@ -525,9 +526,24 @@ impl VM {
     // Provide script path so CLASS() can resolve relative file names
     pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
 
+    // Provide the directory of the current script, if known (for INCLUDE in renderer)
+    pub fn script_dir(&self) -> Option<String> {
+        self.script_path.as_ref().and_then(|p| {
+            let pb = std::path::Path::new(p);
+            pb.parent().map(|d| d.to_string_lossy().to_string())
+        })
+    }
+
     // Snapshot (clone) the current global names and values. Useful for REPL sessions.
     pub fn globals_snapshot(&self) -> (Vec<String>, Vec<Value>) {
         (self.global_names.clone(), self.globals.clone())
+    }
+
+    // Lookup a global by name (case-insensitive). Returns a cloned value if found.
+    pub fn get_global_by_name(&self, name: &str) -> Option<Value> {
+        if let Some(idx) = self.global_names.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+            self.globals.get(idx).cloned()
+        } else { None }
     }
 
     // Seed a global by name (case-insensitive). Returns true if found.
@@ -1581,6 +1597,12 @@ impl VM {
                                 }
                                 self.stack.push(Value::Dict(Rc::new(RefCell::new(map))));
                             }
+                        }
+                        149 => { // RENDER$(template$)
+                            if argc != 1 { return Err(BasilError("RENDER$ expects 1 argument".into())); }
+                            let tpl = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("RENDER$ arg must be string".into())) };
+                            let rendered = render::render_template(self, &tpl)?;
+                            self.stack.push(Value::Str(rendered));
                         }
                         148 => { // IMPLODE$(var, delim1$ [,delim2$])
                             if !(argc == 2 || argc == 3) { return Err(BasilError("IMPLODE$ expects 2 or 3 arguments".into())); }

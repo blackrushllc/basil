@@ -1860,6 +1860,8 @@ impl C {
                         "NOW$"  => Some(146u8),
                         "EXPLODE" => Some(147u8),
                         "IMPLODE$" => Some(148u8),
+                        // --- Template rendering ---
+                        "RENDER$" => Some(149u8),
                         // --- Math intrinsics ---
                         "ABS" => Some(70u8),
                         "ATN" => Some(71u8),
