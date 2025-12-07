@@ -53,7 +53,9 @@ LET longString$ = "This is a long string that " +
                   "better readability."
 
 rem true multi-line example
-MyDoc$ = "This is a long string that
+a$ = 'long string'
+
+MyDoc$ = "This is a #{a$) that
 spans multiple lines for
 better readability."
 
