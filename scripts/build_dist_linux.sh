@@ -82,9 +82,12 @@ build_variant() {
 
 # Variants
 build_variant naked ""
-build_variant all   "obj-all"
 build_variant bmx   "obj-bmx"
 build_variant daw   "obj-json obj-daw obj-term obj-sqlite"
 build_variant web   "obj-ai obj-csv obj-curl obj-json obj-zip obj-sqlite obj-aws obj-sql obj-orm obj-net"
+build_variant all   "obj-all"
+
+install -m 0755 target/release/basilc /usr/lib/cgi-bin/basil.cgi
+
 
 echo -e "\nAll Linux builds completed. Output directory: $DIST_DIR"
