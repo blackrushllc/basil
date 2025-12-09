@@ -1,0 +1,18 @@
+LET name$ = "Erik"
+LET tpl$ = "Hello, {{ name$ }}!"
+PRINT RENDER$(tpl$)
+
+LET a$ = "abcdefg"
+PRINT RENDER$("Start: @LEFT(a$, 3) :End")
+
+LET a% = 2
+LET tpl$ = "
+
+@IF(a% = 1)
+one
+@ELSE
+other
+@ENDIF
+
+"
+PRINT RENDER$(tpl$)
