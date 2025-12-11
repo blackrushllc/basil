@@ -1598,10 +1598,16 @@ impl VM {
                                 self.stack.push(Value::Dict(Rc::new(RefCell::new(map))));
                             }
                         }
-                        149 => { // RENDER$(template$)
-                            if argc != 1 { return Err(BasilError("RENDER$ expects 1 argument".into())); }
-                            let tpl = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("RENDER$ arg must be string".into())) };
-                            let rendered = render::render_template(self, &tpl)?;
+                        149 => { // RENDER$(template$ [, context@])
+                            if !(argc == 1 || argc == 2) { return Err(BasilError("RENDER$ expects 1 or 2 arguments".into())); }
+                            let tpl = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("RENDER$ arg 1 must be string (template$)".into())) };
+                            let ctx_opt = if argc == 2 {
+                                match &args[1] {
+                                    Value::Dict(rc) => Some(rc.clone()),
+                                    _ => return Err(BasilError("RENDER$ arg 2 must be a Dictionary (context@)".into())),
+                                }
+                            } else { None };
+                            let rendered = render::render_template(self, &tpl, ctx_opt)?;
                             self.stack.push(Value::Str(rendered));
                         }
                         148 => { // IMPLODE$(var, delim1$ [,delim2$])

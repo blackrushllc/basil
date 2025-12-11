@@ -7,7 +7,7 @@ Audience: Basil users who want to create simple view templates for CGI/web or ot
 
 ## Overview
 
-RENDER$(template$) interprets the input string as a template and returns a string result. It supports two kinds of embedded logic:
+RENDER$(template$ [, context@]) interprets the input string as a template and returns a string result. It supports two kinds of embedded logic:
 
 - Expression interpolation using double braces: {{ expr }} — where expr is a normal Basil expression evaluated at render time.
 - Fred directives using @NAME(args) — inspired by Laravel Blade and the “Fred” syntax described in the design notes. Some directives are inline (direct value insertion), while others control flow (conditional blocks and simple case selection).
@@ -48,7 +48,7 @@ RENDER$(template$) interprets the input string as a template and returns a strin
 - Result is converted to string using Basil’s normal rules for PRINT/concatenation.
 
 Notes:
-- v1 evaluates expressions in the context of global variables and user-defined functions. Locals may not yet be visible; this can be extended later.
+- v1 evaluates expressions in the context of global variables and user-defined functions. Additionally, when you pass an optional context dictionary, its keys are made available as variables during render time (see below). Locals from the caller are not automatically visible.
 - Nested Fred calls are allowed inside expressions by using @NAME(...) inside expr; they are evaluated first and replaced with string literals in the expression.
 
 
@@ -140,6 +140,27 @@ PRINT RENDER$(tpl$)
 5) Include a partial (relative to the running script file):
 
 PRINT RENDER$("@INCLUDE(\"partials/header.html\")\nBody here\n@INCLUDE(\"partials/footer.html\")")
+
+6) Optional context dictionary (Option 2):
+
+LET pet@ = { "name": "Fido", "species": "dog", "age": 7, "weight": 15.0 }
+LET view$ = """
+Pet name: {{ name$ }}
+Species: {{ species$ }}
+Age: {{ age% }}
+Weight: {{ weight }}
+Greeting: Hello, {{ name$ }}! You are a good {{ species$ }}.
+Left 2 of name: @LEFT(name$, 2)
+"""
+PRINT RENDER$(view$, pet@)
+
+→ This works because the context dictionary injects variables:
+- Always the exact key (case-insensitive global name match).
+- If the value is a String, it also injects key$ (unless the key already ends with $).
+- If the value is an Integer, it also injects key% (unless the key already ends with %).
+- Other types (Float, Bool, Dict, List, Array, Object) use just key without an added suffix.
+
+Precedence: context variables override same-named module globals for the duration of the render. Caller locals/params are NOT automatically visible.
 
 
 ## Error handling

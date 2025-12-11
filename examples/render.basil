@@ -1,18 +1,68 @@
+DECLARE FUNCTION MyFunction$(argument%)
+
 LET name$ = "Erik"
 LET tpl$ = "Hello, {{ name$ }}!"
-PRINT RENDER$(tpl$)
+PRINTLN RENDER$(tpl$)
 
 LET a$ = "abcdefg"
-PRINT RENDER$("Start: @LEFT(a$, 3) :End")
+PRINTLN RENDER$("Start: @LEFT(a$, 3) :End")
 
 LET a% = 2
 LET tpl$ = "
 
 @IF(a% = 1)
-one
+one: module level a% is {{ a% }}
 @ELSE
-other
+other: module level a% is {{ a% }}
 @ENDIF
 
 "
-PRINT RENDER$(tpl$)
+REM PRINTLN RENDER$(tpl$)
+
+REM PRINTLN MyFunction$("1")
+
+FUNCTION MyFunction$(arg1%)
+
+    PRINTLN RENDER$("Start: @LEFT(a$, 3) :End")
+
+    LET b% = 1
+    LET temp_tpl$ = "
+
+        @IF(a% = 1)
+        one: global a% is {{ a% }}
+        @ELSE
+        other: global a% is {{ a% }}
+        @ENDIF
+
+        @IF(arg1% = 1)
+        one: parameter arg1% is {{ arg1% }}
+        @ELSE
+        other: parameter arg1% is {{ arg1% }}
+        @ENDIF
+
+        @IF(b% = 1)
+        one: local b% is {{ b% }}
+        @ELSE
+        other: local b% is {{ b% }}
+        @ENDIF
+
+"
+    RETURN RENDER$(temp_tpl$)
+END FUNCTION
+
+
+REM --- Context dictionary example (Option 2) ---
+LET pet@ = { "name": "Fido", "species": "dog", "age": 7, "weight": 15.0 }
+LET view$ = "
+    Pet name: {{ name$ }}
+    Species: {{ species$ }}
+    Age: {{ age% }}
+    Weight: {{ weight }}
+    Greeting: Hello, {{ name$ }}! You are a good {{ species$ }}.
+    Left 2 of name: @LEFT(name$, 2)
+    {{ MyFunction$(1) }}
+"
+
+
+PRINTLN RENDER$(view$, pet@)
+

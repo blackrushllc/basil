@@ -1,25 +1,35 @@
 use super::VM;
 use basil_bytecode::Value;
 use basil_common::{Result, BasilError};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{PathBuf};
+use std::rc::Rc;
 
 // Public entry point
-pub fn render_template(vm: &mut VM, template: &str) -> Result<String> {
-    let mut ctx = Ctx { max_depth: 16, depth: 0 };
+// Optional context dictionary provides additional variables visible during rendering.
+pub fn render_template(vm: &mut VM, template: &str, ctx_dict: Option<Rc<RefCell<HashMap<String, Value>>>>) -> Result<String> {
+    let mut ctx = Ctx { max_depth: 16, depth: 0, overlay: ctx_dict, template: template.to_string() };
     render_inner(vm, template, &mut ctx)
 }
 
-struct Ctx { max_depth: usize, depth: usize }
+struct Ctx {
+    max_depth: usize,
+    depth: usize,
+    overlay: Option<Rc<RefCell<HashMap<String, Value>>>>,
+    // Keep a copy of the template to compute line/column on errors
+    template: String,
+}
 
 #[derive(Debug, Clone)]
 enum Node {
     Text(String),
-    Interp(String), // {{ expr }}
-    Call { name: String, args: Vec<String> }, // @NAME(args)
-    If { cond: String, then_part: Vec<Node>, else_part: Vec<Node> },
-    Case { arms: Vec<(String, Vec<Node>)> },
+    Interp { expr: String, pos: usize }, // {{ expr }} starting at byte offset pos
+    Call { name: String, args: Vec<String>, pos: usize }, // @NAME(args) at pos
+    If { cond: String, then_part: Vec<Node>, else_part: Vec<Node>, pos: usize },
+    Case { arms: Vec<(String, Vec<Node>)>, pos: usize },
 }
 
 fn render_inner(vm: &mut VM, template: &str, ctx: &mut Ctx) -> Result<String> {
@@ -60,9 +70,10 @@ fn parse_block(s: &str, i: &mut usize, end_tokens: &[&str]) -> Result<Vec<Node>>
             // flush text
             if !buf.is_empty() { out.push(Node::Text(std::mem::take(&mut buf))); }
             // parse interpolation
+            let start = *i; // position of '{{'
             *i += 2;
             let expr = read_balanced_until(s, i, "}}")?;
-            out.push(Node::Interp(expr.trim().to_string()));
+            out.push(Node::Interp { expr: expr.trim().to_string(), pos: start });
             continue;
         }
         // default: accumulate one char
@@ -95,6 +106,7 @@ fn peek_word(s: &str) -> Option<String> {
 fn parse_at_directive(s: &str, i: &mut usize) -> Result<Node> {
     // expecting @NAME(args) or @ELSE / @ENDIF / @ENDCASE (handled by caller via end_tokens)
     debug_assert!(starts_with_at(s, *i));
+    let start = *i; // position of '@'
     *i += 1; // skip @
     let name = read_ident(s, i).ok_or_else(|| BasilError("RENDER$: expected directive name".into()))?;
     let uname = name.to_ascii_uppercase();
@@ -130,7 +142,7 @@ fn parse_at_directive(s: &str, i: &mut usize) -> Result<Node> {
                 return Err(BasilError("RENDER$: expected @ELSE or @ENDIF".into()));
             };
             let cond = args.get(0).cloned().unwrap_or_default();
-            Ok(Node::If { cond, then_part, else_part })
+            Ok(Node::If { cond, then_part, else_part, pos: start })
         }
         "CASE" => {
             // First arm is current args
@@ -150,10 +162,10 @@ fn parse_at_directive(s: &str, i: &mut usize) -> Result<Node> {
                 let body = parse_block(s, i, &["CASE", "ENDCASE"])?;
                 arms.push((cond, body));
             }
-            Ok(Node::Case { arms })
+            Ok(Node::Case { arms, pos: start })
         }
         _ => {
-            Ok(Node::Call { name: uname, args })
+            Ok(Node::Call { name: uname, args, pos: start })
         }
     }
 }
@@ -232,30 +244,44 @@ fn split_top_level_commas(args_src: &str) -> Vec<String> {
 
 fn eval_nodes(vm: &mut VM, nodes: &Vec<Node>, ctx: &mut Ctx) -> Result<String> {
     let mut out = String::new();
-    for n in nodes { match n {
-        Node::Text(t) => out.push_str(t),
-        Node::Interp(expr) => {
-            let v = eval_basil_expr_with_fred(vm, expr)?;
-            out.push_str(&value_to_string(&v));
-        }
-        Node::Call { name, args } => {
-            let s = eval_fred_call(vm, name, args, ctx)?;
-            out.push_str(&s);
-        }
-        Node::If { cond, then_part, else_part } => {
-            let v = eval_basil_expr_with_fred(vm, cond)?;
-            if truthy(&v) { out.push_str(&eval_nodes(vm, then_part, ctx)?); }
-            else { out.push_str(&eval_nodes(vm, else_part, ctx)?); }
-        }
-        Node::Case { arms } => {
-            let mut done = false;
-            for (csrc, body) in arms {
-                if done { break; }
-                let v = eval_basil_expr_with_fred(vm, csrc)?;
-                if truthy(&v) { out.push_str(&eval_nodes(vm, body, ctx)?); done = true; }
+    for n in nodes {
+        match n {
+            Node::Text(t) => out.push_str(t),
+            Node::Interp { expr, pos } => {
+                match eval_basil_expr_with_fred(vm, expr, ctx) {
+                    Ok(v) => out.push_str(&value_to_string(&v)),
+                    Err(e) => return Err(wrap_tmpl_error(&ctx.template, *pos, &e)),
+                }
+            }
+            Node::Call { name, args, pos } => {
+                match eval_fred_call(vm, name, args, ctx) {
+                    Ok(s) => out.push_str(&s),
+                    Err(e) => return Err(wrap_tmpl_error(&ctx.template, *pos, &e)),
+                }
+            }
+            Node::If { cond, then_part, else_part, pos } => {
+                match eval_basil_expr_with_fred(vm, cond, ctx) {
+                    Ok(v) => {
+                        if truthy(&v) { out.push_str(&eval_nodes(vm, then_part, ctx)?); }
+                        else { out.push_str(&eval_nodes(vm, else_part, ctx)?); }
+                    }
+                    Err(e) => return Err(wrap_tmpl_error(&ctx.template, *pos, &e)),
+                }
+            }
+            Node::Case { arms, pos } => {
+                let mut done = false;
+                for (csrc, body) in arms {
+                    if done { break; }
+                    match eval_basil_expr_with_fred(vm, csrc, ctx) {
+                        Ok(v) => {
+                            if truthy(&v) { out.push_str(&eval_nodes(vm, body, ctx)?); done = true; }
+                        }
+                        Err(e) => return Err(wrap_tmpl_error(&ctx.template, *pos, &e)),
+                    }
+                }
             }
         }
-    }}
+    }
     Ok(out)
 }
 
@@ -272,13 +298,13 @@ fn truthy(v: &Value) -> bool {
     }
 }
 
-fn eval_basil_expr_with_fred(vm: &mut VM, src: &str) -> Result<Value> {
+fn eval_basil_expr_with_fred(vm: &mut VM, src: &str, ctx: &mut Ctx) -> Result<Value> {
     // Expand any nested Fred direct calls in the expression into string literals
-    let expanded = expand_fred_in_expr(vm, src)?;
-    eval_basil_expr(vm, &expanded)
+    let expanded = expand_fred_in_expr(vm, src, ctx)?;
+    eval_basil_expr(vm, &expanded, &ctx.overlay)
 }
 
-fn expand_fred_in_expr(vm: &mut VM, src: &str) -> Result<String> {
+fn expand_fred_in_expr(vm: &mut VM, src: &str, ctx: &mut Ctx) -> Result<String> {
     let mut out = String::new();
     let mut i = 0usize;
     while i < src.len() {
@@ -295,7 +321,7 @@ fn expand_fred_in_expr(vm: &mut VM, src: &str) -> Result<String> {
             if !starts_with2(src, j, "(") { out.push('@'); i += 1; continue; }
             j += 1; let args_src = read_args_until_rparen(src, &mut j)?; // j at ')'
             let args = split_top_level_commas(&args_src);
-            let s = eval_fred_call(vm, &name, &args, &mut Ctx{max_depth:16, depth:0})?;
+            let s = eval_fred_call(vm, &name, &args, ctx)?;
             out.push_str(&basil_string_literal(&s));
             i = j; // after ')'
             continue;
@@ -324,18 +350,56 @@ fn basil_string_literal(s: &str) -> String {
     out
 }
 
-fn eval_basil_expr(vm: &mut VM, expr_src: &str) -> Result<Value> {
+fn eval_basil_expr(vm: &mut VM, expr_src: &str, overlay: &Option<Rc<RefCell<HashMap<String, Value>>>>) -> Result<Value> {
     use basil_parser::parse as parse_basil;
     use basil_compiler::compile as compile_basil;
-    let code = format!("LET __RENDER_TMP = ({});", expr_src);
+    // Build FUNCTION stub prelude for known user-defined functions so the compiler
+    // resolves NAME(...) as a function call, not array access. Note: DECLARE is a no-op
+    // for the compiler (parser discards it), so we must emit actual function definitions.
+    // These stubs will be overridden at runtime by seeding the real function values
+    // from the parent VM into the child VM before execution.
+    let (names, values) = vm.globals_snapshot();
+    let mut prelude = String::new();
+    // Skip over stubs at runtime so they don't overwrite real functions seeded into the child VM.
+    prelude.push_str("GOTO __RENDER_EVAL;\n");
+    for (idx, name) in names.iter().enumerate() {
+        if let Value::Func(f) = &values[idx] {
+            let arity = f.arity as usize;
+            // Build dummy parameter list (no type suffixes needed)
+            let params = if arity == 0 {
+                String::new()
+            } else {
+                (1..=arity).map(|i| format!("p{}", i)).collect::<Vec<_>>().join(", ")
+            };
+            // Choose a harmless dummy return literal based on the function name suffix
+            let ret_lit = if name.ends_with('$') {
+                "\"\"" // empty string
+            } else {
+                "0" // integer/number/null-safe placeholder
+            };
+            prelude.push_str(&format!(
+                "FUNCTION {}({}) BEGIN\n  RETURN {};\nEND FUNCTION\n",
+                name, params, ret_lit
+            ));
+        }
+    }
+    // Colon-form label to mark start of actual evaluation code
+    prelude.push_str("__RENDER_EVAL:\n");
+    let code = format!("{}\nLET __RENDER_TMP = ({});", prelude, expr_src);
     let ast = parse_basil(&code)?;
     let prog = compile_basil(&ast)?;
     let mut child = VM::new(prog.clone());
     if let Some(sp) = &vm.script_path { child.set_script_path(sp.clone()); }
     // Seed globals from parent (functions and data)
-    let (names, values) = vm.globals_snapshot();
     for (idx, name) in names.iter().enumerate() {
         let _ = child.set_global_by_name(name, values[idx].clone());
+    }
+    // Overlay context dictionary variables, with suffix mapping and precedence over globals
+    if let Some(dict_rc) = overlay {
+        let dict = dict_rc.borrow();
+        for (k, v) in dict.iter() {
+            inject_overlay_var(&mut child, k, v.clone());
+        }
     }
     child.run()?;
     // locate result global
@@ -351,48 +415,48 @@ fn eval_fred_call(vm: &mut VM, name: &str, args: &Vec<String>, ctx: &mut Ctx) ->
     match nm.as_str() {
         // Direct evaluation built-ins
         "LEFT" => {
-            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("LEFT expects 2 args".into()))?)?);
-            let n = as_i64(eval_basil_expr_with_fred(vm, args.get(1).ok_or_else(|| BasilError("LEFT expects 2 args".into()))?)?);
+            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("LEFT expects 2 args".into()))?, ctx)?);
+            let n = as_i64(eval_basil_expr_with_fred(vm, args.get(1).ok_or_else(|| BasilError("LEFT expects 2 args".into()))?, ctx)?);
             Ok(left_chars(&s, n))
         }
         "RIGHT" => {
-            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("RIGHT expects 2 args".into()))?)?);
-            let n = as_i64(eval_basil_expr_with_fred(vm, args.get(1).ok_or_else(|| BasilError("RIGHT expects 2 args".into()))?)?);
+            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("RIGHT expects 2 args".into()))?, ctx)?);
+            let n = as_i64(eval_basil_expr_with_fred(vm, args.get(1).ok_or_else(|| BasilError("RIGHT expects 2 args".into()))?, ctx)?);
             Ok(right_chars(&s, n))
         }
         "MID" => {
-            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("MID expects 3 args".into()))?)?);
-            let start = as_i64(eval_basil_expr_with_fred(vm, args.get(1).ok_or_else(|| BasilError("MID expects 3 args".into()))?)?);
-            let len = as_i64(eval_basil_expr_with_fred(vm, args.get(2).ok_or_else(|| BasilError("MID expects 3 args".into()))?)?);
+            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("MID expects 3 args".into()))?, ctx)?);
+            let start = as_i64(eval_basil_expr_with_fred(vm, args.get(1).ok_or_else(|| BasilError("MID expects 3 args".into()))?, ctx)?);
+            let len = as_i64(eval_basil_expr_with_fred(vm, args.get(2).ok_or_else(|| BasilError("MID expects 3 args".into()))?, ctx)?);
             Ok(mid_chars(&s, start, len))
         }
         "TRIM" => {
-            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("TRIM expects 1 arg".into()))?)?);
+            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("TRIM expects 1 arg".into()))?, ctx)?);
             Ok(s.trim().to_string())
         }
         "URLENCODE" => {
-            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("URLENCODE expects 1 arg".into()))?)?);
+            let s = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("URLENCODE expects 1 arg".into()))?, ctx)?);
             Ok(vm.url_encode_form(&s))
         }
         "ENV" => {
-            let name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("ENV expects 1 arg".into()))?)?);
+            let name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("ENV expects 1 arg".into()))?, ctx)?);
             Ok(env::var(&name).unwrap_or_else(|_| "null".into()))
         }
         "SERVER" => {
-            let name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("SERVER expects 1 arg".into()))?)?);
+            let name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("SERVER expects 1 arg".into()))?, ctx)?);
             Ok(env::var(&name).unwrap_or_else(|_| "null".into()))
         }
         "REQUEST" => {
-            let name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("REQUEST expects 1 arg".into()))?)?);
+            let name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("REQUEST expects 1 arg".into()))?, ctx)?);
             Ok(get_request_param(vm, &name).unwrap_or_else(|| "null".into()))
         }
         "SESSION" => {
-            let _name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("SESSION expects 1 arg".into()))?)?);
+            let _name = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("SESSION expects 1 arg".into()))?, ctx)?);
             Ok("null".into()) // stub for non-CGI/sessionless contexts
         }
         "INCLUDE" => {
             if ctx.depth >= ctx.max_depth { return Err(BasilError("RENDER$: include depth exceeded".into())); }
-            let path = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("INCLUDE expects 1 arg".into()))?)?);
+            let path = as_string(eval_basil_expr_with_fred(vm, args.get(0).ok_or_else(|| BasilError("INCLUDE expects 1 arg".into()))?, ctx)?);
             let content = read_include(vm, &path)?;
             ctx.depth += 1;
             let rendered = render_inner(vm, &content, ctx)?;
@@ -402,8 +466,24 @@ fn eval_fred_call(vm: &mut VM, name: &str, args: &Vec<String>, ctx: &mut Ctx) ->
         _ => {
             // Fallback: call Basil user-defined function NAME(args...)
             let call_src = format!("{}({})", nm, args.join(", "));
-            let v = eval_basil_expr_with_fred(vm, &call_src)?;
+            let v = eval_basil_expr_with_fred(vm, &call_src, ctx)?;
             Ok(value_to_string(&v))
+        }
+    }
+}
+
+// Inject a single overlay variable into the child VM with suffix mapping.
+fn inject_overlay_var(child: &mut VM, key: &str, val: Value) {
+    // Always try the exact key first
+    let _ = child.set_global_by_name(key, val.clone());
+    // Only add extra suffixed alias if key does not already end with a type suffix
+    let upper = key.to_ascii_uppercase();
+    let has_suffix = upper.ends_with('$') || upper.ends_with('%');
+    if !has_suffix {
+        match &val {
+            Value::Str(_) => { let alias = format!("{}$", key); let _ = child.set_global_by_name(&alias, val); }
+            Value::Int(_) => { let alias = format!("{}%", key); let _ = child.set_global_by_name(&alias, val); }
+            _ => { /* no extra alias */ }
         }
     }
 }
@@ -459,4 +539,26 @@ fn get_request_param(vm: &mut VM, name: &str) -> Option<String> {
         }
     }
     None
+}
+
+// --- Error reporting helpers ---
+fn wrap_tmpl_error(template: &str, pos: usize, err: &BasilError) -> BasilError {
+    let (line, col) = line_col(template, pos);
+    BasilError(format!("RENDER$ error at template {}:{}: {}", line, col, err))
+}
+
+fn line_col(s: &str, pos: usize) -> (usize, usize) {
+    let mut line: usize = 1;
+    let mut col: usize = 1;
+    for (i, ch) in s.char_indices() {
+        if i >= pos { break; }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            // Treat CR as part of line if present, but do not double-count columns on CRLF
+            if ch != '\r' { col += 1; }
+        }
+    }
+    (line, col)
 }
