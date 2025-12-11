@@ -366,22 +366,27 @@ impl Parser {
             return Ok(Stmt::Try { try_body, catch_var, catch_body, finally_body });
         }
 
-        // DECLARE SUB/FUNC name(params) — prototype only, no body; treated as no-op (forward calls already supported)
+        // DECLARE SUB/FUNC name(params) — prototype only, no body
         if self.match_k(TokenKind::Declare) {
             // optional SUB/FUNC/FUNCTION keyword
-            if self.check(TokenKind::Func) { let _ = self.next(); }
+            let mut kind = basil_ast::FuncKind::Func;
+            if self.check(TokenKind::Func) {
+                let kw = self.next().unwrap();
+                if kw.lexeme.eq_ignore_ascii_case("SUB") { kind = basil_ast::FuncKind::Sub; }
+            }
             // name and params
-            let _name = self.expect_ident()?;
+            let name = self.expect_ident()?;
             self.expect(TokenKind::LParen)?;
+            let mut params: Vec<String> = Vec::new();
             if !self.check(TokenKind::RParen) {
                 loop {
-                    let _ = self.expect_ident()?;
+                    params.push(self.expect_ident()?);
                     if !self.match_k(TokenKind::Comma) { break; }
                 }
             }
             self.expect(TokenKind::RParen)?;
             self.terminate_stmt()?;
-            return Ok(Stmt::Block(Vec::new()));
+            return Ok(Stmt::Declare { kind, name, params });
         }
 
         // FUNC/SUB name(params) block

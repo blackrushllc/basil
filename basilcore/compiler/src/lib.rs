@@ -50,12 +50,20 @@ pub mod service;
 
 pub fn compile(ast: &Program) -> Result<BCProgram> {
     let mut c = C::new();
-    // Pre-scan to collect all routine names (FUNC/SUB) with arity and kind so calls can be resolved before definitions
+    // Pre-scan to collect all routine names (FUNC/SUB) and DECLARE prototypes with arity and kind
     for s in ast {
-        if let Stmt::Func { kind, name, params, .. } = s {
-            let uname = name.to_ascii_uppercase();
-            c.fn_names.insert(uname.clone());
-            c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
+        match s {
+            Stmt::Func { kind, name, params, .. } => {
+                let uname = name.to_ascii_uppercase();
+                c.fn_names.insert(uname.clone());
+                c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
+            }
+            Stmt::Declare { kind, name, params } => {
+                let uname = name.to_ascii_uppercase();
+                c.fn_names.insert(uname.clone());
+                c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
+            }
+            _ => {}
         }
     }
     // Pre-scan to collect all global CONST names so we can enforce immutability inside functions even if CONST appears later
@@ -74,6 +82,7 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
     for s in ast {
         match s {
             Stmt::Func { .. } => { /* already emitted above */ }
+            Stmt::Declare { .. } => { /* no code for prototypes */ }
             _ => c.emit_stmt_toplevel(s)?,
         }
     }
@@ -217,6 +226,10 @@ impl C {
 
     fn emit_stmt_toplevel(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            // Prototype declarations produce no code
+            Stmt::Declare { .. } => {
+                // no-op at codegen time; names were recorded during pre-scan
+            }
             // CONST at top-level: evaluate once and store to a global; mark as const
             Stmt::Const { name, init } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
@@ -945,6 +958,8 @@ impl C {
 
     fn emit_stmt_func(&mut self, chunk: &mut Chunk, s: &Stmt, env: &mut LocalEnv) -> Result<()> {
         match s {
+            // DECLARE inside function scope is ignored at codegen (names are handled at pre-scan)
+            Stmt::Declare { .. } => { /* no-op */ }
             // Local constant: evaluate and store to local; remember name to forbid reassignment
             Stmt::Const { name, init } => {
                 self.emit_expr_in(chunk, init, Some(env))?;
@@ -2300,6 +2315,7 @@ impl C {
 
     fn emit_stmt_tl_in_chunk(&mut self, chunk: &mut Chunk, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Declare { .. } => { /* no-op */ }
             Stmt::Const { name, init } => {
                 // top-level in-chunk CONST handling (inside blocks)
                 self.emit_expr_in(chunk, init, None)?;

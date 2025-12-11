@@ -353,15 +353,11 @@ fn basil_string_literal(s: &str) -> String {
 fn eval_basil_expr(vm: &mut VM, expr_src: &str, overlay: &Option<Rc<RefCell<HashMap<String, Value>>>>) -> Result<Value> {
     use basil_parser::parse as parse_basil;
     use basil_compiler::compile as compile_basil;
-    // Build FUNCTION stub prelude for known user-defined functions so the compiler
-    // resolves NAME(...) as a function call, not array access. Note: DECLARE is a no-op
-    // for the compiler (parser discards it), so we must emit actual function definitions.
-    // These stubs will be overridden at runtime by seeding the real function values
-    // from the parent VM into the child VM before execution.
+    // Build DECLARE FUNCTION prototypes prelude for known user-defined functions so the compiler
+    // resolves NAME(...) as a function call, not array access. The compiler now records DECLARE
+    // names during a pre-scan and emits no code for them.
     let (names, values) = vm.globals_snapshot();
     let mut prelude = String::new();
-    // Skip over stubs at runtime so they don't overwrite real functions seeded into the child VM.
-    prelude.push_str("GOTO __RENDER_EVAL;\n");
     for (idx, name) in names.iter().enumerate() {
         if let Value::Func(f) = &values[idx] {
             let arity = f.arity as usize;
@@ -371,60 +367,14 @@ fn eval_basil_expr(vm: &mut VM, expr_src: &str, overlay: &Option<Rc<RefCell<Hash
             } else {
                 (1..=arity).map(|i| format!("p{}", i)).collect::<Vec<_>>().join(", ")
             };
-            // Choose a harmless dummy return literal based on the function name suffix
-            let ret_lit = if name.ends_with('$') {
-                "\"\"" // empty string
-            } else {
-                "0" // integer/number/null-safe placeholder
-            };
-            prelude.push_str(&format!(
-                "FUNCTION {}({}) BEGIN\n  RETURN {};\nEND FUNCTION\n",
-                name, params, ret_lit
-            ));
+            // DECLARE prototype only — no body
+            prelude.push_str(&format!("DECLARE FUNCTION {}({})\n", name, params));
         }
     }
-    // Colon-form label to mark start of actual evaluation code
-    prelude.push_str("__RENDER_EVAL:\n");
     let code = format!("{}\nLET __RENDER_TMP = ({});", prelude, expr_src);
     let ast = parse_basil(&code)?;
     let prog = compile_basil(&ast)?;
     let mut child = VM::new(prog.clone());
-    // Skip over hoisted FUNCTION stub initializers so they don't overwrite seeded real functions.
-    // The compiler emits for each top-level function: Const(Function) ; StoreGlobal <slot>
-    // We scan the top-level chunk from start and advance past any such pairs that reference
-    // a Function constant. Then we set the child's instruction pointer to that offset.
-    {
-        let code = &prog.chunk.code;
-        let consts = &prog.chunk.consts;
-        let mut p: usize = 0;
-        while p < code.len() {
-            let op = code[p];
-            if op == 1 { // Op::Const
-                if p + 3 >= code.len() { break; }
-                let c_lo = code[p+1] as u16;
-                let c_hi = code[p+2] as u16;
-                let c_idx = (c_lo | (c_hi << 8)) as usize;
-                // Next opcode must be StoreGlobal with 1-byte operand
-                if p + 4 >= code.len() { break; }
-                let next_op = code[p+3];
-                if next_op == 3 { // Op::StoreGlobal
-                    // Ensure const index is in range and is a Function value (stub)
-                    if c_idx < consts.len() {
-                        if matches!(consts[c_idx], Value::Func(_)) {
-                            // Pattern matches a hoisted function initializer: advance past it (Const u16 + StoreGlobal u8)
-                            p += 1 + 2 + 1 + 1;
-                            continue;
-                        }
-                    }
-                }
-            }
-            break; // first non-stub sequence
-        }
-        // Advance instruction pointer to skip over hoisted stub initializers
-        if p > 0 {
-            child.cur().ip = p;
-        }
-    }
     if let Some(sp) = &vm.script_path { child.set_script_path(sp.clone()); }
     // Seed globals from parent (functions and data)
     for (idx, name) in names.iter().enumerate() {
