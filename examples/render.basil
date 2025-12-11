@@ -21,6 +21,10 @@ REM PRINTLN RENDER$(tpl$)
 
 REM PRINTLN MyFunction$("1")
 
+FUNCTION MyEasyFunction$()
+    RETURN "Hello, world!"
+END FUNCTION
+
 FUNCTION MyFunction$(arg1%)
 
     PRINTLN RENDER$("Start: @LEFT(a$, 3) :End")
@@ -48,7 +52,7 @@ FUNCTION MyFunction$(arg1%)
 
 "
     RETURN "AAAAAAAAAAAA";
-    RETURN RENDER$(temp_tpl$)
+    REM RETURN RENDER$(temp_tpl$)
 END FUNCTION
 
 
@@ -62,7 +66,7 @@ LET view$ = "
     Greeting: Hello, {{ name$ }}! You are a good {{ species$ }}.
     Left 2 of name: @LEFT(name$, 2)
     ----------
-    {{ MyFunction$(1) }}
+    {{ MyEasyFunction$() }}
     ----------
 "
 
