@@ -47,6 +47,7 @@ FUNCTION MyFunction$(arg1%)
         @ENDIF
 
 "
+    RETURN "AAAAAAAAAAAA";
     RETURN RENDER$(temp_tpl$)
 END FUNCTION
 
@@ -60,7 +61,9 @@ LET view$ = "
     Weight: {{ weight }}
     Greeting: Hello, {{ name$ }}! You are a good {{ species$ }}.
     Left 2 of name: @LEFT(name$, 2)
+    ----------
     {{ MyFunction$(1) }}
+    ----------
 "
 
 
