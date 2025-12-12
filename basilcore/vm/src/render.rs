@@ -444,6 +444,76 @@ fn split_top_level_commas(args_src: &str) -> Vec<String> {
     out
 }
 
+// Detects a simple top-level assignment of the form: IDENT = <expr>
+// Returns (true, Some(ident)) when detected; otherwise (false, None).
+fn detect_simple_assignment(src: &str) -> (bool, Option<String>) {
+    let s = src.trim();
+    if s.is_empty() { return (false, None); }
+    let mut i = 0usize;
+    let mut depth: i32 = 0;
+    let mut in_str: Option<char> = None;
+    while i < s.len() {
+        let ch = s[i..].chars().next().unwrap();
+        // handle quotes
+        if let Some(q) = in_str {
+            if ch == '\\' { // skip escaped char inside string
+                let adv = ch.len_utf8();
+                i += adv;
+                if i < s.len() { i += s[i..].chars().next().unwrap().len_utf8(); }
+                continue;
+            }
+            if ch == q { in_str = None; i += ch.len_utf8(); continue; }
+            i += ch.len_utf8(); continue;
+        }
+        match ch {
+            '"' | '\'' => { in_str = Some(ch); i += ch.len_utf8(); continue; }
+            '(' => { depth += 1; i += ch.len_utf8(); continue; }
+            ')' => { depth -= 1; i += ch.len_utf8(); continue; }
+            '=' if depth == 0 => {
+                // Exclude '==' and '<=' and '>=' operators
+                let prev = if i == 0 { None } else { Some(s[..i].chars().last().unwrap()) };
+                let next = s[i + ch.len_utf8()..].chars().next();
+                if matches!(prev, Some('<' | '>' | '=')) || matches!(next, Some('=')) {
+                    i += ch.len_utf8();
+                    continue;
+                }
+                // LHS is s[..i]
+                let lhs = s[..i].trim();
+                if is_simple_identifier(lhs) {
+                    return (true, Some(lhs.to_string()));
+                } else {
+                    return (false, None);
+                }
+            }
+            _ => { i += ch.len_utf8(); }
+        }
+    }
+    (false, None)
+}
+
+fn is_simple_identifier(name: &str) -> bool {
+    if name.is_empty() { return false; }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    // Allow A-Z a-z _ only for first char
+    if !(first.is_ascii_alphabetic() || first == '_') { return false; }
+    // Rest may be alnum or '_', and optionally last char may be '$' or '%'
+    let mut seen_any = false;
+    let mut buf: Vec<char> = name.chars().collect();
+    // Allow a trailing '$' or '%'
+    if let Some(&last) = buf.last() {
+        if last == '$' || last == '%' {
+            buf.pop();
+        }
+    }
+    for c in buf.into_iter().skip(1) {
+        seen_any = true;
+        if !(c.is_ascii_alphanumeric() || c == '_') { return false; }
+    }
+    let _ = seen_any; // not strictly needed
+    true
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoopSignal { None, Break(usize), Continue(usize) }
 
@@ -755,7 +825,16 @@ fn eval_basil_expr(vm: &mut VM, expr_src: &str, overlay: &Option<Rc<RefCell<Hash
             prelude.push_str(&format!("DECLARE FUNCTION {}({})\n", name, params));
         }
     }
-    let code = format!("{}\nLET __RENDER_TMP = ({});", prelude, expr_src);
+    // Detect simple assignment form like: ident = <expr>. If present, execute it as a statement
+    // in the child VM and then propagate the new value back to the parent VM and overlay.
+    let (is_assign, lhs_ident) = detect_simple_assignment(expr_src);
+    let code = if is_assign {
+        // Execute the assignment as a statement; make __RENDER_TMP an empty string so that
+        // interpolation prints nothing for assignment side effects.
+        format!("{}\n{};\nLET __RENDER_TMP = \"\";", prelude, expr_src)
+    } else {
+        format!("{}\nLET __RENDER_TMP = ({});", prelude, expr_src)
+    };
     let ast = parse_basil(&code)?;
     let prog = compile_basil(&ast)?;
     let mut child = VM::new(prog.clone());
@@ -772,6 +851,21 @@ fn eval_basil_expr(vm: &mut VM, expr_src: &str, overlay: &Option<Rc<RefCell<Hash
         }
     }
     child.run()?;
+    // If this was an assignment to a simple identifier, read the assigned value from child and
+    // propagate it back to the parent global (and overlay map if present).
+    if is_assign {
+        if let Some(var) = lhs_ident.as_deref() {
+            if let Some(newv) = child.get_global_by_name(var) {
+                // Update parent VM global if it exists
+                let _ = vm.set_global_by_name(var, newv.clone());
+                // Update overlay entry if present (only exact key, no aliasing here)
+                if let Some(ov) = overlay {
+                    let mut map = ov.borrow_mut();
+                    if map.contains_key(var) { map.insert(var.to_string(), newv.clone()); }
+                }
+            }
+        }
+    }
     // locate result global
     let mut idx_opt: Option<usize> = None;
     for (i, name) in prog.globals.iter().enumerate() { if name == "__RENDER_TMP" { idx_opt = Some(i); break; } }
