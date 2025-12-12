@@ -1,0 +1,25 @@
+#CGI_NO_HEADER
+LET b% = LOADENV%() // defaults to .env
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+
+// Or, alternatively
+// LET sldb% = SQLITE_OPEN%("demo.db")
+
+LET isOk% = YORE_INIT(db@) // MySQL or PostgreSQL
+
+//  Or, alternatively
+// LET isOk% = YORE_INIT(sldb%) // sqllite
+
+//  Or, alternatively
+// LET isOk% = YORE_INIT()  // no database
+
+DIM req@   = YORE_REQUEST() // returns an object (we don't use symbols in functions unless it's $ or %)
+DIM page@  = YORE_RESOLVE_PAGE(req@)    ' page JSON metadata
+DIM ctx@   = YORE_BUILD_CONTEXT@(req@, page@)
+LET html$  = YORE_RENDER_PAGE$(page@, ctx@)
+LET output$ = RENDER$(html$, ctx@)
+
+PRINT "Status: 200 OK\r\n";
+PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
+PRINT output$

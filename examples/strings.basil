@@ -46,3 +46,28 @@ REM (Note: array-returning alias forms like EXPLODE$[]/EXPLODE2D$[] are not adde
 REM IMPLODE$
 PRINTLN IMPLODE$(items@, ",")                  REM list -> string
 PRINTLN IMPLODE$(params@, "&", "=")           REM dict -> query string
+
+A$ = "Hello"
+B$ = "World"
+
+C$ = RENDER$("This view says {{ A$ }}, {{ B$ }} and {{ A$ + B$ }}!")
+PRINTLN C$
+
+
+DIM A$(5)
+A$(0) = "Hello"
+A$(1) = "World"
+A$(2) = "World"
+A$(3) = "World"
+A$(4) = "World"
+A$(5) = "World"
+
+PRINTLN IMPLODE$(A$, ",")
+B$ = IMPLODE$(A$, ",")
+
+PRINTLN B$
+
+LET items@ = EXPLODE(B$, ",")
+FOR i% = 1 TO LEN(items@)
+    PRINTLN items@[i%]
+NEXT

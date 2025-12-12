@@ -122,6 +122,9 @@ pub enum Stmt {
     Break,
     Continue,
     Block(Vec<Stmt>),
+    // Forward prototype declaration (no body)
+    Declare { kind: FuncKind, name: String, params: Vec<String> },
+    // Full function/subroutine definition with body
     Func { kind: FuncKind, name: String, params: Vec<String>, body: Vec<Stmt> },
     For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
     // FOR EACH var IN expr ... NEXT
