@@ -333,10 +333,26 @@ impl<'a> Lexer<'a> {
         // 2) Parse that raw content into literal and expression parts; cook escapes only in literals.
         let tok_line = self.tok_line as u32;
         let outer_start = self.start;
-        // Record the byte index just AFTER the opening quote
-        let content_start = self.pos;
+        // Record the byte index just AFTER the opening quote (will be adjusted for triple quotes)
+        let mut content_start = self.pos;
         // Step into the first character (if any)
         self.advance();
+        // Support triple quotes for multi-line strings: """ ... """
+        let mut triple = false;
+        if self.cur == Some('"') {
+            // Peek the next character as well to detect three consecutive quotes
+            let mut it = self.chars.clone();
+            let q1 = it.next();
+            if matches!(q1, Some('"')) {
+                // We have at least two quotes following the first; treat as triple-quote start
+                triple = true;
+                // consume the remaining two quotes
+                self.advance();
+                self.advance();
+                // content starts after all three quotes
+                content_start = self.pos;
+            }
+        }
         // scan raw until the matching closing quote (respecting escapes)
         let content_end = loop {
             let ch = match self.cur {
@@ -344,10 +360,30 @@ impl<'a> Lexer<'a> {
                 None => return Err(BasilError(format!("parse error at line {}: unterminated string", tok_line))),
             };
             if ch == '"' {
-                // end should EXCLUDE the closing quote
-                let end = self.pos - '"'.len_utf8();
-                self.advance();     // step past closing quote
-                break end;
+                if triple {
+                    // Only terminate when we see a run of three quotes
+                    let mut it = self.chars.clone();
+                    let q1 = it.next();
+                    let q2 = it.next();
+                    if matches!(q1, Some('"')) && matches!(q2, Some('"')) {
+                        // end should EXCLUDE the first quote of the closing trio
+                        let end = self.pos - '"'.len_utf8();
+                        // consume all three quotes
+                        self.advance();
+                        self.advance();
+                        self.advance();
+                        break end;
+                    } else {
+                        // treat as a literal quote character inside triple-quoted string
+                        self.advance();
+                        continue;
+                    }
+                } else {
+                    // end should EXCLUDE the closing quote
+                    let end = self.pos - '"'.len_utf8();
+                    self.advance();     // step past closing quote
+                    break end;
+                }
             }
             if ch == '\\' {
                 // skip escaped char

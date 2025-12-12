@@ -212,35 +212,100 @@ render a block for each element, with an optional fallback block when there are 
 
 ---
 
-### Optional variants and future enhancements
+### Implemented variants and features
 
-- Two‑variable dictionary iteration (and 2‑col array rows)
-    - Syntax: `@FOREACH(key$, value IN dict@)` or `@FOREACH(key$, value IN rows$())` (where `rows$()` is 2×N array)
-    - Both variables are injected into scope; `@FORELSE` remains the same.
+- Single‑variable `@FOREACH(var IN expr)` with optional `@FORELSE` and closing `@ENDFOREACH`.
+  - Supports List values, Dict keys, and Arrays:
+    - 1‑D arrays iterate elements
+    - 2×N arrays iterate the first column as keys (see notes)
+  - Non‑iterables yield zero iterations (soft no‑op).
 
-- Index and meta variables
-    - Auto‑inject read‑only loop metadata for convenience:
-        - `_index%` (0‑based index), `_number%` (1‑based), `_count%` (total iterations), `_first%` (Bool), `_last%` (
-          Bool)
-    - Names use underscores to minimize collisions and follow Basil’s `%` suffix for integers.
+- Index and meta variables (read‑only) are injected during iterations and available in expressions/directives:
+  - `_index%` (0‑based index)
+  - `_number%` (1‑based index)
+  - `_count%` (total iterations)
+  - `_first%` (Bool)
+  - `_last%` (Bool)
 
-- Deterministic dict iteration
-    - `@FOREACH_SORTED(key$ IN dict@)` — sorts by key (string ascending) before iterating.
-    - Or allow an optional `ORDER BY KEY|VALUE ASC|DESC` modifier in the header:
-      `@FOREACH(k$ IN dict@ ORDER BY KEY ASC)`.
+- Deterministic dictionary iteration variants (exact names):
+  - `@FOREACH_KSORT(key$ IN dict@)` — sort by key ascending
+  - `@FOREACH_VSORT(key$ IN dict@)` — sort by value ascending (string comparison of rendered values)
+  - `@FOREACH_KSORT_DESC(key$ IN dict@)` — sort by key descending
+  - `@FOREACH_DSORT_DESC(key$ IN dict@)` — sort by value descending (string comparison)
 
-- Range and numeric loops
-    - Simple repeat: `@TIMES(n%)` … `@ENDTIMES`
-    - Ranged loop: `@FOR(i% = start TO end [STEP step])` … `@ENDFOR`
-    - While loop: `@WHILE(cond)` … `@ENDWHILE`
+- Range and numeric loops:
+  - `@TIMES(n)` … `@ENDTIMES`
+  - `@FOR(i% = start TO end [STEP step])` … `@ENDFOR`
+  - `@WHILE(cond)` … `@ENDWHILE`
+  - Meta variables are populated in these loops as well.
 
-- Break/continue inside loops
-    - Add `@BREAK` and `@CONTINUE` directives with the obvious semantics restricted to the innermost Fred loop. This is
-      easy to implement in the renderer’s evaluator without touching the Basil compiler.
+- Loop control:
+  - `@BREAK` and `@CONTINUE` affect the innermost Fred loop
+  - Using them outside a loop is a render error
 
-- Strict mode/compatibility knobs
-    - A future `RENDER_SAFE$` or mode flag could make `@FOREACH` error on unsupported enumerable types rather than
-      silently yielding zero iterations.
+Notes:
+- 2‑D arrays must have exactly 2 columns to be treated as key/value rows; the single‑var form yields keys (column 0).
+- Loop variables are injected into the template scope via the same overlay used by RENDER$ context dictionaries. If you choose a suffixed name (like `key$` or `i%`), use that exact name in the header.
+
+### Examples
+
+Iterate a list with meta variables:
+
+```
+LET nums@ = [10, 20, 30]
+PRINT RENDER$("""
+@FOREACH(n% IN nums@)
+  {{ _number% }}/{{ _count% }}: {{ n% }}
+@FORELSE
+  empty
+@ENDFOREACH
+""")
+```
+
+Deterministic dict iteration by key ascending:
+
+```
+LET pet@ = { "name": "Fido", "species": "dog", "age": 7 }
+PRINT RENDER$("""
+@FOREACH_KSORT(k$ IN pet@)
+  {{ k$ }} = {{ pet@[k$] }}
+@ENDFOREACH
+""")
+```
+
+Repeat N times and use BREAK/CONTINUE:
+
+```
+PRINT RENDER$("""
+@TIMES(10)
+  {{ _number% }}
+  @IF(_number% == 3) @CONTINUE() @ENDIF
+  @IF(_number% == 8) @BREAK() @ENDIF
+@ENDTIMES
+""")
+```
+
+Numeric FOR loop with STEP and meta variables:
+
+```
+PRINT RENDER$("""
+@FOR(i% = 5 TO 1 STEP -2)
+  i={{ i% }} first={{ _first% }} last={{ _last% }}
+@ENDFOR
+""")
+```
+
+While loop:
+
+```
+LET n% = 3
+PRINT RENDER$("""
+@WHILE(n% > 0)
+  n is {{ n% }}
+  {{ n% = n% - 1 }}
+@ENDWHILE
+""")
+```
 
 ---
 

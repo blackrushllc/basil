@@ -11,7 +11,13 @@ use std::rc::Rc;
 // Public entry point
 // Optional context dictionary provides additional variables visible during rendering.
 pub fn render_template(vm: &mut VM, template: &str, ctx_dict: Option<Rc<RefCell<HashMap<String, Value>>>>) -> Result<String> {
-    let mut ctx = Ctx { max_depth: 16, depth: 0, overlay: ctx_dict, template: template.to_string() };
+    // Start overlay as a copy of provided context dictionary (if any) so that template-loop variables
+    // do not mutate the caller's dictionary values.
+    let overlay = if let Some(rc) = ctx_dict {
+        let cloned: HashMap<String, Value> = rc.borrow().iter().map(|(k,v)| (k.clone(), v.clone())).collect();
+        Some(Rc::new(RefCell::new(cloned)))
+    } else { None };
+    let mut ctx = Ctx { max_depth: 16, depth: 0, overlay, template: template.to_string() };
     render_inner(vm, template, &mut ctx)
 }
 
@@ -30,7 +36,17 @@ enum Node {
     Call { name: String, args: Vec<String>, pos: usize }, // @NAME(args) at pos
     If { cond: String, then_part: Vec<Node>, else_part: Vec<Node>, pos: usize },
     Case { arms: Vec<(String, Vec<Node>)>, pos: usize },
+    // Loops
+    ForEach { var: String, enumerable: String, body: Vec<Node>, else_part: Vec<Node>, order: ForEachOrder, pos: usize },
+    Times { count: String, body: Vec<Node>, pos: usize },
+    ForNum { var: String, start: String, end: String, step: Option<String>, body: Vec<Node>, pos: usize },
+    While { cond: String, body: Vec<Node>, pos: usize },
+    Break { pos: usize },
+    Continue { pos: usize },
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ForEachOrder { Natural, KSortAsc, VSortAsc, KSortDesc, VSortDesc }
 
 fn render_inner(vm: &mut VM, template: &str, ctx: &mut Ctx) -> Result<String> {
     let nodes = parse_template(template)?;
@@ -110,12 +126,26 @@ fn parse_at_directive(s: &str, i: &mut usize) -> Result<Node> {
     *i += 1; // skip @
     let name = read_ident(s, i).ok_or_else(|| BasilError("RENDER$: expected directive name".into()))?;
     let uname = name.to_ascii_uppercase();
-    if uname == "ELSE" || uname == "ENDIF" || uname == "ENDCASE" {
+    if uname == "ELSE" || uname == "ENDIF" || uname == "ENDCASE"
+        || uname == "FORELSE" || uname == "ENDFOREACH"
+        || uname == "ENDTIMES" || uname == "ENDFOR" || uname == "ENDWHILE" {
         // Should be handled by caller; back up to '@' for caller to consume token
         *i -= 1; // include '@'
         return Err(BasilError("RENDER$: unexpected block control token".into()));
     }
-    // Read argument list in parentheses
+    // Special zero-arg directives (optionally accept empty parentheses)
+    if uname == "BREAK" {
+        skip_ws(s, i);
+        if starts_with2(s, *i, "(") { *i += 1; let _ = read_args_until_rparen(s, i)?; }
+        return Ok(Node::Break { pos: start });
+    }
+    if uname == "CONTINUE" {
+        skip_ws(s, i);
+        if starts_with2(s, *i, "(") { *i += 1; let _ = read_args_until_rparen(s, i)?; }
+        return Ok(Node::Continue { pos: start });
+    }
+
+    // Read argument list in parentheses for the rest
     skip_ws(s, i);
     if !starts_with2(s, *i, "(") {
         return Err(BasilError(format!("RENDER$: expected '(' after @{}", name)));
@@ -164,10 +194,182 @@ fn parse_at_directive(s: &str, i: &mut usize) -> Result<Node> {
             }
             Ok(Node::Case { arms, pos: start })
         }
+        // FOREACH families
+        "FOREACH" | "FOREACH_KSORT" | "FOREACH_VSORT" | "FOREACH_KSORT_DESC" | "FOREACH_DSORT_DESC" => {
+            // Parse header: ident IN expr
+            let (var, expr) = parse_foreach_header(&args_src)?;
+            let order = match uname.as_str() {
+                "FOREACH_KSORT" => ForEachOrder::KSortAsc,
+                "FOREACH_VSORT" => ForEachOrder::VSortAsc,
+                "FOREACH_KSORT_DESC" => ForEachOrder::KSortDesc,
+                "FOREACH_DSORT_DESC" => ForEachOrder::VSortDesc,
+                _ => ForEachOrder::Natural,
+            };
+            // Parse body until @FORELSE or @ENDFOREACH
+            let body = parse_block(s, i, &["FORELSE", "ENDFOREACH"])?;
+            // consume @FORELSE or @ENDFOREACH
+            if !starts_with_at(s, *i) { return Err(BasilError("RENDER$: expected @FORELSE or @ENDFOREACH".into())); }
+            *i += 1; let tok = read_ident(s, i).unwrap_or_default().to_ascii_uppercase();
+            let else_part = if tok == "FORELSE" {
+                let part = parse_block(s, i, &["ENDFOREACH"])?;
+                if !starts_with_at(s, *i) { return Err(BasilError("RENDER$: expected @ENDFOREACH".into())); }
+                *i += 1; let _ = read_ident(s, i);
+                part
+            } else if tok == "ENDFOREACH" { Vec::new() } else {
+                return Err(BasilError("RENDER$: expected @FORELSE or @ENDFOREACH".into()));
+            };
+            Ok(Node::ForEach { var, enumerable: expr, body, else_part, order, pos: start })
+        }
+        // TIMES
+        "TIMES" => {
+            let count = args.get(0).cloned().unwrap_or_else(|| args_src.trim().to_string());
+            let body = parse_block(s, i, &["ENDTIMES"])?;
+            if !starts_with_at(s, *i) { return Err(BasilError("RENDER$: expected @ENDTIMES".into())); }
+            *i += 1; let _ = read_ident(s, i);
+            Ok(Node::Times { count, body, pos: start })
+        }
+        // FOR numeric: i% = start TO end [STEP step]
+        "FOR" => {
+            let (var, start_expr, end_expr, step_expr) = parse_for_header(&args_src)?;
+            let body = parse_block(s, i, &["ENDFOR"])?;
+            if !starts_with_at(s, *i) { return Err(BasilError("RENDER$: expected @ENDFOR".into())); }
+            *i += 1; let _ = read_ident(s, i);
+            Ok(Node::ForNum { var, start: start_expr, end: end_expr, step: step_expr, body, pos: start })
+        }
+        // WHILE
+        "WHILE" => {
+            let cond = args.get(0).cloned().unwrap_or_else(|| args_src.trim().to_string());
+            let body = parse_block(s, i, &["ENDWHILE"])?;
+            if !starts_with_at(s, *i) { return Err(BasilError("RENDER$: expected @ENDWHILE".into())); }
+            *i += 1; let _ = read_ident(s, i);
+            Ok(Node::While { cond, body, pos: start })
+        }
         _ => {
             Ok(Node::Call { name: uname, args, pos: start })
         }
     }
+}
+
+// Parse FOREACH header: "var IN expr" (case-insensitive IN). Returns (var, expr)
+fn parse_foreach_header(src: &str) -> Result<(String, String)> {
+    let (mut i, mut in_pos) = (0usize, None);
+    let bytes = src.as_bytes();
+    // scan respecting quotes and parentheses
+    let mut depth = 0i32;
+    while i < src.len() {
+        let ch = src[i..].chars().next().unwrap();
+        if ch == '"' || ch == '\'' {
+            // skip string
+            let q = ch; i += ch.len_utf8();
+            while i < src.len() {
+                let c = src[i..].chars().next().unwrap();
+                i += c.len_utf8();
+                if c == q { break; }
+            }
+            continue;
+        }
+        match ch {
+            '(' => { depth += 1; }
+            ')' => { depth -= 1; }
+            _ => {}
+        }
+        if depth == 0 {
+            // try to match IN at this position (case-insensitive), with word boundaries
+            if i + 2 <= bytes.len() {
+                // read a word
+                if let Some(w) = peek_word(&src[i..]) {
+                    if w.eq_ignore_ascii_case("IN") {
+                        in_pos = Some(i);
+                        break;
+                    }
+                }
+            }
+        }
+        i += ch.len_utf8();
+    }
+    let in_idx = in_pos.ok_or_else(|| BasilError("RENDER$: malformed @FOREACH header; expected 'var IN expr'".into()))?;
+    let left = src[..in_idx].trim();
+    // advance past IN token
+    let mut j = in_idx;
+    if let Some(w) = peek_word(&src[j..]) { j += w.len(); } else { return Err(BasilError("RENDER$: malformed @FOREACH header".into())); }
+    let right = src[j..].trim();
+    if left.is_empty() || right.is_empty() { return Err(BasilError("RENDER$: malformed @FOREACH header".into())); }
+    Ok((left.to_string(), right.to_string()))
+}
+
+// Parse FOR header: "var = start TO end [STEP step]"
+fn parse_for_header(src: &str) -> Result<(String, String, String, Option<String>)> {
+    // find '=' first at top level
+    let mut depth = 0i32; let mut eq_pos: Option<usize> = None; let mut i = 0usize;
+    while i < src.len() {
+        let ch = src[i..].chars().next().unwrap();
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '"' | '\'' => {
+                let q = ch; i += ch.len_utf8();
+                while i < src.len() { let c = src[i..].chars().next().unwrap(); i += c.len_utf8(); if c == q { break; } }
+                continue;
+            }
+            '=' if depth == 0 => { eq_pos = Some(i); break; }
+            _ => {}
+        }
+        i += ch.len_utf8();
+    }
+    let eq = eq_pos.ok_or_else(|| BasilError("RENDER$: malformed @FOR header; expected '='".into()))?;
+    let var = src[..eq].trim().to_string();
+    // after '=' expect start ... TO ... [STEP ...]
+    let rest = src[eq+1..].trim();
+    // find TO
+    let mut k = 0usize; let mut to_pos: Option<usize> = None; depth = 0;
+    while k < rest.len() {
+        let ch = rest[k..].chars().next().unwrap();
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '"' | '\'' => {
+                let q = ch; k += ch.len_utf8();
+                while k < rest.len() { let c = rest[k..].chars().next().unwrap(); k += c.len_utf8(); if c == q { break; } }
+                continue;
+            }
+            _ => {}
+        }
+        if depth == 0 {
+            if let Some(w) = peek_word(&rest[k..]) { if w.eq_ignore_ascii_case("TO") { to_pos = Some(k); break; } }
+        }
+        k += ch.len_utf8();
+    }
+    let to_idx = to_pos.ok_or_else(|| BasilError("RENDER$: malformed @FOR header; expected 'TO'".into()))?;
+    let start_expr = rest[..to_idx].trim().to_string();
+    // move past TO keyword
+    let mut m = to_idx; if let Some(w) = peek_word(&rest[m..]) { m += w.len(); } else { return Err(BasilError("RENDER$: malformed @FOR header".into())); }
+    let after_to = rest[m..].trim();
+    // optional STEP
+    let (end_expr, step_expr) = if let Some(step_idx) = find_keyword_top_level(after_to, "STEP") {
+        let end_e = after_to[..step_idx].trim().to_string();
+        let mut p = step_idx; if let Some(w) = peek_word(&after_to[p..]) { p += w.len(); } else { return Err(BasilError("RENDER$: malformed @FOR header".into())); }
+        let step_e = after_to[p..].trim().to_string();
+        (end_e, if step_e.is_empty() { None } else { Some(step_e) })
+    } else { (after_to.to_string(), None) };
+    if var.is_empty() || start_expr.is_empty() || end_expr.is_empty() { return Err(BasilError("RENDER$: malformed @FOR header".into())); }
+    Ok((var, start_expr, end_expr, step_expr))
+}
+
+fn find_keyword_top_level(src: &str, kw: &str) -> Option<usize> {
+    let mut i = 0usize; let mut depth = 0i32;
+    while i < src.len() {
+        let ch = src[i..].chars().next().unwrap();
+        match ch { '(' => depth += 1, ')' => depth -= 1, '"' | '\'' => {
+            let q = ch; i += ch.len_utf8();
+            while i < src.len() { let c = src[i..].chars().next().unwrap(); i += c.len_utf8(); if c == q { break; } }
+            continue;
+        }, _ => {} }
+        if depth == 0 {
+            if let Some(w) = peek_word(&src[i..]) { if w.eq_ignore_ascii_case(kw) { return Some(i); } }
+        }
+        i += ch.len_utf8();
+    }
+    None
 }
 
 fn read_ident(s: &str, i: &mut usize) -> Option<String> {
@@ -242,7 +444,53 @@ fn split_top_level_commas(args_src: &str) -> Vec<String> {
     out
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopSignal { None, Break(usize), Continue(usize) }
+
 fn eval_nodes(vm: &mut VM, nodes: &Vec<Node>, ctx: &mut Ctx) -> Result<String> {
+    let (s, sig) = eval_nodes_ctrl(vm, nodes, ctx)?;
+    match sig {
+        LoopSignal::None => Ok(s),
+        LoopSignal::Break(pos) => Err(wrap_tmpl_error(&ctx.template, pos, &BasilError("RENDER$: @BREAK outside of loop".into()))),
+        LoopSignal::Continue(pos) => Err(wrap_tmpl_error(&ctx.template, pos, &BasilError("RENDER$: @CONTINUE outside of loop".into()))),
+    }
+}
+
+fn ensure_overlay(ctx: &mut Ctx) -> Rc<RefCell<HashMap<String, Value>>> {
+    if ctx.overlay.is_none() {
+        ctx.overlay = Some(Rc::new(RefCell::new(HashMap::new())));
+    }
+    ctx.overlay.as_ref().unwrap().clone()
+}
+
+fn set_overlay(ctx: &mut Ctx, key: &str, val: Value) -> Option<Value> {
+    let ov = ensure_overlay(ctx);
+    let mut map = ov.borrow_mut();
+    map.insert(key.to_string(), val)
+}
+fn remove_overlay(ctx: &mut Ctx, key: &str, prev: Option<Value>) {
+    let ov = ctx.overlay.as_ref().unwrap().clone();
+    let mut map = ov.borrow_mut();
+    if let Some(p) = prev { map.insert(key.to_string(), p); } else { map.remove(key); }
+}
+
+fn set_meta(ctx: &mut Ctx, idx: i64, count: i64) -> (Option<Value>, Option<Value>, Option<Value>, Option<Value>, Option<Value>) {
+    let p1 = set_overlay(ctx, "_index%", Value::Int(idx));
+    let p2 = set_overlay(ctx, "_number%", Value::Int(idx + 1));
+    let p3 = set_overlay(ctx, "_count%", Value::Int(count));
+    let p4 = set_overlay(ctx, "_first%", Value::Bool(idx == 0));
+    let p5 = set_overlay(ctx, "_last%", Value::Bool(idx + 1 == count));
+    (p1, p2, p3, p4, p5)
+}
+fn clear_meta(ctx: &mut Ctx, p: (Option<Value>, Option<Value>, Option<Value>, Option<Value>, Option<Value>)) {
+    remove_overlay(ctx, "_index%", p.0);
+    remove_overlay(ctx, "_number%", p.1);
+    remove_overlay(ctx, "_count%", p.2);
+    remove_overlay(ctx, "_first%", p.3);
+    remove_overlay(ctx, "_last%", p.4);
+}
+
+fn eval_nodes_ctrl(vm: &mut VM, nodes: &Vec<Node>, ctx: &mut Ctx) -> Result<(String, LoopSignal)> {
     let mut out = String::new();
     for n in nodes {
         match n {
@@ -262,8 +510,9 @@ fn eval_nodes(vm: &mut VM, nodes: &Vec<Node>, ctx: &mut Ctx) -> Result<String> {
             Node::If { cond, then_part, else_part, pos } => {
                 match eval_basil_expr_with_fred(vm, cond, ctx) {
                     Ok(v) => {
-                        if truthy(&v) { out.push_str(&eval_nodes(vm, then_part, ctx)?); }
-                        else { out.push_str(&eval_nodes(vm, else_part, ctx)?); }
+                        let (s, sig) = if truthy(&v) { eval_nodes_ctrl(vm, then_part, ctx)? } else { eval_nodes_ctrl(vm, else_part, ctx)? };
+                        out.push_str(&s);
+                        if sig != LoopSignal::None { return Ok((out, sig)); }
                     }
                     Err(e) => return Err(wrap_tmpl_error(&ctx.template, *pos, &e)),
                 }
@@ -274,15 +523,150 @@ fn eval_nodes(vm: &mut VM, nodes: &Vec<Node>, ctx: &mut Ctx) -> Result<String> {
                     if done { break; }
                     match eval_basil_expr_with_fred(vm, csrc, ctx) {
                         Ok(v) => {
-                            if truthy(&v) { out.push_str(&eval_nodes(vm, body, ctx)?); done = true; }
+                            if truthy(&v) {
+                                let (s, sig) = eval_nodes_ctrl(vm, body, ctx)?;
+                                out.push_str(&s); if sig != LoopSignal::None { return Ok((out, sig)); }
+                                done = true;
+                            }
                         }
                         Err(e) => return Err(wrap_tmpl_error(&ctx.template, *pos, &e)),
                     }
                 }
             }
+            Node::Break { pos } => { return Ok((out, LoopSignal::Break(*pos))); }
+            Node::Continue { pos } => { return Ok((out, LoopSignal::Continue(*pos))); }
+            Node::Times { count, body, pos } => {
+                let n = as_i64(eval_basil_expr_with_fred(vm, count, ctx)
+                    .map_err(|e| wrap_tmpl_error(&ctx.template, *pos, &e))?);
+                let total = if n < 0 { 0 } else { n } as i64;
+                let mut idx: i64 = 0;
+                while idx < total {
+                    let mp = set_meta(ctx, idx, total);
+                    let (s, sig) = eval_nodes_ctrl(vm, body, ctx)?;
+                    out.push_str(&s);
+                    clear_meta(ctx, mp);
+                    match sig { LoopSignal::None => {}, LoopSignal::Continue(_) => { idx += 1; continue; }, LoopSignal::Break(_) => { break; } }
+                    idx += 1;
+                }
+            }
+            Node::ForNum { var, start, end, step, body, pos } => {
+                let start_i = as_i64(eval_basil_expr_with_fred(vm, start, ctx)
+                    .map_err(|e| wrap_tmpl_error(&ctx.template, *pos, &e))?);
+                let end_i = as_i64(eval_basil_expr_with_fred(vm, end, ctx)
+                    .map_err(|e| wrap_tmpl_error(&ctx.template, *pos, &e))?);
+                let step_i = match step {
+                    Some(se) => {
+                        let v = as_i64(eval_basil_expr_with_fred(vm, se, ctx)
+                            .map_err(|e| wrap_tmpl_error(&ctx.template, *pos, &e))?);
+                        if v == 0 { 1 } else { v }
+                    },
+                    None => if end_i >= start_i { 1 } else { -1 }
+                };
+                // compute count for meta
+                let total = if (step_i > 0 && start_i > end_i) || (step_i < 0 && start_i < end_i) { 0 } else {
+                    let dist = (end_i - start_i).abs();
+                    (dist / step_i.abs()) + 1
+                };
+                let prev = set_overlay(ctx, var, Value::Int(start_i));
+                let mut idx: i64 = 0; let mut cur = start_i;
+                while (step_i > 0 && cur <= end_i) || (step_i < 0 && cur >= end_i) {
+                    // update loop var
+                    let _ = set_overlay(ctx, var, Value::Int(cur));
+                    let mp = set_meta(ctx, idx, total);
+                    let (s, sig) = eval_nodes_ctrl(vm, body, ctx)?;
+                    out.push_str(&s);
+                    clear_meta(ctx, mp);
+                    match sig { LoopSignal::None => {}, LoopSignal::Continue(_) => { cur += step_i; idx += 1; continue; }, LoopSignal::Break(_) => { break; } }
+                    cur += step_i; idx += 1;
+                }
+                remove_overlay(ctx, var, prev);
+            }
+            Node::While { cond, body, pos } => {
+                let mut idx: i64 = 0;
+                loop {
+                    let v = eval_basil_expr_with_fred(vm, cond, ctx)
+                        .map_err(|e| wrap_tmpl_error(&ctx.template, *pos, &e))?;
+                    if !truthy(&v) { break; }
+                    // Unknown total; set _count% to current 1-based for convenience
+                    let mp = set_meta(ctx, idx, idx + 1);
+                    let (s, sig) = eval_nodes_ctrl(vm, body, ctx)?;
+                    out.push_str(&s);
+                    clear_meta(ctx, mp);
+                    match sig { LoopSignal::None => {}, LoopSignal::Continue(_) => { idx += 1; continue; }, LoopSignal::Break(_) => { break; } }
+                    idx += 1;
+                }
+            }
+            Node::ForEach { var, enumerable, body, else_part, order, pos } => {
+                let val = eval_basil_expr_with_fred(vm, enumerable, ctx)
+                    .map_err(|e| wrap_tmpl_error(&ctx.template, *pos, &e))?;
+                // Collect iteration list of Values for the loop var
+                let mut items: Vec<Value> = Vec::new();
+                match &val {
+                    Value::List(rc) => { items.extend(rc.borrow().iter().cloned()); }
+                    Value::Array(arr_rc) => {
+                        let arr = arr_rc.as_ref();
+                        if arr.dims.len() == 1 {
+                            items.extend(arr.data.borrow().iter().cloned());
+                        } else if arr.dims.len() == 2 && arr.dims[1] == 2 {
+                            // keys are column 0
+                            let rows = arr.dims[0];
+                            let data = arr.data.borrow();
+                            for r in 0..rows { items.push(data[r*2].clone()); }
+                        } else {
+                            // non-iterable shape → zero iterations
+                        }
+                    }
+                    Value::Dict(rc) => {
+                        let map = rc.borrow();
+                        match order {
+                            ForEachOrder::Natural => {
+                                for k in map.keys() { items.push(Value::Str(k.clone())); }
+                            }
+                            ForEachOrder::KSortAsc => {
+                                let mut v: Vec<String> = map.keys().cloned().collect(); v.sort();
+                                for k in v { items.push(Value::Str(k)); }
+                            }
+                            ForEachOrder::KSortDesc => {
+                                let mut v: Vec<String> = map.keys().cloned().collect(); v.sort_by(|a,b| b.cmp(a));
+                                for k in v { items.push(Value::Str(k)); }
+                            }
+                            ForEachOrder::VSortAsc => {
+                                let mut v: Vec<(String, String)> = map.iter().map(|(k, vv)| (k.clone(), format!("{}", vv))).collect();
+                                v.sort_by(|a,b| a.1.cmp(&b.1));
+                                for (k, _) in v { items.push(Value::Str(k)); }
+                            }
+                            ForEachOrder::VSortDesc => {
+                                let mut v: Vec<(String, String)> = map.iter().map(|(k, vv)| (k.clone(), format!("{}", vv))).collect();
+                                v.sort_by(|a,b| b.1.cmp(&a.1));
+                                for (k, _) in v { items.push(Value::Str(k)); }
+                            }
+                        }
+                    }
+                    _ => { /* non-iterable: zero iterations */ }
+                }
+
+                let total = items.len() as i64;
+                if total == 0 {
+                    // render else_part if any
+                    let (s, sig) = eval_nodes_ctrl(vm, else_part, ctx)?; out.push_str(&s); if sig != LoopSignal::None { return Ok((out, sig)); }
+                } else {
+                    let prev = set_overlay(ctx, var, Value::Null);
+                    for (idx, it) in items.into_iter().enumerate() {
+                        let it_idx = idx as i64;
+                        let _ = set_overlay(ctx, var, it.clone());
+                        // also set meta
+                        let mp = set_meta(ctx, it_idx, total);
+                        let (s, sig) = eval_nodes_ctrl(vm, body, ctx)?;
+                        out.push_str(&s);
+                        clear_meta(ctx, mp);
+                        match sig { LoopSignal::None => {}, LoopSignal::Continue(_) => { continue; }, LoopSignal::Break(_) => { break; } }
+                    }
+                    remove_overlay(ctx, var, prev);
+                }
+            }
         }
     }
-    Ok(out)
+    Ok((out, LoopSignal::None))
 }
 
 fn value_to_string(v: &Value) -> String { format!("{}", v) }

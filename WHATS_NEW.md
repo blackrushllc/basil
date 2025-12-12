@@ -14,6 +14,7 @@
 ### 🌿 New stuff just added:
 + Semi-colon line delimiters, LET, and BEGIN/END Blocks are now optional, and = is recognized as == for equality comparisons
 + Multi-line string literals and single quotes are now supported
++ Triple-quoted multi-line strings are now supported: use """ ... """ for convenient multi-line string blocks
 + WEB SERVER!  See docs/WEB_SERVER.md for info to build & run local dev web server
 + Laravel Blade-like CGI template support (see VIEW_RENDERING_AND_FRED.md)
 + A GUI Proof of Concept (Basilica) that runs Basil scripts in a webview window with HTML/CSS/JS rendering
