@@ -74,6 +74,9 @@ embed-test = []
 # Enables building a fully static, portable Linux binary when used with the MUSL target
 portable = []
 
+# Yore web framework kernel
+obj-yore = ["basil-vm/obj-yore", "basil-compiler/obj-yore"]
+
 
 [build-dependencies]
 winres = "0.1.12"

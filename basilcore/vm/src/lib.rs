@@ -68,7 +68,7 @@ use base64::{engine::general_purpose, Engine as _};
 use basil_objects::zip as zip_utils;
 #[cfg(feature = "obj-curl")]
 use basil_objects::curl as curl_utils;
-#[cfg(any(feature = "obj-json", feature = "obj-csv"))]
+#[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
 use serde_json::{Value as JValue};
 #[cfg(feature = "obj-csv")]
 use csv::{ReaderBuilder, WriterBuilder};
@@ -336,6 +336,8 @@ pub struct VM {
     out_col: usize,
     // RNG state for RND
     rnd_state: u64,
+    #[cfg(feature = "obj-yore")]
+    yore: Option<YoreState>,
 }
 
 // --- Lightweight Class Instance object ---
@@ -486,6 +488,8 @@ impl VM {
                 let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x9E3779B97F4A7C15);
                 if ns == 0 { 0x9E3779B97F4A7C15 } else { ns }
             },
+            #[cfg(feature = "obj-yore")]
+            yore: None,
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -3214,6 +3218,66 @@ impl VM {
                             if argc != 0 { return Err(BasilError("TERM.POLLKEY$ expects 0 arguments".into())); }
                             let s = basil_objects::term::term_pollkey_s();
                             self.stack.push(Value::Str(s));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        255 => { // YORE_INIT%(OPTIONAL db_or_handle)
+                            if argc > 1 { return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into())); }
+                            let mut state = YoreState::new();
+                            // optional DB handle/object
+                            if argc == 1 {
+                                state.db = Some(args[0].clone());
+                            }
+                            match state.init_domain() {
+                                Ok(_) => { self.yore = Some(state); self.stack.push(Value::Int(1)); }
+                                Err(_) => { self.yore = Some(state); self.stack.push(Value::Int(0)); }
+                            }
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        256 => { // YORE_REQUEST()
+                            if argc != 0 { return Err(BasilError("YORE_REQUEST expects 0 arguments".into())); }
+                            let st = self.ensure_yore_state()?;
+                            let req = st.build_request(self)?;
+                            self.stack.push(req);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        257 => { // YORE_RESOLVE_PAGE(req@)
+                            if argc != 1 { return Err(BasilError("YORE_RESOLVE_PAGE expects 1 argument (req@)".into())); }
+                            let req = match &args[0] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("YORE_RESOLVE_PAGE arg must be a Dictionary (req@)".into())) };
+                            let st = self.ensure_yore_state()?;
+                            let page = st.resolve_page(req.clone())?;
+                            self.stack.push(page);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        258 => { // YORE_BUILD_CONTEXT(req@, page@)
+                            if argc != 2 { return Err(BasilError("YORE_BUILD_CONTEXT expects 2 arguments (req@, page@)".into())); }
+                            let req = match &args[0] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("YORE_BUILD_CONTEXT arg1 must be Dictionary (req@)".into())) };
+                            let page = match &args[1] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("YORE_BUILD_CONTEXT arg2 must be Dictionary (page@)".into())) };
+                            let st = self.ensure_yore_state()?;
+                            let ctx = st.build_context(req, page)?;
+                            self.stack.push(ctx);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        259 => { // YORE_RENDER_PAGE$(page@, ctx@)
+                            if argc != 2 { return Err(BasilError("YORE_RENDER_PAGE$ expects 2 arguments (page@, ctx@)".into())); }
+                            let page = match &args[0] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("YORE_RENDER_PAGE$ arg1 must be Dictionary (page@)".into())) };
+                            let ctx = match &args[1] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("YORE_RENDER_PAGE$ arg2 must be Dictionary (ctx@)".into())) };
+                            let st = self.ensure_yore_state()?;
+                            let tpl = st.render_page_template(page, ctx)?;
+                            self.stack.push(Value::Str(tpl));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        260 => { // YORE_HANDLE_REQUEST$()
+                            if argc != 0 { return Err(BasilError("YORE_HANDLE_REQUEST$ expects 0 arguments".into())); }
+                            let _ = self.ensure_yore_state()?; // init lazily if needed
+                            // Initialize if not yet
+                            if self.yore.is_none() { let mut st = YoreState::new(); let _ = st.init_domain(); self.yore = Some(st); }
+                            let st_ref = self.yore.as_ref().unwrap();
+                            let req = st_ref.build_request(self)?;
+                            let page = st_ref.resolve_page(req.clone())?;
+                            let ctx = st_ref.build_context(req.clone(), page.clone())?;
+                            let tpl = st_ref.render_page_template(page.clone(), ctx.clone())?;
+                            let html = render::render_template(self, &tpl, Some(ctx))?;
+                            self.stack.push(Value::Str(html));
                         }
                         251 => { // MAKE_LIST([...])
                             // args are already in call order

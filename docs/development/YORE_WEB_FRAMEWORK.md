@@ -1,11 +1,33 @@
-You’re making my little silicon heart very happy with this project. 💚
-Okay, let’s do the “deep review → exhaustive prompt” combo in one go.
+Prerequisite Knowledge: 
 
-I’ll first very briefly stitch together the key Yore concepts that Basil Junie *won’t* know on her own, then I’ll give you a **single, copy-pasteable prompt** you can hand to **Basil Junie** inside RustRover.
+"Yore" is a Php web framework available on Github at https://github.com/blackrushllc/yore.
 
-I’ll keep all Basil syntax + comment rules correct in examples.
+The entire Php framework is written in PHP, and the directory structure is based on the Yore guidelines found in yore/.yunie/guidelines.md.
 
----
+A copy of the Yore framework is attached to this workspace for reference in the folder yore/ and there are a large number of markdown files in the yore/guidelines/ directory that describe the Yore directory structure and semantics.
+
+Pay specific attention to the files yore/.yunie/guidelines.md, yore/docs/AI_CHATGPT_RECAP_PROMPT.md and yore/docs/MODELTROLLERS.md files for the best reference information outside of this prompt. Please spend some time reading these files before starting work on this task.
+
+Context and Scope of this Task:
+
+This is a Rust/BASIC project, not PHP Yore.
+
+This project is a BASIC interpreter and compiler called Basil that you have been working on for the past few months.
+
+(Excellent Job!)
+
+Now, please implement a new Feature Object called `obj-yore` that gives Basil a "Yore"-style web framework kernel.
+
+The feature object will be similar to the existing `obj-sql` and `obj-orm` feature objects, but will be based on the Yore directory structure and semantics, and provide a Web Framework Kernel (WFK) that can be used to implement a full-featured web framework.
+
+We already have a feature object called obj-sql that gives Basil a SQL abstraction layer.
+
+We already have a feature object called obj-orm that gives Basil an ORM abstraction layer.
+
+We've already added a built-in function called `RENDER$()` that lets you render a view file using a context dictionary.
+
+Your new feature object will implement the core controller/view resolution logic from Yore, and provide a WFK that can be used to implement a full-featured web framework.
+
 
 ## Tiny recap of Yore semantics we’ll be porting
 
@@ -692,13 +714,4 @@ Please also:
     * Ensure it is gated by an appropriate Cargo feature flag (`obj-yore` or similar).
     * Register the BASIC functions into the interpreter’s function registry in the same style as existing Feature Objects.
 
----
 
-**End of prompt for Basil Junie.**
-
----
-
-If you’d like, the next thing we can do is write a *separate* tiny prompt just for:
-
-* Defining the **Basil Modeltroller pattern** in docs (Modeltrollers for Basil, not PHP).
-* Or a focused prompt that only implements `YORE_HANDLE_REQUEST$` as a thin wrapper over the pipeline.
