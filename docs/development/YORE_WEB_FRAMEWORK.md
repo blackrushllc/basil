@@ -1,96 +1,6 @@
-You’re making my little silicon heart very happy with this project. 💚
-Okay, let’s do the “deep review → exhaustive prompt” combo in one go.
-
-I’ll first very briefly stitch together the key Yore concepts that Basil Junie *won’t* know on her own, then I’ll give you a **single, copy-pasteable prompt** you can hand to **Basil Junie** inside RustRover.
-
-I’ll keep all Basil syntax + comment rules correct in examples.
-
----
-
-## Tiny recap of Yore semantics we’ll be porting
-
-These are the pieces we need Basil Junie to internalize (since she doesn’t know PHP Yore):
-
-* **Multi-tenant domains**
-
-    * All tenant content lives under:
-      `pages/_domains/<domain>/`
-      where `<domain>` is the lowercase host name (e.g. `app.yoreweb.com`).
-    * Each domain has:
-
-        * `env.json` (per-domain env: DB creds, etc.)
-        * `modules.json` (enable/disable modules, debug mode, etc).
-
-* **Section / Pagekey / Args**
-
-    * First slug = **section** (formerly “site”), e.g. `/about/…` → `section = "about"`.
-    * Second slug = **pagekey**, e.g. `/about/team` → `pagekey = "team"`.
-    * Third–fifth slugs = `arg1`, `arg2`, `arg3`.
-
-* **Page JSON + views**
-
-    * Every “page” is defined by a single JSON file inside a section directory:
-
-        * `pages/_domains/<domain>/default/*.json` (top-level pages, including `home.json`).
-        * `pages/_domains/<domain>/*/*.json` for sub-sections.
-    * Views live under `views/` folders parallel to JSON:
-
-        * `pages/_domains/<domain>/<section>/views/*.html` / `*.blade.php` etc.
-    * Page JSON includes `view` or `views` (role-based), theme, and lots of arbitrary settings.
-
-* **Modules and overrides**
-
-    * Core framework modules live in `/modules/` (PHP version).
-    * Per-domain overrides/config live under:
-
-        * `pages/_domains/<domain>/_modules` / `modules` / `Modules`.
-    * Views/settings for modules can be overridden per domain under these trees.
-
-* **Custom Controllers**
-
-    * Optional per-section controller file:
-      `pages/_domains/{domain}/{section}/Controller.php`
-    * Exposes methods:
-
-        * `web_{action}` → themed HTML (string).
-        * `api_{action}` → raw data; arrays/objects become JSON.
-    * Route rule (PHP Yore):
-
-        * `/section/name` → if there is `web_name` (or `api_name`) in that section’s controller, Yore calls that instead of the Page JSON/view pipeline.
-
-* **Modeltrollers**
-
-    * A “Modeltroller” = ORM model that also acts as controller by defining `web_*` and/or `api_*`.
-    * PHP Yore route pattern:
-      `/ {section} / models / {Model} / {action} [ / {arg1} / {arg2} / {arg3} ]`
-    * Model file lives under:
-      `pages/_domains/{domain}/Models/{StudlyModel}.php`
-    * Router:
-
-        * Builds FQCN `Domain\{StudlyDomain}\Models\{StudlyModel}`.
-        * Prefers `web_{action}`, falls back to `api_{action}`.
-
-* **Underscore variants**
-
-    * You have optional underscore variants to mark “special” dirs:
-
-        * `_default` vs `default`
-        * `_models` vs `Models`
-        * `_modules` vs `modules`
-    * For Basil/Yore, we want to **prefer underscores**, but still recognize non-underscore names for BC.
-
-All of this we want to **recreate in spirit** in Basil as `obj-yore`, backed by Basil’s RENDER$ + FRED + obj-sql + obj-orm.
-
----
-
-## Exhaustive prompt for Basil Junie – `obj-yore` Feature Object
-
-Here’s a single big prompt you can paste into Basil Junie in RustRover.
-I’ll write it as if I’m talking to her:
-
----
-
 **Prompt for Basil Junie: Implement `obj-yore` web framework feature object**
+
+"Yore" is the name of a PHP-based web framework that we want to port to Rust/BASIC.
 
 You are **Basil Junie**, working inside the **Basil** Rust/BASIC project (not PHP Yore).
 
@@ -110,6 +20,8 @@ Implement a new **Feature Object** called **`obj-yore`** that gives Basil a Yore
 You have **no built-in knowledge of the PHP Yore code**, but you may use:
 
 * The GitHub repo: `https://github.com/blackrushllc/yore` as a conceptual reference.
+* See AI Onboarding and docs for Yore: /yore/.junie as a conceptual reference.
+* 
 * The attached AI onboarding files:
 
     * `guidelines.md` – high-level Yore guidelines + directory structure + definitions.
@@ -472,18 +384,18 @@ FUNCTION YORE_HANDLE_REQUEST$()
 
   ```basic
   #CGI_NO_HEADER
-  LET okEnv% = LOADENV%()  # defaults to .env
+  LET okEnv% = LOADENV%()  // defaults to .env
 
   LET dsn$ = ENV$("DB_DSN")
   DIM db@ AS DB_MYSQL(dsn$)
-  ' OR:
-  ' LET sldb% = SQLITE_OPEN%("demo.db")
+  // OR:
+  // LET sldb% = SQLITE_OPEN%("demo.db")
 
   LET isOk% = YORE_INIT(db@)
-  ' OR:
-  ' LET isOk% = YORE_INIT(sldb%)
-  ' OR:
-  ' LET isOk% = YORE_INIT()
+  // OR:
+  // LET isOk% = YORE_INIT(sldb%)
+  // OR:
+  // LET isOk% = YORE_INIT()
 
   DIM req@   = YORE_REQUEST()
   DIM page@  = YORE_RESOLVE_PAGE(req@)
@@ -506,7 +418,7 @@ Implement a Basil-friendly module system for Yore:
     * `pages/_domains/<domain>/modules/`
     * `pages/_domains/<domain>/Modules/`
 
-* Each module is a Basil source file (use whatever extension is standard in the Basil repo – likely `.bas`).
+* Each module is a Basil source file (use whatever extension is standard in the Basil repo – likely `.basil`).
 
 * Inside a module, define functions that can be used:
 
@@ -528,7 +440,7 @@ Adapt PHP Yore’s **custom controller** pattern to Basil. From MODELTROLLERS an
 * For any section, allow an **optional Basil controller** file, e.g.:
 
   ```text
-  pages/_domains/{domain}/{section}/Controller.bas
+  pages/_domains/{domain}/{section}/Controller.basil
   ```
 
 * This file defines **global functions** (Basil) with these prefixes:
@@ -656,7 +568,7 @@ Please also:
 
    Add at least two example Basil programs under `examples/`:
 
-    * `examples/yore_cgi_mysql.bas`
+    * `examples/yore_cgi_mysql.basil`
 
         * Uses:
 
@@ -665,7 +577,7 @@ Please also:
             * `YORE_INIT(db@)`
             * Full explicit pipeline: `YORE_REQUEST`, `YORE_RESOLVE_PAGE`, `YORE_BUILD_CONTEXT`, `YORE_RENDER_PAGE`, `RENDER$`, printing CGI headers.
 
-    * `examples/yore_cgi_sqlite.bas`
+    * `examples/yore_cgi_sqlite.basil`
 
         * Similar, but uses a SQLite handle instead (e.g. `SQLITE_OPEN%("demo.db")` and `YORE_INIT(sldb%)`).
 
@@ -683,7 +595,7 @@ Please also:
         * `YORE_BUILD_CONTEXT`
         * `YORE_RENDER_PAGE$`
         * Optional `YORE_HANDLE_REQUEST$`
-    * A minimal end-to-end CGI example (like `yore_cgi_mysql.bas`).
+    * A minimal end-to-end CGI example (like `yore_cgi_mysql.basil`).
     * A quick note on custom controllers and Modeltrollers (referring users to the Basil version of `MODELTROLLERS` ideas).
 
 3. **Feature registration**
@@ -696,9 +608,3 @@ Please also:
 
 **End of prompt for Basil Junie.**
 
----
-
-If you’d like, the next thing we can do is write a *separate* tiny prompt just for:
-
-* Defining the **Basil Modeltroller pattern** in docs (Modeltrollers for Basil, not PHP).
-* Or a focused prompt that only implements `YORE_HANDLE_REQUEST$` as a thin wrapper over the pipeline.
