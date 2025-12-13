@@ -1,0 +1,17 @@
+#CGI_NO_HEADER
+LET okEnv% = LOADENV%()
+
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+
+LET _ = YORE_INIT%(db@)
+
+DIM req@   = YORE_REQUEST()
+DIM page@  = YORE_RESOLVE_PAGE(req@)
+DIM ctx@   = YORE_BUILD_CONTEXT(req@, page@)
+LET html$  = YORE_RENDER_PAGE$(page@, ctx@)
+LET output$ = RENDER$(html$, ctx@)
+
+PRINT "Status: 200 OK\r\n";
+PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
+PRINT output$

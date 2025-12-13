@@ -62,6 +62,9 @@ obj-sQ = []
 obj-crypto = ["basil-vm/obj-crypto", "basil-compiler/obj-crypto"]
 obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all"]
 
+# Yore web framework kernel feature forwarding
+obj-yore = ["basil-vm/obj-yore", "basil-compiler/obj-yore"]
+
 # Safe umbrella for portable builds: excludes SFTP and audio/MIDI/DAW
 obj-safe = [
     "obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql",
