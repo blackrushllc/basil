@@ -1878,13 +1878,13 @@ impl C {
                         // --- Template rendering ---
                         "RENDER$" => Some(149u8),
                         // --- Yore web kernel builtins ---
-                        #[cfg(feature = "obj-yore")] "YORE_INIT%" => Some(251u8),
-                        #[cfg(feature = "obj-yore")] "YORE_INIT" => Some(251u8),
-                        #[cfg(feature = "obj-yore")] "YORE_REQUEST" => Some(252u8),
-                        #[cfg(feature = "obj-yore")] "YORE_RESOLVE_PAGE" => Some(253u8),
-                        #[cfg(feature = "obj-yore")] "YORE_BUILD_CONTEXT" => Some(254u8),
-                        #[cfg(feature = "obj-yore")] "YORE_RENDER_PAGE$" => Some(255u8),
-                        #[cfg(feature = "obj-yore")] "YORE_HANDLE_REQUEST$" => Some(256u8),
+                        #[cfg(feature = "obj-yore")] "YORE_INIT%" => Some(150u8),
+                        #[cfg(feature = "obj-yore")] "YORE_INIT" => Some(150u8),
+                        #[cfg(feature = "obj-yore")] "YORE_REQUEST" => Some(151u8),
+                        #[cfg(feature = "obj-yore")] "YORE_RESOLVE_PAGE" => Some(152u8),
+                        #[cfg(feature = "obj-yore")] "YORE_BUILD_CONTEXT" => Some(153u8),
+                        #[cfg(feature = "obj-yore")] "YORE_RENDER_PAGE$" => Some(154u8),
+                        #[cfg(feature = "obj-yore")] "YORE_HANDLE_REQUEST$" => Some(155u8),
                         // --- Math intrinsics ---
                         "ABS" => Some(70u8),
                         "ATN" => Some(71u8),

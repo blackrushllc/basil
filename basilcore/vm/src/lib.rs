@@ -1077,11 +1077,14 @@ impl VM {
         let p1 = base.join(format!("{}.html", view));
         let p2 = base.join(format!("{}.blade.php", view));
         let p3 = base.join(format!("{}.blade", view));
-        let content = if p1.is_file() { fs::read_to_string(&p1) }
+        let content_res: std::io::Result<String> = if p1.is_file() { fs::read_to_string(&p1) }
             else if p2.is_file() { fs::read_to_string(&p2) }
             else if p3.is_file() { fs::read_to_string(&p3) }
-            else { Ok(format!("<!-- Yore: view '{}' not found under {} -->", view, base.display())) }?;
-        Ok(content)
+            else { Ok(format!("<!-- Yore: view '{}' not found under {} -->", view, base.display())) };
+        match content_res {
+            Ok(s) => Ok(s),
+            Err(e) => Ok(format!("<!-- Yore: failed to read view '{}': {} -->", view, e)),
+        }
     }
 
     fn glob_match_simple(&self, pat: &str, name: &str) -> bool {
@@ -1865,7 +1868,7 @@ impl VM {
                             self.stack.push(Value::Str(rendered));
                         }
                         #[cfg(feature = "obj-yore")]
-                        251 => { // YORE_INIT%([db_or_handle])
+                        150 => { // YORE_INIT%([db_or_handle])
                             if !(argc == 0 || argc == 1) { return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into())); }
                             let db_opt = if argc == 1 { Some(args[0].clone()) } else { None };
                             let (domain, base_dir) = self.yore_detect_domain_and_dir();
@@ -1880,32 +1883,32 @@ impl VM {
                             }
                         }
                         #[cfg(feature = "obj-yore")]
-                        252 => { // YORE_REQUEST()
+                        151 => { // YORE_REQUEST()
                             if argc != 0 { return Err(BasilError("YORE_REQUEST expects 0 arguments".into())); }
                             let req = self.yore_build_request()?;
                             self.stack.push(req);
                         }
                         #[cfg(feature = "obj-yore")]
-                        253 => { // YORE_RESOLVE_PAGE(req@)
+                        152 => { // YORE_RESOLVE_PAGE(req@)
                             if argc != 1 { return Err(BasilError("YORE_RESOLVE_PAGE expects 1 argument (req@)".into())); }
                             let req = args[0].clone();
                             let page = self.yore_resolve_page(&req)?;
                             self.stack.push(page);
                         }
                         #[cfg(feature = "obj-yore")]
-                        254 => { // YORE_BUILD_CONTEXT(req@, page@)
+                        153 => { // YORE_BUILD_CONTEXT(req@, page@)
                             if argc != 2 { return Err(BasilError("YORE_BUILD_CONTEXT expects 2 arguments (req@, page@)".into())); }
                             let ctx = self.yore_build_context(&args[0], &args[1])?;
                             self.stack.push(ctx);
                         }
                         #[cfg(feature = "obj-yore")]
-                        255 => { // YORE_RENDER_PAGE$(page@, ctx@)
+                        154 => { // YORE_RENDER_PAGE$(page@, ctx@)
                             if argc != 2 { return Err(BasilError("YORE_RENDER_PAGE$ expects 2 arguments (page@, ctx@)".into())); }
                             let tpl = self.yore_render_page_template(&args[0], &args[1])?;
                             self.stack.push(Value::Str(tpl));
                         }
                         #[cfg(feature = "obj-yore")]
-                        256 => { // YORE_HANDLE_REQUEST$()
+                        155 => { // YORE_HANDLE_REQUEST$()
                             if argc != 0 { return Err(BasilError("YORE_HANDLE_REQUEST$ expects 0 arguments".into())); }
                             // lazy init if needed
                             if self.yore.is_none() {
