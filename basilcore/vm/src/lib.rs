@@ -349,6 +349,9 @@ struct YoreCtx {
     env: Option<sj::Value>,
     modules: Option<sj::Value>,
     db: Option<Value>,
+    // Whether the domain_dir actually exists on disk. If false, Yore was
+    // initialized but no pages/_domains/<domain> folder was found yet.
+    domain_dir_exists: bool,
 }
 
 // --- Lightweight Class Instance object ---
@@ -1069,6 +1072,34 @@ impl VM {
     #[cfg(feature = "obj-yore")]
     fn yore_render_page_template(&self, page: &Value, _ctx: &Value) -> Result<String> {
         let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        // If Yore was initialized but no domain directory is present, provide
+        // a clear, actionable HTML message instead of failing with a generic error.
+        if !y.domain_dir_exists {
+            let dd = y.domain_dir.display().to_string();
+            let suggest_default = self.yore_section_dirname(&y.domain_dir, "default");
+            let views_dir = y.domain_dir.join(&suggest_default).join("views");
+            let view_home = views_dir.join("home.html");
+            let page_json = y.domain_dir.join(&suggest_default).join("home.json");
+            return Ok(format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Yore: setup required</title>\
+                <style>body{{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:2rem;line-height:1.5}}code{{background:#f4f4f4;padding:.1rem .3rem;border-radius:.2rem}}</style>\
+                </head><body>\
+                <h1>Yore: domain folder not found</h1>\
+                <p>Expected a domain directory for <code>{domain}</code> at:</p>\
+                <pre>{dir}</pre>\
+                <p>Please create the following minimal structure, then refresh:</p>\
+                <pre>{dir}\\{sec}\n{views}\n{home}\n{page}</pre>\
+                <p>Where <code>home.html</code> is your view template and <code>home.json</code> (optional) contains page metadata.</p>\
+                <p>See docs/FEATURES/obj-yore.md for details.</p>\
+                </body></html>",
+                domain = y.domain,
+                dir = dd,
+                sec = suggest_default,
+                views = views_dir.display(),
+                home = view_home.display(),
+                page = page_json.display()
+            ));
+        }
         let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RENDER_PAGE$: page@ must be a Dict".into())) };
         let section = match pm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
         let view = match pm.get("view$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
@@ -1871,16 +1902,39 @@ impl VM {
                         150 => { // YORE_INIT%([db_or_handle])
                             if !(argc == 0 || argc == 1) { return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into())); }
                             let db_opt = if argc == 1 { Some(args[0].clone()) } else { None };
-                            let (domain, base_dir) = self.yore_detect_domain_and_dir();
-                            if base_dir.is_none() {
-                                self.stack.push(Value::Int(0));
+                            // Prefer detected domain/dir if it exists; otherwise, still
+                            // initialize Yore with an expected domain dir so follow‑up calls
+                            // can produce clearer errors/warnings instead of "not initialized".
+                            let (mut domain, base_dir) = self.yore_detect_domain_and_dir();
+                            let dir_exists = base_dir.is_some();
+
+                            // Compute an expected directory even if missing, for better diagnostics.
+                            let dir: PathBuf = if let Some(d) = base_dir {
+                                d
                             } else {
-                                let dir = base_dir.unwrap();
-                                let env = self.yore_load_json_if_exists(&dir.join("env.json"));
-                                let mods = self.yore_load_json_if_exists(&dir.join("modules.json"));
-                                self.yore = Some(YoreCtx { domain, domain_dir: dir, env, modules: mods, db: db_opt });
-                                self.stack.push(Value::Int(1));
-                            }
+                                // Derive expected domain + path
+                                use std::env;
+                                let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+                                if host.is_empty() {
+                                    host = env::var("SERVER_NAME").ok().unwrap_or_default();
+                                }
+                                let host_l = host.to_ascii_lowercase();
+                                let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
+                                let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+                                if is_local {
+                                    domain = "_local".to_string();
+                                } else {
+                                    domain = host_norm;
+                                }
+                                let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                                root.join("pages").join("_domains").join(&domain)
+                            };
+
+                            let env = if dir_exists { self.yore_load_json_if_exists(&dir.join("env.json")) } else { None };
+                            let mods = if dir_exists { self.yore_load_json_if_exists(&dir.join("modules.json")) } else { None };
+                            self.yore = Some(YoreCtx { domain, domain_dir: dir, env, modules: mods, db: db_opt, domain_dir_exists: dir_exists });
+                            // Return 1 if the domain dir exists, otherwise 0 to signal setup needed.
+                            self.stack.push(Value::Int(if dir_exists { 1 } else { 0 }));
                         }
                         #[cfg(feature = "obj-yore")]
                         151 => { // YORE_REQUEST()
@@ -1912,8 +1966,23 @@ impl VM {
                             if argc != 0 { return Err(BasilError("YORE_HANDLE_REQUEST$ expects 0 arguments".into())); }
                             // lazy init if needed
                             if self.yore.is_none() {
-                                let (dom, ddir) = self.yore_detect_domain_and_dir();
-                                if let Some(dir) = ddir { self.yore = Some(YoreCtx { domain: dom, domain_dir: dir, env: None, modules: None, db: None }); }
+                                let (mut dom, ddir) = self.yore_detect_domain_and_dir();
+                                let dir_exists = ddir.is_some();
+                                let dir: PathBuf = if let Some(d) = ddir {
+                                    d
+                                } else {
+                                    // Derive expected domain + path for clearer diagnostics
+                                    use std::env;
+                                    let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+                                    if host.is_empty() { host = env::var("SERVER_NAME").ok().unwrap_or_default(); }
+                                    let host_l = host.to_ascii_lowercase();
+                                    let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
+                                    let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+                                    if is_local { dom = "_local".to_string(); } else { dom = host_norm; }
+                                    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                                    root.join("pages").join("_domains").join(&dom)
+                                };
+                                self.yore = Some(YoreCtx { domain: dom, domain_dir: dir, env: None, modules: None, db: None, domain_dir_exists: dir_exists });
                             }
                             let req = self.yore_build_request()?;
                             let page = self.yore_resolve_page(&req)?;

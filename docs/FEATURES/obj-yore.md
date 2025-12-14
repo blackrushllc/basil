@@ -8,8 +8,8 @@ Functions:
 - FUNCTION YORE_REQUEST()
 - FUNCTION YORE_RESOLVE_PAGE(req@)
 - FUNCTION YORE_BUILD_CONTEXT(req@, page@)
-- FUNCTION YORE_RENDER_PAGE$(page@, ctx@)
-- FUNCTION YORE_HANDLE_REQUEST$()
+- FUNCTION YORE_RENDER_PAGE\$(page@, ctx@)
+- FUNCTION YORE_HANDLE_REQUEST\$()
 
 Enable feature:
 
@@ -35,7 +35,7 @@ Routing rules:
 - /about/team/john → arg1=john (up to arg3)
 
 Usage (CGI):
-
+```
   #CGI_NO_HEADER
   LET okEnv% = LOADENV%()
 
@@ -52,10 +52,11 @@ Usage (CGI):
   PRINT "Status: 200 OK\r\n";
   PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
   PRINT out$
+```
 
 Convenience:
 
-- LET out$ = YORE_HANDLE_REQUEST$()
+- LET out\$ = YORE_HANDLE_REQUEST\$()
 
 Notes:
 
