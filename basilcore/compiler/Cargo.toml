@@ -42,3 +42,5 @@ obj-orm = []
 obj-orm-mysql = []
 obj-orm-postgres = []
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Yore web kernel feature (compiler-side builtins)
+obj-yore = []

@@ -52,6 +52,8 @@ use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::io::copy;
 use chrono::Local;
+#[cfg(feature = "obj-yore")]
+use serde_json as sj;
 
 pub mod debug;
 mod render; // template rendering engine
@@ -336,6 +338,17 @@ pub struct VM {
     out_col: usize,
     // RNG state for RND
     rnd_state: u64,
+    #[cfg(feature = "obj-yore")]
+    yore: Option<YoreCtx>,
+}
+
+#[cfg(feature = "obj-yore")]
+struct YoreCtx {
+    domain: String,
+    domain_dir: PathBuf,
+    env: Option<sj::Value>,
+    modules: Option<sj::Value>,
+    db: Option<Value>,
 }
 
 // --- Lightweight Class Instance object ---
@@ -486,6 +499,8 @@ impl VM {
                 let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x9E3779B97F4A7C15);
                 if ns == 0 { 0x9E3779B97F4A7C15 } else { ns }
             },
+            #[cfg(feature = "obj-yore")]
+            yore: None,
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -828,6 +843,245 @@ impl VM {
                 }
             }
         }
+    }
+
+    // ======================
+    // Yore web kernel helpers
+    // ======================
+    #[cfg(feature = "obj-yore")]
+    fn yore_detect_domain_and_dir(&self) -> (String, Option<PathBuf>) {
+        use std::env;
+        let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+        if host.is_empty() {
+            host = env::var("SERVER_NAME").ok().unwrap_or_default();
+        }
+        let host_l = host.to_ascii_lowercase();
+        let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
+        let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+        let mut domain = host_norm.clone();
+        let mut dir: Option<PathBuf> = None;
+        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let base = root.join("pages").join("_domains");
+        if is_local {
+            let p1 = base.join("_local");
+            let p2 = base.join("local");
+            if p1.is_dir() { dir = Some(p1); domain = "_local".to_string(); }
+            else if p2.is_dir() { dir = Some(p2); domain = "local".to_string(); }
+        } else {
+            let p = base.join(&host_norm);
+            if p.is_dir() { dir = Some(p); }
+        }
+        (domain, dir)
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_load_json_if_exists(&self, path: &Path) -> Option<sj::Value> {
+        match fs::read_to_string(path) {
+            Ok(s) => sj::from_str::<sj::Value>(&s).ok(),
+            Err(_) => None,
+        }
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_slugify(&self, s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for ch in s.chars() {
+            let lc = ch.to_ascii_lowercase();
+            match lc {
+                '/' => { /* skip - handled elsewhere */ }
+                ' ' | '-' | '.' => out.push('_'),
+                _ => out.push(lc),
+            }
+        }
+        out.trim_matches('_').trim_matches('/').to_string()
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_section_dirname(&self, domain_dir: &Path, section: &str) -> String {
+        let s = if section.is_empty() { "default" } else { section };
+        if s.eq_ignore_ascii_case("default") {
+            let a = domain_dir.join("_default");
+            if a.is_dir() { return "_default".to_string(); }
+            return "default".to_string();
+        }
+        s.to_string()
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_build_request(&mut self) -> Result<Value> {
+        use std::env;
+        let (_domain, ddir_opt) = self.yore_detect_domain_and_dir();
+        let domain = if let Some(y) = &self.yore { y.domain.clone() } else { _domain };
+        let method = env::var("REQUEST_METHOD").unwrap_or_else(|_| "GET".to_string());
+        let uri = env::var("REQUEST_URI").unwrap_or_else(|_| "/".to_string());
+        // Strip query string
+        let path_only = uri.split('?').next().unwrap_or("").to_string();
+        let mut path_norm = path_only.trim().to_string();
+        if path_norm.is_empty() { path_norm = "/".to_string(); }
+        // tokenize
+        let mut segs: Vec<&str> = path_norm.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+        let (section_raw, pagekey_raw, a1, a2, a3) = if segs.is_empty() {
+            ("default", Some("home"), "", "", "")
+        } else if segs.len() == 1 {
+            (segs[0], Some("home"), "", "", "")
+        } else {
+            let sec = segs[0];
+            let page = segs[1];
+            let arg1 = segs.get(2).copied().unwrap_or("");
+            let arg2 = segs.get(3).copied().unwrap_or("");
+            let arg3 = segs.get(4).copied().unwrap_or("");
+            (sec, Some(page), arg1, arg2, arg3)
+        };
+        let section = self.yore_slugify(section_raw);
+        let pagekey = self.yore_slugify(pagekey_raw.unwrap_or("home"));
+        let arg1 = self.yore_slugify(a1);
+        let arg2 = self.yore_slugify(a2);
+        let arg3 = self.yore_slugify(a3);
+        // Query params
+        self.ensure_get_params();
+        let get_pairs = self.get_params_cache.clone().unwrap_or_default();
+        let mut query: HashMap<String, Value> = HashMap::new();
+        for p in get_pairs {
+            let mut it = p.splitn(2, '=');
+            let k = it.next().unwrap_or(""); let v = it.next().unwrap_or("");
+            query.insert(k.to_string(), Value::Str(v.to_string()));
+        }
+        // Post form params
+        self.ensure_post_params();
+        let post_pairs = self.post_params_cache.clone().unwrap_or_default();
+        let mut post: HashMap<String, Value> = HashMap::new();
+        for p in post_pairs {
+            let mut it = p.splitn(2, '=');
+            let k = it.next().unwrap_or(""); let v = it.next().unwrap_or("");
+            post.insert(k.to_string(), Value::Str(v.to_string()));
+        }
+        // Headers (optional)
+        let mut headers: HashMap<String, Value> = HashMap::new();
+        for (k, v) in env::vars() {
+            if k.starts_with("HTTP_") {
+                headers.insert(k.to_string(), Value::Str(v));
+            }
+        }
+        // is_debug flag
+        let is_debug = query.get("debug").map(|v| matches!(v, Value::Str(s) if s=="1")).unwrap_or(false);
+        use std::cell::RefCell;
+        let mut map: HashMap<String, Value> = HashMap::new();
+        map.insert("domain$".to_string(), Value::Str(domain));
+        map.insert("method$".to_string(), Value::Str(method));
+        map.insert("path$".to_string(), Value::Str(path_norm));
+        map.insert("section$".to_string(), Value::Str(section));
+        map.insert("pagekey$".to_string(), Value::Str(pagekey));
+        map.insert("arg1$".to_string(), Value::Str(arg1));
+        map.insert("arg2$".to_string(), Value::Str(arg2));
+        map.insert("arg3$".to_string(), Value::Str(arg3));
+        map.insert("is_debug%".to_string(), Value::Int(if is_debug {1} else {0}));
+        map.insert("query@".to_string(), Value::Dict(Rc::new(RefCell::new(query))));
+        map.insert("post@".to_string(), Value::Dict(Rc::new(RefCell::new(post))));
+        map.insert("headers@".to_string(), Value::Dict(Rc::new(RefCell::new(headers))));
+        Ok(Value::Dict(Rc::new(RefCell::new(map))))
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_json_to_value(&self, j: &sj::Value) -> Value {
+        use std::cell::RefCell;
+        match j {
+            sj::Value::Null => Value::Null,
+            sj::Value::Bool(b) => Value::Bool(*b),
+            sj::Value::Number(n) => {
+                if let Some(i) = n.as_i64() { Value::Int(i) }
+                else if let Some(f) = n.as_f64() { Value::Num(f) }
+                else { Value::Null }
+            }
+            sj::Value::String(s) => Value::Str(s.clone()),
+            sj::Value::Array(a) => {
+                let list: Vec<Value> = a.iter().map(|v| self.yore_json_to_value(v)).collect();
+                Value::List(Rc::new(RefCell::new(list)))
+            }
+            sj::Value::Object(o) => {
+                let mut m: HashMap<String, Value> = HashMap::new();
+                for (k, v) in o.iter() { m.insert(k.clone(), self.yore_json_to_value(v)); }
+                Value::Dict(Rc::new(RefCell::new(m)))
+            }
+        }
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_resolve_page(&self, req: &Value) -> Result<Value> {
+        use std::cell::RefCell;
+        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized; call YORE_INIT% first".into()))?;
+        let reqm = match req { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RESOLVE_PAGE: req@ must be a Dict".into())) };
+        let section = match reqm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
+        let pagekey = match reqm.get("pagekey$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
+        let section_dir = self.yore_section_dirname(&y.domain_dir, &section);
+        let base = y.domain_dir.join(&section_dir);
+        let path = base.join(format!("{}.json", pagekey));
+        let alt = base.join("home.json");
+        let mut found: Option<PathBuf> = None;
+        if path.is_file() { found = Some(path); }
+        else if pagekey == "home" && alt.is_file() { found = Some(alt); }
+        // Build page map
+        let mut page: HashMap<String, Value> = HashMap::new();
+        page.insert("section$".to_string(), Value::Str(section));
+        page.insert("pagekey$".to_string(), Value::Str(pagekey));
+        if let Some(fp) = found {
+            if let Some(j) = self.yore_load_json_if_exists(&fp) {
+                // common fields
+                if let Some(v) = j.get("view").and_then(|x| x.as_str()) { page.insert("view$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("theme").and_then(|x| x.as_str()) { page.insert("theme$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("title").and_then(|x| x.as_str()) { page.insert("title$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("views") { page.insert("views@".to_string(), self.yore_json_to_value(v)); }
+                if let Some(v) = j.get("module_hook").and_then(|x| x.as_str()) { page.insert("module_hook$".to_string(), Value::Str(v.to_string())); }
+                page.insert("raw_json@".to_string(), self.yore_json_to_value(&j));
+            }
+        } else {
+            // indicate 404
+            page.insert("view$".to_string(), Value::Str("home".to_string()));
+            page.insert("status%".to_string(), Value::Int(404));
+        }
+        Ok(Value::Dict(Rc::new(RefCell::new(page))))
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_build_context(&self, req: &Value, page: &Value) -> Result<Value> {
+        use std::cell::RefCell;
+        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        let mut ctx: HashMap<String, Value> = HashMap::new();
+        // carry over request basics
+        let reqm = match req { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: req@ must be a Dict".into())) };
+        for k in ["section$","pagekey$","arg1$","arg2$","arg3$","method$","path$"] {
+            if let Some(v) = reqm.get(k) { ctx.insert(k.to_string(), v.clone()); }
+        }
+        if let Some(v) = reqm.get("query@") { ctx.insert("query@".to_string(), v.clone()); }
+        if let Some(v) = reqm.get("post@") { ctx.insert("post@".to_string(), v.clone()); }
+        ctx.insert("domain$".to_string(), Value::Str(y.domain.clone()));
+        // env.json
+        if let Some(j) = &y.env { ctx.insert("env@".to_string(), self.yore_json_to_value(j)); }
+        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), self.yore_json_to_value(j)); }
+        if let Some(db) = &y.db { ctx.insert("db@".to_string(), db.clone()); }
+        // page fields
+        let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: page@ must be a Dict".into())) };
+        for k in ["view$","theme$","title$","raw_json@","views@","module_hook$"] {
+            if let Some(v) = pm.get(k) { ctx.insert(k.to_string(), v.clone()); }
+        }
+        Ok(Value::Dict(Rc::new(RefCell::new(ctx))))
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_render_page_template(&self, page: &Value, _ctx: &Value) -> Result<String> {
+        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RENDER_PAGE$: page@ must be a Dict".into())) };
+        let section = match pm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
+        let view = match pm.get("view$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
+        let section_dir = self.yore_section_dirname(&y.domain_dir, &section);
+        let base = y.domain_dir.join(&section_dir).join("views");
+        let p1 = base.join(format!("{}.html", view));
+        let p2 = base.join(format!("{}.blade.php", view));
+        let p3 = base.join(format!("{}.blade", view));
+        let content = if p1.is_file() { fs::read_to_string(&p1) }
+            else if p2.is_file() { fs::read_to_string(&p2) }
+            else if p3.is_file() { fs::read_to_string(&p3) }
+            else { Ok(format!("<!-- Yore: view '{}' not found under {} -->", view, base.display())) }?;
+        Ok(content)
     }
 
     fn glob_match_simple(&self, pat: &str, name: &str) -> bool {
@@ -1609,6 +1863,62 @@ impl VM {
                             } else { None };
                             let rendered = render::render_template(self, &tpl, ctx_opt)?;
                             self.stack.push(Value::Str(rendered));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        251 => { // YORE_INIT%([db_or_handle])
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into())); }
+                            let db_opt = if argc == 1 { Some(args[0].clone()) } else { None };
+                            let (domain, base_dir) = self.yore_detect_domain_and_dir();
+                            if base_dir.is_none() {
+                                self.stack.push(Value::Int(0));
+                            } else {
+                                let dir = base_dir.unwrap();
+                                let env = self.yore_load_json_if_exists(&dir.join("env.json"));
+                                let mods = self.yore_load_json_if_exists(&dir.join("modules.json"));
+                                self.yore = Some(YoreCtx { domain, domain_dir: dir, env, modules: mods, db: db_opt });
+                                self.stack.push(Value::Int(1));
+                            }
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        252 => { // YORE_REQUEST()
+                            if argc != 0 { return Err(BasilError("YORE_REQUEST expects 0 arguments".into())); }
+                            let req = self.yore_build_request()?;
+                            self.stack.push(req);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        253 => { // YORE_RESOLVE_PAGE(req@)
+                            if argc != 1 { return Err(BasilError("YORE_RESOLVE_PAGE expects 1 argument (req@)".into())); }
+                            let req = args[0].clone();
+                            let page = self.yore_resolve_page(&req)?;
+                            self.stack.push(page);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        254 => { // YORE_BUILD_CONTEXT(req@, page@)
+                            if argc != 2 { return Err(BasilError("YORE_BUILD_CONTEXT expects 2 arguments (req@, page@)".into())); }
+                            let ctx = self.yore_build_context(&args[0], &args[1])?;
+                            self.stack.push(ctx);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        255 => { // YORE_RENDER_PAGE$(page@, ctx@)
+                            if argc != 2 { return Err(BasilError("YORE_RENDER_PAGE$ expects 2 arguments (page@, ctx@)".into())); }
+                            let tpl = self.yore_render_page_template(&args[0], &args[1])?;
+                            self.stack.push(Value::Str(tpl));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        256 => { // YORE_HANDLE_REQUEST$()
+                            if argc != 0 { return Err(BasilError("YORE_HANDLE_REQUEST$ expects 0 arguments".into())); }
+                            // lazy init if needed
+                            if self.yore.is_none() {
+                                let (dom, ddir) = self.yore_detect_domain_and_dir();
+                                if let Some(dir) = ddir { self.yore = Some(YoreCtx { domain: dom, domain_dir: dir, env: None, modules: None, db: None }); }
+                            }
+                            let req = self.yore_build_request()?;
+                            let page = self.yore_resolve_page(&req)?;
+                            let ctx = self.yore_build_context(&req, &page)?;
+                            let tpl = self.yore_render_page_template(&page, &ctx)?;
+                            let ctx_rc = match ctx { Value::Dict(rc)=>rc, _=> return Err(BasilError("YORE: internal error building context".into())) };
+                            let html = render::render_template(self, &tpl, Some(ctx_rc))?;
+                            self.stack.push(Value::Str(html));
                         }
                         148 => { // IMPLODE$(var, delim1$ [,delim2$])
                             if !(argc == 2 || argc == 3) { return Err(BasilError("IMPLODE$ expects 2 or 3 arguments".into())); }
