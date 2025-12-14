@@ -910,7 +910,7 @@ impl VM {
     #[cfg(feature = "obj-yore")]
     fn yore_build_request(&mut self) -> Result<Value> {
         use std::env;
-        let (_domain, ddir_opt) = self.yore_detect_domain_and_dir();
+        let (_domain, _) = self.yore_detect_domain_and_dir();
         let domain = if let Some(y) = &self.yore { y.domain.clone() } else { _domain };
         let method = env::var("REQUEST_METHOD").unwrap_or_else(|_| "GET".to_string());
         let uri = env::var("REQUEST_URI").unwrap_or_else(|_| "/".to_string());
@@ -919,7 +919,7 @@ impl VM {
         let mut path_norm = path_only.trim().to_string();
         if path_norm.is_empty() { path_norm = "/".to_string(); }
         // tokenize
-        let mut segs: Vec<&str> = path_norm.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+        let segs: Vec<&str> = path_norm.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
         let (section_raw, pagekey_raw, a1, a2, a3) = if segs.is_empty() {
             ("default", Some("home"), "", "", "")
         } else if segs.len() == 1 {
