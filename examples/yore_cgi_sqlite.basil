@@ -1,0 +1,18 @@
+#CGI_NO_HEADER
+LET okEnv% = LOADENV%()
+
+LET dbfile$ = ENV$("SQLITE_DB_FILE")
+IF dbfile$ = "" THEN LET dbfile$ = "demo.db"
+LET sldb% = SQLITE_OPEN%(dbfile$)
+
+LET _ = YORE_INIT%(sldb%)
+
+DIM req@   = YORE_REQUEST()
+DIM page@  = YORE_RESOLVE_PAGE(req@)
+DIM ctx@   = YORE_BUILD_CONTEXT(req@, page@)
+LET html$  = YORE_RENDER_PAGE$(page@, ctx@)
+LET output$ = RENDER$(html$, ctx@)
+
+PRINT "Status: 200 OK\r\n";
+PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
+PRINT output$
