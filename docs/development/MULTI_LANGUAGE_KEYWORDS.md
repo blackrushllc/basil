@@ -185,3 +185,39 @@ If you want, I can write you a **Junie prompt** that:
 * mirrors the same in Basic.js (YoBASIC)
 
 …and keeps the shared parts in a reusable crate/module so you don’t duplicate logic.
+
+## Example: French sample program (`#lang fr`)
+
+Hypothetical example using a French keyword skin. This assumes a simple `fr.map` providing the aliases shown below.
+
+```
+#lang fr
+
+REM Petit programme de démonstration (≈10–15 lignes)
+
+age% = 17
+SI age% >= 18 ALORS
+    AFFICHER "Majeur"
+SINON
+    AFFICHER "Mineur"
+FIN SI
+
+AFFICHER "Compter de 1 à 5 :"
+POUR i% = 1 À 5 PAS 1
+    AFFICHER "i = ", i%
+SUIVANT
+```
+
+Assumed `fr.map` entries (illustrative):
+
+```
+SI=IF
+ALORS=THEN
+SINON=ELSE
+FIN=END
+POUR=FOR
+À=TO
+PAS=STEP
+SUIVANT=NEXT
+AFFICHER=PRINTLN
+```
