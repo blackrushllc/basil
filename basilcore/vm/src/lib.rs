@@ -3633,7 +3633,7 @@ impl VM {
                                     let arr = arr_rc.as_ref();
                                     if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
                                     if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
-                                    let val = arr.data.borrow()[(idx as usize)].clone();
+                                    let val = arr.data.borrow()[idx as usize].clone();
                                     self.stack.push(val);
                                 }
                                 Value::Dict(rc) => {
