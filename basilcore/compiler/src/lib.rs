@@ -663,7 +663,7 @@ impl C {
             Stmt::SetIndexSquare { target, index, value } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
                 // If target is a variable that does not end with '@', treat as array set using []
-                if let Expr::Var(name) = target {
+                if let &Expr::Var(ref name) = target {
                     if !name.ends_with('@') {
                         // At toplevel we only have globals
                         let g = self.gslot(name);
@@ -1359,27 +1359,27 @@ impl C {
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::SetIndexSquare { target, index, value } => {
-                self.emit_expr_in(chunk, target, Some(env))?;
-                self.emit_expr_in(chunk, index, Some(env))?;
-                self.emit_expr_in(chunk, value, Some(env))?;
-                // If target is a variable that does not end with '@', treat as array set using [] inside function
-                if let Expr::Var(name) = target {
+                // Support [] on arrays inside functions: if the target is a plain variable not ending with '@',
+                // treat as array element assignment and emit ArrSet directly. Otherwise, use list/dict builtin 254.
+                if let &Expr::Var(ref name) = target {
                     if !name.ends_with('@') {
-                        // We already pushed the array reference by emit_expr_in(target,...), but for arrays
-                        // we need the array object itself, not its value. Re-load it directly for correctness.
-                        // Prefer local when present
+                        // Load array reference (prefer local when present), then index and value, then ArrSet with arity 1
                         if let Some(slot) = env.lookup(name) {
                             chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
                         } else {
                             let g = self.gslot(name);
                             chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                         }
-                        // Replace emitted target/index/value with proper order: arr, index, value
-                        // Note: simplest is to discard previously emitted values and re-emit. Since we cannot easily pop,
-                        // we fallback to dedicated path only when target is simple Var and we haven't emitted yet.
-                        // Given we've already emitted, use standard builtin path for now.
+                        self.emit_expr_in(chunk, index, Some(env))?;
+                        self.emit_expr_in(chunk, value, Some(env))?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(1u8);
+                        return Ok(());
                     }
                 }
+                // list/dict set via builtin 254
+                self.emit_expr_in(chunk, target, Some(env))?;
+                self.emit_expr_in(chunk, index, Some(env))?;
+                self.emit_expr_in(chunk, value, Some(env))?;
                 chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
             }
             Stmt::ExprStmt(e) => {
@@ -2639,6 +2639,19 @@ impl C {
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::SetIndexSquare { target, index, value } => {
+                // Support [] on arrays inside toplevel chunks (e.g., inside FOR/WHILE bodies):
+                // if the target is a plain variable not ending with '@', emit ArrSet directly.
+                if let &Expr::Var(ref name) = target {
+                    if !name.ends_with('@') {
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        self.emit_expr_in(chunk, index, None)?;
+                        self.emit_expr_in(chunk, value, None)?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(1u8);
+                        return Ok(());
+                    }
+                }
+                // Otherwise list/dict set via builtin 254
                 self.emit_expr_in(chunk, target, None)?;
                 self.emit_expr_in(chunk, index, None)?;
                 self.emit_expr_in(chunk, value, None)?;

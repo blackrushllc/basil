@@ -3627,6 +3627,15 @@ impl VM {
                                     if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
                                     self.stack.push(v[idx0].clone());
                                 }
+                                Value::Array(arr_rc) => {
+                                    // Support [] for 1-D arrays as well; arrays are 0-based.
+                                    let idx = self.to_i64(index)?;
+                                    let arr = arr_rc.as_ref();
+                                    if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
+                                    if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
+                                    let val = arr.data.borrow()[(idx as usize)].clone();
+                                    self.stack.push(val);
+                                }
                                 Value::Dict(rc) => {
                                     let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
                                     let m = rc.borrow();
@@ -3652,6 +3661,33 @@ impl VM {
                                         while v.len() <= idx0 { v.push(Value::Null); }
                                     }
                                     v[idx0] = value;
+                                    self.stack.push(Value::Null);
+                                }
+                                Value::Array(arr_rc) => {
+                                    // Support [] for 1-D arrays as well; arrays are fixed-size, 0-based.
+                                    let idx = self.to_i64(index)?;
+                                    let arr = arr_rc.as_ref();
+                                    if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
+                                    if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
+                                    let coerced = match &arr.elem {
+                                        ElemType::Num => match value { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {} into numeric array", self.type_of(&other)))) },
+                                        ElemType::Int => match value { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {} into integer array", self.type_of(&other)))) },
+                                        ElemType::Str => match value { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
+                                        ElemType::Obj(Some(tname)) => match value {
+                                            Value::Object(rc) => {
+                                                let got = rc.borrow().type_name().to_string();
+                                                if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
+                                                else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
+                                            }
+                                            Value::Null => Value::Null,
+                                            other => return Err(BasilError(format!("cannot store non-object {} into typed OBJECT[] array", self.type_of(&other)))),
+                                        },
+                                        ElemType::Obj(None) => match value {
+                                            Value::Object(_) | Value::Null => value,
+                                            other => return Err(BasilError(format!("cannot store non-object {} into OBJECT[] array", self.type_of(&other)))),
+                                        },
+                                    };
+                                    arr.data.borrow_mut()[idx as usize] = coerced;
                                     self.stack.push(Value::Null);
                                 }
                                 Value::Dict(rc) => {
