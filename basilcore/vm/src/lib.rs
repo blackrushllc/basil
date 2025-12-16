@@ -3647,7 +3647,10 @@ impl VM {
                                     if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
                                     let idx0 = (idx - 1) as usize;
                                     let mut v = rc.borrow_mut();
-                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    // Auto-extend with Nulls to accommodate gaps (gap-fill always on)
+                                    if idx0 >= v.len() {
+                                        while v.len() <= idx0 { v.push(Value::Null); }
+                                    }
                                     v[idx0] = value;
                                     self.stack.push(Value::Null);
                                 }

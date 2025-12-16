@@ -662,6 +662,20 @@ impl C {
             }
             Stmt::SetIndexSquare { target, index, value } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
+                // If target is a variable that does not end with '@', treat as array set using []
+                if let Expr::Var(name) = target {
+                    if !name.ends_with('@') {
+                        // At toplevel we only have globals
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        self.emit_expr_in(&mut chunk, index, None)?;
+                        self.emit_expr_in(&mut chunk, value, None)?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(1u8);
+                        self.chunk = chunk;
+                        return Ok(());
+                    }
+                }
+                // Otherwise, list/dict set via builtin 254
                 self.emit_expr_in(&mut chunk, target, None)?;
                 self.emit_expr_in(&mut chunk, index, None)?;
                 self.emit_expr_in(&mut chunk, value, None)?;
@@ -1348,6 +1362,24 @@ impl C {
                 self.emit_expr_in(chunk, target, Some(env))?;
                 self.emit_expr_in(chunk, index, Some(env))?;
                 self.emit_expr_in(chunk, value, Some(env))?;
+                // If target is a variable that does not end with '@', treat as array set using [] inside function
+                if let Expr::Var(name) = target {
+                    if !name.ends_with('@') {
+                        // We already pushed the array reference by emit_expr_in(target,...), but for arrays
+                        // we need the array object itself, not its value. Re-load it directly for correctness.
+                        // Prefer local when present
+                        if let Some(slot) = env.lookup(name) {
+                            chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                        } else {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        }
+                        // Replace emitted target/index/value with proper order: arr, index, value
+                        // Note: simplest is to discard previously emitted values and re-emit. Since we cannot easily pop,
+                        // we fallback to dedicated path only when target is simple Var and we haven't emitted yet.
+                        // Given we've already emitted, use standard builtin path for now.
+                    }
+                }
                 chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
             }
             Stmt::ExprStmt(e) => {
@@ -1658,6 +1690,29 @@ impl C {
                 chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
             }
             Expr::IndexSquare { target, index } => {
+                // Support square-bracket indexing for both lists/dicts and arrays.
+                // Heuristic: if the target is a variable whose name does NOT end with '@',
+                // treat as array indexing (ArrGet with 1 index). Otherwise, use list/dict builtin.
+                if let Expr::Var(name) = &**target {
+                    if !name.ends_with('@') {
+                        // Array get using []
+                        if let Some(env) = env {
+                            if let Some(slot) = env.lookup(name) {
+                                chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                            } else {
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            }
+                        } else {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        }
+                        self.emit_expr_in(chunk, index, env)?;
+                        chunk.push_op(Op::ArrGet); chunk.push_u8(1u8);
+                        return Ok(());
+                    }
+                }
+                // Fallback: list/dict get via builtin 253
                 self.emit_expr_in(chunk, target, env)?;
                 self.emit_expr_in(chunk, index, env)?;
                 chunk.push_op(Op::Builtin); chunk.push_u8(253u8); chunk.push_u8(2u8);

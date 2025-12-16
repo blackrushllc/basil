@@ -1250,6 +1250,83 @@ impl Parser {
             }
         }
 
+        // Shorthand: list[] = expr  → SetIndexSquare(list, LEN(list)+1, expr)
+        if self.check(TokenKind::Ident) {
+            let save_i = self.i;
+            let name = self.expect_ident()?;
+            if self.match_k(TokenKind::LBracket) {
+                if self.match_k(TokenKind::RBracket) {
+                    if self.match_k(TokenKind::Assign) {
+                        let value = self.parse_expr_bp(0)?;
+                        self.terminate_stmt()?;
+                        let len_call = Expr::Call { callee: Box::new(Expr::Var("LEN".to_string())), args: vec![Expr::Var(name.clone())] };
+                        let idx_expr = Expr::Binary { op: BinOp::Add, lhs: Box::new(len_call), rhs: Box::new(Expr::Number(1.0)) };
+                        return Ok(Stmt::SetIndexSquare { target: Expr::Var(name), index: idx_expr, value });
+                    }
+                }
+            }
+            // not the sugar; rewind
+            self.i = save_i;
+        }
+
+        // Compound assignments and ++/-- shorthands
+        if self.check(TokenKind::Ident) {
+            let save_i = self.i;
+            let name = self.expect_ident()?;
+            // x += y  or  x -= y
+            let mut is_plus_eq = false;
+            let mut is_minus_eq = false;
+            if self.match_k(TokenKind::Plus) {
+                if self.match_k(TokenKind::Assign) { is_plus_eq = true; }
+                else { self.i -= 1; }
+            } else if self.match_k(TokenKind::Minus) {
+                if self.match_k(TokenKind::Assign) { is_minus_eq = true; }
+                else { self.i -= 1; }
+            }
+            if is_plus_eq || is_minus_eq {
+                let rhs = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                // For @-suffixed names with dict literal RHS, expand to multiple key sets
+                if name.ends_with('@') {
+                    if let Expr::Dict(entries) = rhs.clone() {
+                        let mut stmts: Vec<Stmt> = Vec::new();
+                        for (k, v) in entries {
+                            let idx = Expr::Str(k);
+                            stmts.push(Stmt::SetIndexSquare { target: Expr::Var(name.clone()), index: idx, value: v });
+                        }
+                        return Ok(Stmt::Block(stmts));
+                    }
+                    if is_plus_eq {
+                        // list append sugar: name += rhs  → name[LEN(name)+1] = rhs
+                        let len_call = Expr::Call { callee: Box::new(Expr::Var("LEN".to_string())), args: vec![Expr::Var(name.clone())] };
+                        let idx_expr = Expr::Binary { op: BinOp::Add, lhs: Box::new(len_call), rhs: Box::new(Expr::Number(1.0)) };
+                        return Ok(Stmt::SetIndexSquare { target: Expr::Var(name), index: idx_expr, value: rhs });
+                    }
+                    // '-=' not defined for lists/dicts; fall through to arithmetic on variable
+                }
+                // Default arithmetic/string concat: name = name (+|-) rhs
+                let op = if is_plus_eq { BinOp::Add } else { BinOp::Sub };
+                let expr = Expr::Binary { op, lhs: Box::new(Expr::Var(name.clone())), rhs: Box::new(rhs) };
+                return Ok(Stmt::Let { name, indices: None, init: expr });
+            }
+            // x++ or x--
+            let mut incdec: Option<i32> = None;
+            if self.match_k(TokenKind::Plus) {
+                if self.match_k(TokenKind::Plus) { incdec = Some(1); } else { self.i -= 1; }
+            } else if self.match_k(TokenKind::Minus) {
+                if self.match_k(TokenKind::Minus) { incdec = Some(-1); } else { self.i -= 1; }
+            }
+            if let Some(delta) = incdec {
+                self.terminate_stmt()?;
+                let rhs = if delta == 1 { Expr::Number(1.0) } else { Expr::Number(1.0) };
+                let op = if delta == 1 { BinOp::Add } else { BinOp::Sub };
+                let expr = Expr::Binary { op, lhs: Box::new(Expr::Var(name.clone())), rhs: Box::new(rhs) };
+                return Ok(Stmt::Let { name, indices: None, init: expr });
+            }
+            // not a compound; rewind
+            self.i = save_i;
+        }
+
         // Fallback: detect assignment-like forms; allow implicit assignment without LET.
         // Also allow obj.Prop = expr and square-bracket index sets.
         let save_i = self.i;
