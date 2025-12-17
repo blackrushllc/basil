@@ -1,3 +1,24 @@
+# PGP/GPG with CRYPTO_PGP
+
+This is the end‑user guide for the CRYPTO_PGP object. For the full integration document, see docs/integrations/crypto/pgp.md.
+
+Quick start:
+
+- Build with: cargo build --features obj-crypto-pgp
+- Generate keys with GnuPG:
+  - gpg --quick-generate-key "Your Name <you@example.com>" default default never
+  - gpg --export --armor you@example.com > pub.asc
+  - gpg --export-secret-keys --armor you@example.com > sec.asc
+
+See examples in /examples:
+- pgp_encrypt_decrypt.basil
+- pgp_sign_verify.basil
+- pgp_file_ops.basil
+
+Security tips:
+- Don’t commit private keys; prefer file paths and environment variables for secrets.
+- Passphrases are only used to unlock keys in memory briefly.
+
 # CRYPTO_PGP — PGP/GPG encryption, decryption, signing, verification
 
 CRYPTO_PGP is a feature-gated Basil object that provides PGP/GPG operations using the Sequoia OpenPGP library. It uses a string-centric API: you pass ASCII‑armored keys and messages, and you receive ASCII‑armored outputs or write to files.
@@ -56,15 +77,15 @@ Notes:
 
 1) Generate a key (never‑expiring for demo):
 
-    gpg --quick-generate-key "Your Name <you@example.com>" default default never
+   gpg --quick-generate-key "Your Name <you@example.com>" default default never
 
 2) Export public key:
 
-    gpg --export --armor you@example.com > pub.asc
+   gpg --export --armor you@example.com > pub.asc
 
 3) Export secret key:
 
-    gpg --export-secret-keys --armor you@example.com > sec.asc
+   gpg --export-secret-keys --armor you@example.com > sec.asc
 
 If your secret key is passphrase‑protected, pass that value as passphrase$ in the Decrypt/Sign methods (empty string if none).
 
@@ -140,3 +161,4 @@ Errors are mapped to short, readable messages. Examples:
 - PGP.Verify: SignatureInvalid — Signature does not verify against the provided public key.
 
 No secret material or passphrase values are logged in error messages.
+

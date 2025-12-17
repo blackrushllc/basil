@@ -1,10 +1,3 @@
-### Prompt for Junie Ultimate — Implement list auto-extend, shorthands, and [] indexing in the BASIC sister project
-
-Context for Junie Ultimate
-- Target repo: the BASIC sister project of “basil”. It is nearly identical in core language/runtime but does NOT include the compiler, web server, or extended features. Assume an interpreter/VM-centric codebase.
-- Goal: Implement the exact feature set we completed in the basil project during a prior session, with the same semantics and guardrails.
-
-What to implement (high-level)
 1) Lists auto-extend on indexed SET with gap-fill always ON (no directive/flag). GET out-of-range still errors.
 2) Shorthand operators and sugars:
    - x += y and x -= y for bare variables (numbers: arithmetic; strings: concatenation).
@@ -120,10 +113,3 @@ PRINTLN a%(1), a%[2], a%[3]  ' 10 20 30
 DIM i% = 5: i%++: PRINTLN i%  ' 6
 DIM s$ = "Hi": s$ += "!": PRINTLN s$  ' Hi!
 ```
-
-Deliverables
-- Parser and interpreter/VM changes per above.
-- A short README note documenting the new syntax and semantics.
-- Example scripts covering lists, dicts, arrays, and shorthands.
-
-Please proceed with these changes in the BASIC sister project, keeping the code paths simple and uniform (no compiler assumptions). Prioritize consistent 1-based indexing and the correct dispatch for [] on arrays vs. lists/dicts to avoid the pitfalls we encountered.
