@@ -1,8 +1,9 @@
 This is here for the sake of documentation.
 
-The BMX Mods (Basil Feature Objects) were the first ones made.  All other feature Mods basically follow this pattern.
+The BMX Mods (Basil Feature Objects) were the first ones made.  Use these as a starting point for your 
+own custom Mods. All other feature Mods basically follow this pattern.
 
-# Junie Pro task: Add first-class **Object** type support to Basil + two starter objects (BMX Rider & BMX Team)
+# Task: Add first-class **Object** type support to Basil + two starter objects (BMX Rider & BMX Team)
 
 ## Context / Goal
 

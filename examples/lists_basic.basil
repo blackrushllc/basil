@@ -1,5 +1,12 @@
 DIM a% = [1,2,3]
+
 PRINTLN a%(1), ", ", a%(2), ", ", a%(3)
+
+for i%=0 to len(a%)-1
+    a%[i%] = a%[i%] + 1
+    a%(i%) = a%(i%) + 1
+    println a%(i%), " "
+next
 
 DIM mixed@ = [1, "two", 3.0]
 PRINTLN mixed@[2]
@@ -21,3 +28,9 @@ FOR i%=1 TO lm%
 NEXT
 
 mixed@[lm%+1] = "four"
+mixed@[len(mixed@)+1] = "five"
+mixed@[len(mixed@)+1] = "six"
+
+for i%=1 to len(mixed@)
+println mixed@[i%], " "
+next

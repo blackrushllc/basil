@@ -1,6 +1,6 @@
 Basil AWS Feature Objects – Phase 1 (S3, SES, SQS)
 
-Note: This document mirrors docs/guides/AWS.md and exists to satisfy references using either filename.
+Note: This document mirrors docs/guides/OBJ_AWS.md and exists to satisfy references using either filename.
 
 This guide explains how to use the Basil AWS feature objects shipped in Phase 1. You get a simple, BASIC-friendly API for Amazon S3, SES, and SQS—plus an AWS context object to centralize configuration. All methods return Basil primitives (strings, integers, arrays of strings), and errors surface as Basil exceptions that you can handle with TRY/CATCH.
 

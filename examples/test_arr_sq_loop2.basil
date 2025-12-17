@@ -1,0 +1,5 @@
+DIM a%(3)
+FOR i% = 1 TO 1
+    a%[1] = 7
+    PRINTLN a%[1]
+NEXT
