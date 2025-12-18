@@ -742,9 +742,13 @@ fn cgi_main() {
         }
     };
 
+    // Prepare outputs for reuse
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+    let has_stderr = !stderr_text.trim().is_empty();
+    let exit_ok = output.status.success();
     // Send child's stderr to Apache error log (very helpful)
-    if !output.stderr.is_empty() {
-        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+    if has_stderr {
+        eprintln!("{}", stderr_text);
     }
 
     // Parse directives from the source to determine header policy
@@ -752,6 +756,7 @@ fn cgi_main() {
     let (dirs, _) = parse_directives_and_bom(&src_for_dirs);
 
     let stdout = output.stdout;
+    let stdout_empty = stdout.is_empty();
 
     if dirs.cgi_no_header {
         // Manual header mode: verify the program sent valid CGI headers (terminated by blank line)
@@ -762,18 +767,32 @@ fn cgi_main() {
             println!("Status: 500 Internal Server Error");
             println!("Content-Type: text/plain; charset=utf-8");
             println!();
-            let stderr_text = String::from_utf8_lossy(&output.stderr);
-            let first_line = stderr_text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-            if first_line.is_empty() {
-                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
+            if has_stderr {
+                println!("Basil runtime error while executing: {}\n", script_path);
+                print!("{}", stderr_text);
             } else {
-                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER. - {}", first_line.trim());
+                println!("No CGI header sent. Add headers or remove #CGI_NO_HEADER.");
             }
         }
         return;
     }
 
-    // Automatic header mode: send default header (override if provided) right before body
+    // Automatic header mode:
+    // If the child failed or produced only stderr (no stdout), surface an error page with 500.
+    if !exit_ok || (stdout_empty && has_stderr) {
+        println!("Status: 500 Internal Server Error");
+        println!("Content-Type: text/plain; charset=utf-8");
+        println!();
+        if has_stderr {
+            println!("Basil runtime error while executing: {}\n", script_path);
+            print!("{}", stderr_text);
+        } else {
+            println!("Basil runtime error with no additional details available.");
+        }
+        return;
+    }
+
+    // Otherwise, send default header (override if provided) then body
     let header = if let Some(h) = dirs.cgi_default_header { h } else { "Content-Type: text/html; charset=utf-8".to_string() };
     println!("{}", header);
     println!("");
