@@ -1,0 +1,11 @@
+' List built-in Bitcoin Miner profiles
+' Requires --features obj-btcminer
+
+DIM mgr@ AS BTC_MINER_MGR()
+DIM profiles@
+LET profiles@ = mgr@.PROFILES@()
+
+PRINT "Built-in Miner Profiles:"
+FOR i% = 0 TO LEN(profiles@) - 1
+    PRINT "  - "; profiles@(i%)
+NEXT i%

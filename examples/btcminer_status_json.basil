@@ -1,0 +1,13 @@
+' Print Bitcoin Miner Snapshot as JSON
+' Requires --features obj-btcminer, obj-json
+
+DIM mgr@ AS BTC_MINER_MGR()
+mgr@.ADD_ASIC%("Mock", "generic-http-json", "localhost", "user", "pass")
+
+DIM snap@
+LET snap@ = mgr@.SNAPSHOT@()
+
+' If obj-json is available, we can use JSON_STRINGIFY$()
+' Otherwise, we can just print the snapshot object which has a nice Display impl if it's a Dict
+PRINT "Snapshot:"
+PRINT snap@

@@ -1241,6 +1241,7 @@ dependencies = [
  "dirs",
  "hound",
  "midir",
+ "obj-btcminer",
  "once_cell",
  "rtrb",
  "rusqlite",
@@ -1596,6 +1597,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "btcminer-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "buffered-reader"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1812,6 +1826,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -4988,6 +5003,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "obj-btcminer"
+version = "0.1.0"
+dependencies = [
+ "basil-bytecode",
+ "basil-common",
+ "btcminer-core",
+ "chrono",
+ "once_cell",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

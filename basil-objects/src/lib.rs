@@ -145,6 +145,14 @@ pub fn register_objects(_reg: &mut Registry) {
         };
         basil_objects_orm::register(&mut add);
     }
+    #[cfg(feature = "obj-btcminer")]
+    {
+        // Bridge registrations from obj-btcminer crate
+        let mut add = |type_name: &str, info: obj_btcminer_crate::TypeInfo| {
+            _reg.register(type_name, TypeInfo { factory: info.factory, descriptor: info.descriptor, constants: info.constants });
+        };
+        obj_btcminer_crate::register(&mut add);
+    }
 }
 
 #[cfg(feature = "obj-base64")]

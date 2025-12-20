@@ -1,0 +1,47 @@
+' Bitcoin Miner Monitor Example
+' Requires --features obj-btcminer
+
+DIM mgr@ AS BTC_MINER_MGR()
+DIM log@ AS BTC_LOG_SQLITE("miner_log.db")
+DIM alerts@ AS BTC_ALERTS()
+
+' Configure alerts
+alerts@.RULE_TEMP_MAX%(85.0)
+alerts@.RULE_HASHRATE_MIN%(100000.0) ' 100 TH/s
+
+' Initialize log
+PRINT "Initializing log database..."
+IF log@.INIT%() = 0 THEN
+    PRINT "Failed to initialize log: "; log@.LAST_ERR$()
+    STOP
+END IF
+
+' Add ASICs
+PRINT "Adding ASICs..."
+mgr@.ADD_ASIC%("S19-01", "generic-http-json", "192.168.1.100", "root", "root")
+
+' Monitoring loop
+PRINT "Starting monitoring loop (Ctrl+C to stop)..."
+DO
+    PRINT "Taking snapshot at "; TIME$()
+    DIM snap@
+    LET snap@ = mgr@.SNAPSHOT@()
+    
+    ' Check for alerts
+    DIM new_alerts@
+    LET new_alerts@ = alerts@.EVALUATE@(snap@)
+    
+    IF LEN(new_alerts@) > 0 THEN
+        PRINT "!!! ALERTS DETECTED !!!"
+        FOR i% = 0 TO LEN(new_alerts@) - 1
+            PRINT "  - "; new_alerts@(i%)
+        NEXT i%
+    END IF
+    
+    ' Log to database
+    IF log@.WRITE_SNAPSHOT%(snap@) = 0 THEN
+        PRINT "Log error: "; log@.LAST_ERR$()
+    END IF
+    
+    SLEEP 60000 ' Wait 1 minute
+LOOP

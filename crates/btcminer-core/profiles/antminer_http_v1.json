@@ -1,0 +1,23 @@
+{
+"profile_name": "antminer_http_v1",
+"kind": "generic-http-json",
+"auth": { "type": "basic", "username_key": "root", "password_key": "root" },
+"endpoints": {
+"info":  { "method": "GET", "path": "/cgi-bin/get_system_info.cgi" },
+"stats": { "method": "GET", "path": "/cgi-bin/stats.cgi" },
+"reboot": { "method": "POST", "path": "/cgi-bin/reboot.cgi" }
+},
+"extract": {
+"model": "system.model",
+"firmware": "system.firmware_version",
+"uptime_s": "stats.uptime",
+"hashrate_ghs": "stats.ghs_5s",
+"temp_max_c": "stats.temp_max",
+"fan_rpm_avg": "stats.fan_avg",
+"accepted": "stats.accepted",
+"rejected": "stats.rejected",
+"pool_url": "stats.pools[0].url",
+"pool_user": "stats.pools[0].user"
+},
+"notes": "Antminer template. Endpoints and JSON paths may vary by firmware."
+}

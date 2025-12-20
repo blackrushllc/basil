@@ -1,0 +1,32 @@
+' Test a specific Bitcoin Miner profile against a device
+' Requires --features obj-btcminer
+
+DIM kind$ = "generic-http-json"
+DIM host$ = "192.168.1.100" ' Change to your miner IP
+DIM user$ = "root"
+DIM pass$ = "root"
+
+PRINT "Testing BTC_ASIC with "; kind$; " on "; host$
+DIM asic@ AS BTC_ASIC(kind$, host$, user$, pass$)
+
+PRINT "Querying INFO@..."
+DIM info@
+LET info@ = asic@.INFO@()
+IF LEN(info@) = 0 THEN
+    PRINT "Failed: "; asic@.LAST_ERR$()
+ELSE
+    PRINT "Model:    "; info@{"model"}
+    PRINT "Firmware: "; info@{"firmware"}
+END IF
+
+PRINT "Querying STATS@..."
+DIM stats@
+LET stats@ = asic@.STATS@()
+IF LEN(stats@) = 0 THEN
+    PRINT "Failed: "; asic@.LAST_ERR$()
+ELSE
+    PRINT "Uptime:   "; stats@{"uptime_s"}; " seconds"
+    PRINT "Hashrate: "; stats@{"hashrate_ghs"}; " GH/s"
+    PRINT "Temp Max: "; stats@{"temp_max_c"}; " C"
+    PRINT "Pool:     "; stats@{"pool_url"}
+END IF

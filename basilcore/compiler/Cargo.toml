@@ -42,5 +42,7 @@ obj-orm = []
 obj-orm-mysql = []
 obj-orm-postgres = []
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Bitcoin mining feature gate
+obj-btcminer = []
 # Yore web kernel feature (compiler-side builtins)
 obj-yore = []

@@ -56,6 +56,8 @@ obj-orm = ["basil-vm/obj-orm", "basil-compiler/obj-orm"]
 obj-orm-mysql = ["basil-vm/obj-orm-mysql", "basil-compiler/obj-orm-mysql"]
 obj-orm-postgres = ["basil-vm/obj-orm-postgres", "basil-compiler/obj-orm-postgres"]
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Bitcoin mining feature forwarded to VM and compiler
+obj-btcminer = ["basil-vm/obj-btcminer", "basil-compiler/obj-btcminer"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
 # CRYPTO feature forwarding to VM and compiler

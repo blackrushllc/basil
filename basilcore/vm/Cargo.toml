@@ -57,6 +57,8 @@ obj-orm = ["basil-objects/obj-orm"]
 obj-orm-mysql = ["basil-objects/obj-orm-mysql", "basil-objects/obj-orm"]
 obj-orm-postgres = ["basil-objects/obj-orm-postgres", "basil-objects/obj-orm"]
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Bitcoin mining feature forwarded to basil-objects
+obj-btcminer = ["basil-objects/obj-btcminer"]
 # CRYPTO features forwarded to basil-objects
 obj-crypto = ["basil-objects/obj-crypto"]
 ## Yore web framework kernel feature: enables JSON parsing used by YORE_* builtins
