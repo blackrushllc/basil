@@ -24,7 +24,7 @@ if (a + 1) and (b + 3) {
 
 if true and not false then print "booleans and NOT work";
 
-' AND has higher precedence than OR
+// AND has higher precedence than OR
 if true or false and false then print "precedence: TRUE OR (FALSE AND FALSE) = TRUE"; else print "precedence error";
 if (true or false) and false then print "precedence error"; else print "with parens: (TRUE OR FALSE) AND FALSE = FALSE";
 
@@ -377,7 +377,7 @@ while x < 3 {
     let x = x + 1;
 }
 
-' Infinite loop with BREAK (will break at 3)
+// Infinite loop with BREAK (will break at 3)
 let i = 0;
 while true {
     let i = i + 1;
@@ -387,7 +387,7 @@ while true {
     print i;
 }
 
-' Using CONTINUE (skip 3)
+// Using CONTINUE (skip 3)
 let j = 0;
 while j < 5 {
     let j = j + 1;
@@ -397,7 +397,7 @@ while j < 5 {
     print j;
 }
 
-' Infinite loop with BREAK (will break at 3)
+// Infinite loop with BREAK (will break at 3)
 let i = 0;
 while true {
     let i = i + 1;
@@ -405,7 +405,7 @@ while true {
     print i;
 }
 
-' Using CONTINUE (skip 3)
+// Using CONTINUE (skip 3)
 let j = 0;
 while j < 5 {
     let j = j + 1;
@@ -414,7 +414,7 @@ while j < 5 {
 }
 
 
-' FALSE as never-enter condition
+// FALSE as never-enter condition
 while false {
     print "You should never see this";
 }

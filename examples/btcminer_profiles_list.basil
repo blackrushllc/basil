@@ -1,5 +1,5 @@
-' List built-in Bitcoin Miner profiles
-' Requires --features obj-btcminer
+// List built-in Bitcoin Miner profiles
+// Requires --features obj-btcminer
 
 DIM mgr@ AS BTC_MINER_MGR()
 DIM profiles@

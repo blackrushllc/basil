@@ -1,5 +1,5 @@
-' upgrade.bas
-' Interactive upgrader / installer for BASIC or BASIL components.
+//upgrade.bas
+// Interactive upgrader / installer for BASIC or BASIL components.
 
 CONST OS_WINDOWS = "W"
 CONST OS_LINUX   = "L"
@@ -321,5 +321,5 @@ END FUNCTION
 
 
 
-' --- Program entry point ---
+// --- Program entry point ---
 Main()

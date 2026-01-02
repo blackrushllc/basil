@@ -1,5 +1,5 @@
-' Test a specific Bitcoin Miner profile against a device
-' Requires --features obj-btcminer
+// Test a specific Bitcoin Miner profile against a device
+// Requires --features obj-btcminer
 
 DIM kind$ = "generic-http-json"
 DIM host$ = "192.168.1.100" ' Change to your miner IP
