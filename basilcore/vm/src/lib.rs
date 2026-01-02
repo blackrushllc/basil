@@ -1241,8 +1241,30 @@ impl VM {
                 },
                 Op::Sub => self.bin_num(|a,b| a-b)?,
                 Op::Mul => self.bin_num(|a,b| a*b)?,
-                Op::Div => self.bin_num(|a,b| a/b)?,
-                Op::Mod => self.bin_num(|a,b| a % b)?,
+                Op::Div => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    let a = self.as_num(lb)?;
+                    let b = self.as_num(rb)?;
+                    if b == 0.0 { return Err(BasilError("Division by zero".into())); }
+                    self.stack.push(Value::Num(a / b));
+                },
+                Op::Mod => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    match (&lb, &rb) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b == 0 { return Err(BasilError("Division by zero in MOD".into())); }
+                            self.stack.push(Value::Int(a % b));
+                        }
+                        _ => {
+                            let a = self.as_num(lb)?;
+                            let b = self.as_num(rb)?;
+                            if b == 0.0 { return Err(BasilError("Division by zero in MOD".into())); }
+                            self.stack.push(Value::Num(a % b));
+                        }
+                    }
+                },
                 Op::Neg => {
                     let v = self.pop()?;
                     let n = self.as_num(v)?;

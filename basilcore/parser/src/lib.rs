@@ -524,41 +524,38 @@ impl Parser {
             return Ok(Stmt::Let { name, indices, init });
         }
 
-        if self.match_k(TokenKind::Print) {
+        if self.match_k(TokenKind::Print) || self.match_k(TokenKind::Println) {
+            let is_println = self.tokens[self.i - 1].kind == TokenKind::Println;
             // Parse PRINT as a sequence of prints so column-tracking (SPC/TAB/AT) works correctly
             let mut exprs: Vec<Expr> = Vec::new();
-            let first = self.parse_expr_bp(0)?;
-            exprs.push(first);
-            while self.match_k(TokenKind::Comma) {
-                // Insert a tab separator between comma-separated items for compatibility with prior behavior
-                exprs.push(Expr::Str("\t".to_string()));
-                let next = self.parse_expr_bp(0)?;
-                exprs.push(next);
+            
+            // Check for empty PRINT/PRINTLN
+            let mut last_sep = None;
+            if !self.check_terminate() {
+                let first = self.parse_expr_bp(0)?;
+                exprs.push(first);
+                while self.match_k(TokenKind::Comma) || (self.check(TokenKind::Semicolon) && self.tokens[self.i].lexeme == ";" && self.match_k(TokenKind::Semicolon)) {
+                    let sep = self.tokens[self.i - 1].kind.clone();
+                    last_sep = Some(sep.clone());
+                    if sep == TokenKind::Comma {
+                        exprs.push(Expr::Str("\t".to_string()));
+                    }
+                    if self.check_terminate() { break; }
+                    let next = self.parse_expr_bp(0)?;
+                    exprs.push(next);
+                    last_sep = None;
+                }
             }
+            
+            let trailing = matches!(last_sep, Some(TokenKind::Comma) | Some(TokenKind::Semicolon));
+            if is_println && !trailing {
+                exprs.push(Expr::Str("\n".to_string()));
+            }
+            
             self.terminate_stmt()?;
-            if exprs.len() == 1 {
-                return Ok(Stmt::Print { expr: exprs.remove(0) });
-            } else {
-                let mut body: Vec<Stmt> = Vec::with_capacity(exprs.len());
-                for e in exprs { body.push(Stmt::Print { expr: e }); }
-                return Ok(Stmt::Block(body));
-            }
-        }
-
-        if self.match_k(TokenKind::Println) {
-            // PRINTLN prints items and then a newline as a final print
-            let mut exprs: Vec<Expr> = Vec::new();
-            let first = self.parse_expr_bp(0)?;
-            exprs.push(first);
-            while self.match_k(TokenKind::Comma) {
-                exprs.push(Expr::Str("\t".to_string()));
-                let next = self.parse_expr_bp(0)?;
-                exprs.push(next);
-            }
-            // final newline
-            exprs.push(Expr::Str("\n".to_string()));
-            self.terminate_stmt()?;
-            if exprs.len() == 1 {
+            if exprs.is_empty() {
+                return Ok(Stmt::Block(vec![]));
+            } else if exprs.len() == 1 {
                 return Ok(Stmt::Print { expr: exprs.remove(0) });
             } else {
                 let mut body: Vec<Stmt> = Vec::with_capacity(exprs.len());
@@ -1415,6 +1412,10 @@ impl Parser {
         let e = self.parse_expr_bp(0)?;
         self.terminate_stmt()?;
         Ok(Stmt::ExprStmt(e))
+    }
+
+    fn check_terminate(&self) -> bool {
+        self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof)
     }
 
     // Accept ';' OR EOF after a statement
