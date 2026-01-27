@@ -1,0 +1,67 @@
+REM Health Check and Email Alert Example
+REM Tries to access a health status URL and sends an email if it fails.
+REM Requires basil-objects-net feature.
+
+REM Load environment variables from .env if it exists
+LET ok% = LOADENV%(".env")
+
+LET healthUrl$ = ENV$("HEALTH_URL")
+LET smtpHost$ = ENV$("SMTP_HOST")
+LET smtpUser$ = ENV$("SMTP_USER")
+LET smtpPass$ = ENV$("SMTP_PASS")
+LET alertEmail$ = ENV$("ALERT_EMAIL")
+
+IF healthUrl$ = "" THEN
+    PRINT "Error: HEALTH_URL environment variable not set."
+    STOP
+END IF
+
+REM Handle port with default
+LET smtpPortStr$ = ENV$("SMTP_PORT")
+LET smtpPort% = 587
+IF smtpPortStr$ <> "" THEN LET smtpPort% = EVAL(smtpPortStr$)
+
+REM Handle TLS mode with default
+LET smtpTls$ = ENV$("SMTP_TLS")
+IF smtpTls$ = "" THEN LET smtpTls$ = "starttls"
+
+PRINT "Checking health of: "; healthUrl$
+
+LET http@ = NEW HTTP()
+TRY
+    LET response$ = http@.Get$(healthUrl$)
+    LET status% = http@.LastStatus%
+    
+    IF status% >= 200 AND status% < 300 THEN
+        PRINT "Health check successful. Status: "; status%
+    ELSE
+        PRINT "Health check failed! Status: "; status%
+        GOSUB SendAlert
+    END IF
+CATCH e$
+    PRINT "Health check failed with error: "; e$
+    LET status% = 0
+    GOSUB SendAlert
+END TRY
+
+END
+
+LABEL SendAlert
+    PRINT "Sending alert email to: "; alertEmail$
+    
+    TRY
+        LET smtp@ = NEW MAIL_SMTP(smtpHost$, smtpUser$, smtpPass$, smtpPort%, smtpTls$)
+        LET subject$ = "CRITICAL: Health Check Failed for " + healthUrl$
+        LET body$ = "The health check for " + healthUrl$ + " failed at " + NOW$() + "."
+        IF status% <> 0 THEN
+            LET body$ = body$ + " HTTP Status: " + (status% + "")
+        ELSE
+            LET body$ = body$ + " Error: " + e$
+        END IF
+        
+        smtp@.SendEmail(alertEmail$, subject$, body$)
+        PRINT "Alert email sent."
+    CATCH mailErr$
+        PRINT "Failed to send alert email: "; mailErr$
+    END TRY
+RETURN
