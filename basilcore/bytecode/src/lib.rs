@@ -45,6 +45,26 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use basil_common::Result;
 
+pub type VmCallFn = fn(*mut (), Value, &[Value]) -> Result<Value>;
+thread_local! {
+    pub static CURRENT_VM_PTR: RefCell<Option<*mut ()>> = RefCell::new(None);
+    pub static CURRENT_VM_CALL: RefCell<Option<VmCallFn>> = RefCell::new(None);
+}
+
+/// Safely call back into the active Basil VM from a Feature Object.
+pub fn call_back_to_vm(func: Value, args: &[Value]) -> Result<Value> {
+    let (ptr, call) = CURRENT_VM_PTR.with(|p| {
+        CURRENT_VM_CALL.with(|c| {
+            (*p.borrow(), *c.borrow())
+        })
+    });
+    if let (Some(ptr), Some(call)) = (ptr, call) {
+        call(ptr, func, args)
+    } else {
+        Err(basil_common::BasilError("No active Basil VM found in this thread for callback.".into()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ElemType { Num, Int, Str, Obj(Option<String>) }
 
@@ -109,6 +129,37 @@ pub enum Value {
     // Special runtime-only value: 2-D string array, row-major order.
     // Used as RHS for whole-array assignment (auto-redimensioning target array).
     StrArray2D { rows: usize, cols: usize, data: Vec<String> },
+}
+
+impl Value {
+    pub fn as_int(&self) -> Option<i64> {
+        match self {
+            Value::Int(i) => Some(*i),
+            Value::Num(n) => Some(n.trunc() as i64),
+            Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+            _ => None,
+        }
+    }
+
+    pub fn as_num(&self) -> Option<f64> {
+        match self {
+            Value::Num(n) => Some(*n),
+            Value::Int(i) => Some(*i as f64),
+            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+    
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Null => false,
+            Value::Bool(b) => *b,
+            Value::Num(n) => *n != 0.0,
+            Value::Int(i) => *i != 0,
+            Value::Str(s) => !s.is_empty(),
+            _ => true,
+        }
+    }
 }
 
 impl PartialEq for Value {
@@ -348,6 +399,14 @@ pub struct Function {
 pub struct Program {
     pub chunk:   Chunk,        // top-level code
     pub globals: Vec<String>,  // names → indices for global array
+    // Optional compact source map: preprocessed line -> (file_idx, line)
+    pub source_map: Option<SourceMapMini>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SourceMapMini {
+    pub files: Vec<String>,
+    pub lines: Vec<(u16, u32)>, // 1-based indexing; lines[pre_line]
 }
 
 // --- Simple (de)serializer for Program used by .basilx cache ---
@@ -384,6 +443,21 @@ pub fn serialize_program(p: &Program) -> Vec<u8> {
     ser_chunk(&mut b, &p.chunk);
     w_u32(&mut b, p.globals.len() as u32);
     for g in &p.globals { w_str(&mut b, g); }
+    // Source map block (optional). Layout:
+    // u8 flag (0/1); if 1 then: u32 nfiles; [files]; u32 nlines; [u16 file_idx, u32 line] * nlines
+    match &p.source_map {
+        None => { w_u8(&mut b, 0); }
+        Some(sm) => {
+            w_u8(&mut b, 1);
+            w_u32(&mut b, sm.files.len() as u32);
+            for f in &sm.files { w_str(&mut b, f); }
+            w_u32(&mut b, sm.lines.len() as u32);
+            for (fi, ln) in &sm.lines {
+                b.extend_from_slice(&fi.to_le_bytes());
+                w_u32(&mut b, *ln as u32);
+            }
+        }
+    }
     b
 }
 
@@ -426,5 +500,28 @@ pub fn deserialize_program(data: &[u8]) -> basil_common::Result<Program> {
     let chunk = de_chunk(&mut p, data)?;
     let n = r_u32(&mut p,data)? as usize; let mut globals = Vec::with_capacity(n);
     for _ in 0..n { globals.push(r_str(&mut p,data)?); }
-    Ok(Program { chunk, globals })
+    // Optional source map tail; if missing or truncated, ignore.
+    let mut source_map: Option<SourceMapMini> = None;
+    if p < data.len() {
+        if let Ok(flag) = r_u8(&mut p, data) {
+            if flag == 1 {
+                // files
+                if let Ok(nf) = r_u32(&mut p, data) {
+                    let mut files = Vec::with_capacity(nf as usize);
+                    for _ in 0..nf { files.push(r_str(&mut p, data)?); }
+                    // lines
+                    let nl = r_u32(&mut p, data)? as usize;
+                    let mut lines: Vec<(u16,u32)> = Vec::with_capacity(nl);
+                    for _ in 0..nl {
+                        if p+2 > data.len() { break; }
+                        let fi = u16::from_le_bytes([data[p], data[p+1]]); p+=2;
+                        let ln = r_u32(&mut p, data)?;
+                        lines.push((fi, ln));
+                    }
+                    source_map = Some(SourceMapMini { files, lines });
+                }
+            }
+        }
+    }
+    Ok(Program { chunk, globals, source_map })
 }

@@ -16,7 +16,7 @@ END
 
 IF TRUE AND NOT FALSE THEN PRINT "booleans and NOT work";
 
-' AND has higher precedence than OR
+// AND has higher precedence than OR
 IF TRUE OR FALSE AND FALSE THEN PRINT "precedence: TRUE OR (FALSE AND FALSE) = TRUE"; ELSE PRINT "precedence error";
 IF (TRUE OR FALSE) AND FALSE THEN PRINT "precedence error"; ELSE PRINT "with parens: (TRUE OR FALSE) AND FALSE = FALSE";
 

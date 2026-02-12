@@ -1,0 +1,42 @@
+// Guess the Number (simple example)
+// Run: cargo run -q -p basilc -- run examples\guess.basil
+// Note: Uses INPUT$ for line input and simple string checks (no number parsing yet).
+//       Target is fixed to 7 (1–9 range) to keep it portable across current Basil runtime.
+
+PRINTLN "I'm thinking of a number between 1 and 9. Can you guess it?";
+PRINTLN "Type your guess and press Enter. Type Q to quit.";
+
+LET target$ = "7";     // fixed target for now
+LET attempts% = 0;
+
+WHILE TRUE BEGIN
+    LET guess$ = INPUT$("\nYour guess (1-9 or Q): ");
+    LET attempts% = attempts% + 1;
+
+    // Allow quit
+    IF UCASE$(guess$) == "Q" THEN BEGIN
+        PRINTLN "Okay, maybe next time!";
+        BREAK;
+    END
+
+    // Correct guess
+    IF guess$ == target$ THEN BEGIN
+        PRINTLN "Correct! You guessed it in ", attempts%, " attempt(s).";
+        BREAK;
+    END
+
+    // Non-digit handling
+    IF NOT (guess$ == "1" OR guess$ == "2" OR guess$ == "3" OR guess$ == "4" OR guess$ == "5" OR guess$ == "6" OR guess$ == "7" OR guess$ == "8" OR guess$ == "9") THEN BEGIN
+        PRINTLN "Please enter a single digit between 1 and 9 (or Q to quit).";
+        CONTINUE;
+    END
+
+    // Hints: since we're comparing strings and only single digits, group comparisons
+    IF (guess$ == "1" OR guess$ == "2" OR guess$ == "3" OR guess$ == "4" OR guess$ == "5" OR guess$ == "6") THEN BEGIN
+        PRINTLN "Too low! Try a higher number.";
+    ELSE
+        PRINTLN "Too high! Try a lower number.";
+    END
+END
+
+PRINTLN "\nGame over.";

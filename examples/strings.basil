@@ -12,3 +12,96 @@ PRINTLN RIGHT$(C$, 5); // expected There
 PRINTLN INSTR(C$, "e"); // expected 4
 PRINTLN INSTR(C$, "e", 5); // expected 6
 PRINTLN INSTR(C$, "x"); // expected 0
+
+REM REMOVE$
+LET a$ = "Hello World";
+LET a$ = REMOVE$(a$, "World");
+PRINTLN a$
+
+REM REPLACE$
+LET a$ = "Hello World";
+LET a$ = REPLACE$("Hello", "Hi", a$);
+PRINTLN a$           REM -> Hi World
+
+REM INSERT$
+PRINTLN INSERT$("Hello World", "Cruel ", 6)  REM -> Hello Cruel World
+
+REM DATE$/TIME$/NOW$
+PRINTLN DATE$(), TIME$(), NOW$()
+
+REM EXPLODE to list
+LET items@ = EXPLODE("This,That,Other", ",")
+FOR i% = 1 TO LEN(items@)
+    PRINTLN items@[i%]
+NEXT
+
+REM EXPLODE to dict
+REQUEST$ = "name=John+Doe&age=30&city=New+York"
+
+LET params@ = EXPLODE(URLDECODE$(REQUEST$), "&", "=");
+PRINTLN params@["name"]
+
+REM (Note: array-returning alias forms like EXPLODE$[]/EXPLODE2D$[] are not added.)
+
+REM IMPLODE$
+PRINTLN IMPLODE$(items@, ",")                  REM list -> string
+PRINTLN IMPLODE$(params@, "&", "=")           REM dict -> query string
+
+A$ = "Hello"
+B$ = "World"
+
+C$ = RENDER$("This view says {{ A$ }}, {{ B$ }} and {{ A$ + B$ }}!")
+PRINTLN C$
+
+
+DIM A$(5)
+A$(0) = "Hello"
+A$(1) = "World"
+A$(2) = "World"
+A$(3) = "World"
+A$(4) = "World"
+A$(5) = "World"
+
+PRINTLN IMPLODE$(A$, ",")
+B$ = IMPLODE$(A$, ",")
+
+PRINTLN B$
+
+LET items@ = EXPLODE(B$, ",")
+FOR i% = 1 TO LEN(items@)
+    PRINTLN items@[i%]
+NEXT
+
+rem multi-line example
+LET longString$ = "This is a long string that " +
+                  "spans multiple lines for " +
+                  "better readability."
+
+rem true multi-line example
+a$ = 'longggg string'
+
+println "*** Triple Quotes:"
+
+MyDoc$ = """This is a #{a$} that
+spans multiple lines for
+better readability."""
+
+println MyDoc$
+
+println "*** Double Quotes:"
+
+MyDoc$ = "This is a #{a$} that
+spans multiple lines for
+better readability."
+
+println MyDoc$
+
+
+
+println "*** true multi-line example with single quotes:"
+
+MyDoc$ = "This is a long string that
+spans multiple lines for better readability.
+"
+
+println MyDoc$

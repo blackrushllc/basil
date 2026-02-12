@@ -1,0 +1,22 @@
+{
+"profile_name": "braiins_os_v1",
+"kind": "generic-http-json",
+"auth": { "type": "none" },
+"endpoints": {
+"info":  { "method": "GET", "path": "/api/v1/info" },
+"stats": { "method": "GET", "path": "/api/v1/stats" }
+},
+"extract": {
+"model": "hardware.model",
+"firmware": "software.version",
+"uptime_s": "stats.uptime",
+"hashrate_ghs": "stats.hashrate_5m",
+"temp_max_c": "stats.temp_max",
+"fan_rpm_avg": "stats.fan_avg",
+"accepted": "stats.accepted",
+"rejected": "stats.rejected",
+"pool_url": "pools[0].url",
+"pool_user": "pools[0].user"
+},
+"notes": "Braiins OS template. Usually exposes a clean JSON API."
+}

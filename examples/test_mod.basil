@@ -1,0 +1,5 @@
+PRINT "10 MOD 3 = "; 10 MOD 3
+PRINT "10 MOD -3 = "; 10 MOD -3
+PRINT "-10 MOD 3 = "; -10 MOD 3
+PRINT "-10 MOD -3 = "; -10 MOD -3
+PRINT "10.5 MOD 3 = "; 10.5 MOD 3

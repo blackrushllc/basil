@@ -1,0 +1,4 @@
+DIM a%(3)
+i% = 1
+a%[i%] = 3
+PRINTLN a%[1]

@@ -24,6 +24,9 @@ members = [
     "crates/basil-host",
     "crates/basil_web",
     "bin/basil-serve",
+    "crates/basil-preprocessor",
+    "crates/btcminer-core",
+    "crates/obj-game",
 ]
 resolver = "2"
 
@@ -49,6 +52,7 @@ basil-objects-sql = { path = "basil-objects-sql" }
 basil-common    = { path = "basilcore/common" }
 basil-bytecode  = { path = "basilcore/bytecode" }
 basil-objects-orm = { path = "basil-objects-orm" }
+basil-preprocessor = { path = "crates/basil-preprocessor" }
 
 [profile.dev]
 debug = 0            # disable PDBs to avoid MSVC LNK1318 on large workspaces

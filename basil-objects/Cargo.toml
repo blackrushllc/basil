@@ -48,7 +48,9 @@ obj-orm = ["basil-objects-orm/obj-orm", "basil-objects-orm"]
 obj-orm-mysql = ["basil-objects-orm/obj-orm-mysql", "basil-objects-orm"]
 obj-orm-postgres = ["basil-objects-orm/obj-orm-postgres", "basil-objects-orm"]
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-crypto", "obj-sql", "obj-orm-all"]
+obj-btcminer = ["obj-btcminer-crate"]
+obj-game = ["obj-game-crate"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-bmx", "obj-audio", "obj-midi", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-crypto", "obj-sql", "obj-orm-all", "obj-game"]
 
 [dependencies]
 basil-common = { workspace = true }
@@ -63,6 +65,8 @@ basil-objects-crypto = { workspace = true, optional = true }
 basil-objects-sql = { workspace = true, optional = true }
 # ORM objects live in separate crate
 basil-objects-orm = { workspace = true, optional = true }
+obj-btcminer-crate = { package = "obj-btcminer", path = "../crates/obj-btcminer", optional = true }
+obj-game-crate = { package = "obj-game", path = "../crates/obj-game", optional = true }
 base64 = { version = "0.22", optional = true }
 zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
 walkdir = { version = "2", optional = true }
