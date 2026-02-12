@@ -65,3 +65,4 @@ obj-game = ["basil-objects/obj-game"]
 obj-crypto = ["basil-objects/obj-crypto"]
 ## Yore web framework kernel feature: enables JSON parsing used by YORE_* builtins
 obj-yore = ["serde_json"]
+## ## obj-yore = ["basil-vm/obj-yore", "basil-compiler/obj-yore"]
