@@ -45,6 +45,26 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use basil_common::Result;
 
+pub type VmCallFn = fn(*mut (), Value, &[Value]) -> Result<Value>;
+thread_local! {
+    pub static CURRENT_VM_PTR: RefCell<Option<*mut ()>> = RefCell::new(None);
+    pub static CURRENT_VM_CALL: RefCell<Option<VmCallFn>> = RefCell::new(None);
+}
+
+/// Safely call back into the active Basil VM from a Feature Object.
+pub fn call_back_to_vm(func: Value, args: &[Value]) -> Result<Value> {
+    let (ptr, call) = CURRENT_VM_PTR.with(|p| {
+        CURRENT_VM_CALL.with(|c| {
+            (*p.borrow(), *c.borrow())
+        })
+    });
+    if let (Some(ptr), Some(call)) = (ptr, call) {
+        call(ptr, func, args)
+    } else {
+        Err(basil_common::BasilError("No active Basil VM found in this thread for callback.".into()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ElemType { Num, Int, Str, Obj(Option<String>) }
 
@@ -109,6 +129,37 @@ pub enum Value {
     // Special runtime-only value: 2-D string array, row-major order.
     // Used as RHS for whole-array assignment (auto-redimensioning target array).
     StrArray2D { rows: usize, cols: usize, data: Vec<String> },
+}
+
+impl Value {
+    pub fn as_int(&self) -> Option<i64> {
+        match self {
+            Value::Int(i) => Some(*i),
+            Value::Num(n) => Some(n.trunc() as i64),
+            Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+            _ => None,
+        }
+    }
+
+    pub fn as_num(&self) -> Option<f64> {
+        match self {
+            Value::Num(n) => Some(*n),
+            Value::Int(i) => Some(*i as f64),
+            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+    
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Null => false,
+            Value::Bool(b) => *b,
+            Value::Num(n) => *n != 0.0,
+            Value::Int(i) => *i != 0,
+            Value::Str(s) => !s.is_empty(),
+            _ => true,
+        }
+    }
 }
 
 impl PartialEq for Value {

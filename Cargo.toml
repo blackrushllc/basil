@@ -25,6 +25,8 @@ members = [
     "crates/basil_web",
     "bin/basil-serve",
     "crates/basil-preprocessor",
+    "crates/btcminer-core",
+    "crates/obj-game",
 ]
 resolver = "2"
 

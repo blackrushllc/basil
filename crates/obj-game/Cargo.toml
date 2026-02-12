@@ -1,0 +1,16 @@
+[package]
+name = "obj-game"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+basil-common = { path = "../../basilcore/common" }
+basil-bytecode = { path = "../../basilcore/bytecode" }
+winit = "0.29"
+wgpu = "0.19"
+image = "0.24"
+bytemuck = { version = "1.14", features = ["derive"] }
+log = "0.4"
+env_logger = "0.10"
+pollster = "0.3"
+futures-lite = "2.0"

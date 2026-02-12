@@ -100,8 +100,8 @@ println MyDoc$
 
 println "*** true multi-line example with single quotes:"
 
-MyDoc$ = 'This is a long string that
+MyDoc$ = "This is a long string that
 spans multiple lines for better readability.
-'
+"
 
 println MyDoc$

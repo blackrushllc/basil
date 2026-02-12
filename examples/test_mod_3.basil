@@ -1,0 +1,4 @@
+LET x = 10 MOD 3
+PRINT "x is "
+PRINT x
+PRINTLN ""

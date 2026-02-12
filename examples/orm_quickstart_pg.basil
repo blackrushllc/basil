@@ -10,7 +10,7 @@ orm@.BelongsTo("posts","users","user_id%","id%")
 DIM u@ = orm@.New("users")
 u@.Name$="Alice": u@.Email$="alice@example.com": u@.Save()
 
-' Create a post (lazy relation create pattern via direct New on table)
+// Create a post (lazy relation create pattern via direct New on table)
 DIM p@ = orm@.New("posts")
 p@.User_Id% = u@.Pk$ : p@.Title$="First": p@.Body$="Hello": p@.Save()
 

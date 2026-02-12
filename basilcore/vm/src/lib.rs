@@ -1149,6 +1149,45 @@ impl VM {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        let prev_ptr = basil_bytecode::CURRENT_VM_PTR.with(|p| p.replace(Some(self as *mut VM as *mut ())));
+        let prev_call = basil_bytecode::CURRENT_VM_CALL.with(|c| c.replace(Some(Self::callback_bridge)));
+
+        let res = self.run_internal(None);
+
+        basil_bytecode::CURRENT_VM_PTR.with(|p| p.replace(prev_ptr));
+        basil_bytecode::CURRENT_VM_CALL.with(|c| c.replace(prev_call));
+        res
+    }
+
+    fn callback_bridge(ptr: *mut (), func: Value, args: &[Value]) -> Result<Value> {
+        let vm = unsafe { &mut *(ptr as *mut VM) };
+        vm.call_function(func, args)
+    }
+
+    pub fn call_function(&mut self, func: Value, args: &[Value]) -> Result<Value> {
+        let f = match func {
+            Value::Func(f) => f,
+            _ => return Err(BasilError("Value is not a function".into())),
+        };
+        if f.arity as usize != args.len() {
+            return Err(BasilError(format!("arity mismatch: expected {}, got {}", f.arity, args.len())));
+        }
+
+        let base = self.stack.len();
+        for arg in args {
+            self.stack.push(arg.clone());
+        }
+
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base };
+        self.frames.push(frame);
+
+        let initial_depth = self.frames.len();
+        self.run_internal(Some(initial_depth))?;
+
+        Ok(self.pop().unwrap_or(Value::Null))
+    }
+
+    fn run_internal(&mut self, until_depth: Option<usize>) -> Result<()> {
         if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Started); }
         loop {
             let op = self.read_op()?;
@@ -1202,8 +1241,30 @@ impl VM {
                 },
                 Op::Sub => self.bin_num(|a,b| a-b)?,
                 Op::Mul => self.bin_num(|a,b| a*b)?,
-                Op::Div => self.bin_num(|a,b| a/b)?,
-                Op::Mod => self.bin_num(|a,b| a % b)?,
+                Op::Div => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    let a = self.as_num(lb)?;
+                    let b = self.as_num(rb)?;
+                    if b == 0.0 { return Err(BasilError("Division by zero".into())); }
+                    self.stack.push(Value::Num(a / b));
+                },
+                Op::Mod => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    match (&lb, &rb) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b == 0 { return Err(BasilError("Division by zero in MOD".into())); }
+                            self.stack.push(Value::Int(a % b));
+                        }
+                        _ => {
+                            let a = self.as_num(lb)?;
+                            let b = self.as_num(rb)?;
+                            if b == 0.0 { return Err(BasilError("Division by zero in MOD".into())); }
+                            self.stack.push(Value::Num(a % b));
+                        }
+                    }
+                },
                 Op::Neg => {
                     let v = self.pop()?;
                     let n = self.as_num(v)?;
@@ -1351,6 +1412,9 @@ impl VM {
                         self.fh_close_owner_depth(depth);
                     }
                     if self.frames.is_empty() { break; }
+                    if let Some(target) = until_depth {
+                        if self.frames.len() < target { break; }
+                    }
                 }
 
                 Op::Print => {

@@ -1,0 +1,2 @@
+LET u@ = NULL
+PRINTLN u@.Name$

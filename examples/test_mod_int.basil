@@ -1,0 +1,4 @@
+LET a = 10
+LET b = 3
+PRINTLN "10 MOD 3 = ", a MOD b
+PRINTLN "Type of 10 MOD 3: ", TYPE$(a MOD b)
