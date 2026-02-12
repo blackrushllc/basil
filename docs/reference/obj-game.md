@@ -1,4 +1,4 @@
-# GAME Object (obj-game)
+# GAME Object (obj-game) (work in progress)
 
 The `GAME` object provides a minimal 2D micro game engine foundation for Basil.
 
