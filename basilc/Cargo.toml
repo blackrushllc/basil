@@ -13,6 +13,7 @@ basil-compiler= { workspace = true }
 basil-vm = { workspace = true }
 basil-bytecode = { workspace = true }
 basil-ast = { workspace = true }
+basil-preprocessor = { workspace = true }
 rustyline = "13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -55,11 +56,18 @@ obj-orm = ["basil-vm/obj-orm", "basil-compiler/obj-orm"]
 obj-orm-mysql = ["basil-vm/obj-orm-mysql", "basil-compiler/obj-orm-mysql"]
 obj-orm-postgres = ["basil-vm/obj-orm-postgres", "basil-compiler/obj-orm-postgres"]
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Bitcoin mining feature forwarded to VM and compiler
+obj-btcminer = ["basil-vm/obj-btcminer", "basil-compiler/obj-btcminer"]
+# Game engine feature forwarded to VM and compiler
+obj-game = ["basil-vm/obj-game", "basil-compiler/obj-game"]
 # Compatibility no-op alias to tolerate stray flags
 obj-sQ = []
 # CRYPTO feature forwarding to VM and compiler
 obj-crypto = ["basil-vm/obj-crypto", "basil-compiler/obj-crypto"]
-obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all"]
+obj-all = ["obj-base64", "obj-zip", "obj-curl", "obj-json", "obj-csv", "obj-sqlite", "obj-sql", "obj-bmx", "obj-daw", "obj-ai", "obj-term", "obj-aws", "obj-net", "obj-orm-all", "obj-yore", "obj-game"]
+
+# Yore web framework kernel feature forwarding
+obj-yore = ["basil-vm/obj-yore", "basil-compiler/obj-yore"]
 
 # Safe umbrella for portable builds: excludes SFTP and audio/MIDI/DAW
 obj-safe = [

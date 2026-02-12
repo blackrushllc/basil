@@ -17,6 +17,7 @@ walkdir = { version = "2", optional = true }
 serde_json = { version = "1", optional = true }
 csv = { version = "1.3", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+chrono = { version = "0.4" }
 
 [features]
 obj-bmx = ["basil-objects/obj-bmx"]
@@ -56,5 +57,12 @@ obj-orm = ["basil-objects/obj-orm"]
 obj-orm-mysql = ["basil-objects/obj-orm-mysql", "basil-objects/obj-orm"]
 obj-orm-postgres = ["basil-objects/obj-orm-postgres", "basil-objects/obj-orm"]
 obj-orm-all = ["obj-orm", "obj-orm-mysql", "obj-orm-postgres"]
+# Bitcoin mining feature forwarded to basil-objects
+obj-btcminer = ["basil-objects/obj-btcminer"]
+# Game engine feature forwarded to basil-objects
+obj-game = ["basil-objects/obj-game"]
 # CRYPTO features forwarded to basil-objects
 obj-crypto = ["basil-objects/obj-crypto"]
+## Yore web framework kernel feature: enables JSON parsing used by YORE_* builtins
+obj-yore = ["serde_json"]
+## ## obj-yore = ["basil-vm/obj-yore", "basil-compiler/obj-yore"]

@@ -17,6 +17,7 @@ basil-compiler = { workspace = true }
 basil-bytecode = { workspace = true }
 basil-vm = { workspace = true }
 basil-host = { path = "../basil-host" }
+basil-preprocessor = { workspace = true }
 
 
 

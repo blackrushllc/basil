@@ -19,11 +19,11 @@ orm@.HasMany("users","posts","user_id%")
 orm@.BelongsTo("posts","users","user_id%","id%")
 
 LET u@ = orm@.Table("users").First()
-
+PRINTLN u@
 // IF u@ <> null THEN //  parse error: unexpected token in expression: Some(Null) :/
 
   FOR EACH p@ IN u@.Posts()
-   PRINTLN p@.Title$
+   PRINTLN p@.Test$
   NEXT p@
 
 // END IF

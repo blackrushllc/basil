@@ -12,11 +12,15 @@
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
 ### 🌿 New stuff just added:
++ Semi-colon line delimiters, LET, and BEGIN/END Blocks are now optional, and = is recognized as == for equality comparisons
++ Multi-line string literals and single quotes are now supported
++ Triple-quoted multi-line strings are now supported: use """ ... """ for convenient multi-line string blocks
 + WEB SERVER!  See docs/WEB_SERVER.md for info to build & run local dev web server
++ Laravel Blade-like CGI template support (see VIEW_RENDERING_AND_FRED.md)
 + A GUI Proof of Concept (Basilica) that runs Basil scripts in a webview window with HTML/CSS/JS rendering
-+ Lists, Dictionaries, and Stucture data types (see docs/guides/NONSCALARS.md)
++ Lists, Dictionaries, Arrays and TYPE Stuctures (see docs/guides/NONSCALARS.md)
 + Added new syntax I call "Basil#" - Curly braces instead of BEGIN..END for blocks (and other syntax changes)
-+ (You can use both styles interchangeably)
++ (You can use both Blocky and Curly syntax styles interchangeably)
 + ORM Mod (this is insane!) 
 + MySQL / PostgreSQL Mod
 + SMTP/SFTP Mod
@@ -31,9 +35,10 @@
 + New CLI "OK" prompt mode and immediate mode with class load
 + New IDE integration stuff
 + "GWBASIC" / "BASICA" style OK prompt interface (80's retro mode)
- + CONST declarations: CONST NAME = value (string/int/float), immutable in scope; no type suffix allowed on NAME
- + DIM supports multiple variables on a single line and default initialization (empty string or 0)
- + LET is now optional for assignments (implicit assignment supported): x = 5 works alongside LET x = 5
++ DECLARE SUB/FUNCTION for forward-declaration of functions and subs
++ CONST declarations: CONST NAME = value (string/int/float), immutable in scope; no type suffix allowed on NAME
++ DIM supports multiple variables on a single line and default initialization (empty string or 0)
++ LET is now optional for assignments (implicit assignment supported): x = 5 works alongside LET x = 5
 
 ### 🌿 STATUS UPDATE _COMPILER_ !!!
 

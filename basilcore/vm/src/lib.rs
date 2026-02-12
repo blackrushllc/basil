@@ -51,8 +51,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::io::copy;
+use chrono::Local;
+#[cfg(feature = "obj-yore")]
+use serde_json as sj;
 
 pub mod debug;
+mod render; // template rendering engine
 
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj, ObjectDescriptor, PropDesc, MethodDesc};
@@ -334,6 +338,20 @@ pub struct VM {
     out_col: usize,
     // RNG state for RND
     rnd_state: u64,
+    #[cfg(feature = "obj-yore")]
+    yore: Option<YoreCtx>,
+}
+
+#[cfg(feature = "obj-yore")]
+struct YoreCtx {
+    domain: String,
+    domain_dir: PathBuf,
+    env: Option<sj::Value>,
+    modules: Option<sj::Value>,
+    db: Option<Value>,
+    // Whether the domain_dir actually exists on disk. If false, Yore was
+    // initialized but no pages/_domains/<domain> folder was found yet.
+    domain_dir_exists: bool,
 }
 
 // --- Lightweight Class Instance object ---
@@ -394,7 +412,7 @@ impl basil_bytecode::BasicObject for ClassInstance {
         // Build a tiny program with empty top chunk (HALT) and same globals names
         let mut top = Chunk::default();
         top.push_op(Op::Halt);
-        let prog = BCProgram { chunk: top, globals: self.globals_names.clone() };
+        let prog = BCProgram { chunk: top, globals: self.globals_names.clone(), source_map: None };
         let mut vm = VM::new(prog);
         // Move persistent file handles into inner VM and disable auto-close-on-ret for methods
         vm.file_table = std::mem::take(&mut self.file_table);
@@ -484,6 +502,8 @@ impl VM {
                 let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x9E3779B97F4A7C15);
                 if ns == 0 { 0x9E3779B97F4A7C15 } else { ns }
             },
+            #[cfg(feature = "obj-yore")]
+            yore: None,
         };
         #[cfg(feature = "obj-ai")]
         {
@@ -524,9 +544,24 @@ impl VM {
     // Provide script path so CLASS() can resolve relative file names
     pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
 
+    // Provide the directory of the current script, if known (for INCLUDE in renderer)
+    pub fn script_dir(&self) -> Option<String> {
+        self.script_path.as_ref().and_then(|p| {
+            let pb = std::path::Path::new(p);
+            pb.parent().map(|d| d.to_string_lossy().to_string())
+        })
+    }
+
     // Snapshot (clone) the current global names and values. Useful for REPL sessions.
     pub fn globals_snapshot(&self) -> (Vec<String>, Vec<Value>) {
         (self.global_names.clone(), self.globals.clone())
+    }
+
+    // Lookup a global by name (case-insensitive). Returns a cloned value if found.
+    pub fn get_global_by_name(&self, name: &str) -> Option<Value> {
+        if let Some(idx) = self.global_names.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+            self.globals.get(idx).cloned()
+        } else { None }
     }
 
     // Seed a global by name (case-insensitive). Returns true if found.
@@ -813,6 +848,276 @@ impl VM {
         }
     }
 
+    // ======================
+    // Yore web kernel helpers
+    // ======================
+    #[cfg(feature = "obj-yore")]
+    fn yore_detect_domain_and_dir(&self) -> (String, Option<PathBuf>) {
+        use std::env;
+        let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+        if host.is_empty() {
+            host = env::var("SERVER_NAME").ok().unwrap_or_default();
+        }
+        let host_l = host.to_ascii_lowercase();
+        let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
+        let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+        let mut domain = host_norm.clone();
+        let mut dir: Option<PathBuf> = None;
+        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let base = root.join("pages").join("_domains");
+        if is_local {
+            let p1 = base.join("_local");
+            let p2 = base.join("local");
+            if p1.is_dir() { dir = Some(p1); domain = "_local".to_string(); }
+            else if p2.is_dir() { dir = Some(p2); domain = "local".to_string(); }
+        } else {
+            let p = base.join(&host_norm);
+            if p.is_dir() { dir = Some(p); }
+        }
+        (domain, dir)
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_load_json_if_exists(&self, path: &Path) -> Option<sj::Value> {
+        match fs::read_to_string(path) {
+            Ok(s) => sj::from_str::<sj::Value>(&s).ok(),
+            Err(_) => None,
+        }
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_slugify(&self, s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for ch in s.chars() {
+            let lc = ch.to_ascii_lowercase();
+            match lc {
+                '/' => { /* skip - handled elsewhere */ }
+                ' ' | '-' | '.' => out.push('_'),
+                _ => out.push(lc),
+            }
+        }
+        out.trim_matches('_').trim_matches('/').to_string()
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_section_dirname(&self, domain_dir: &Path, section: &str) -> String {
+        let s = if section.is_empty() { "default" } else { section };
+        if s.eq_ignore_ascii_case("default") {
+            let a = domain_dir.join("_default");
+            if a.is_dir() { return "_default".to_string(); }
+            return "default".to_string();
+        }
+        s.to_string()
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_build_request(&mut self) -> Result<Value> {
+        use std::env;
+        let (_domain, _) = self.yore_detect_domain_and_dir();
+        let domain = if let Some(y) = &self.yore { y.domain.clone() } else { _domain };
+        let method = env::var("REQUEST_METHOD").unwrap_or_else(|_| "GET".to_string());
+        let uri = env::var("REQUEST_URI").unwrap_or_else(|_| "/".to_string());
+        // Strip query string
+        let path_only = uri.split('?').next().unwrap_or("").to_string();
+        let mut path_norm = path_only.trim().to_string();
+        if path_norm.is_empty() { path_norm = "/".to_string(); }
+        // tokenize
+        let segs: Vec<&str> = path_norm.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+        let (section_raw, pagekey_raw, a1, a2, a3) = if segs.is_empty() {
+            ("default", Some("home"), "", "", "")
+        } else if segs.len() == 1 {
+            (segs[0], Some("home"), "", "", "")
+        } else {
+            let sec = segs[0];
+            let page = segs[1];
+            let arg1 = segs.get(2).copied().unwrap_or("");
+            let arg2 = segs.get(3).copied().unwrap_or("");
+            let arg3 = segs.get(4).copied().unwrap_or("");
+            (sec, Some(page), arg1, arg2, arg3)
+        };
+        let section = self.yore_slugify(section_raw);
+        let pagekey = self.yore_slugify(pagekey_raw.unwrap_or("home"));
+        let arg1 = self.yore_slugify(a1);
+        let arg2 = self.yore_slugify(a2);
+        let arg3 = self.yore_slugify(a3);
+        // Query params
+        self.ensure_get_params();
+        let get_pairs = self.get_params_cache.clone().unwrap_or_default();
+        let mut query: HashMap<String, Value> = HashMap::new();
+        for p in get_pairs {
+            let mut it = p.splitn(2, '=');
+            let k = it.next().unwrap_or(""); let v = it.next().unwrap_or("");
+            query.insert(k.to_string(), Value::Str(v.to_string()));
+        }
+        // Post form params
+        self.ensure_post_params();
+        let post_pairs = self.post_params_cache.clone().unwrap_or_default();
+        let mut post: HashMap<String, Value> = HashMap::new();
+        for p in post_pairs {
+            let mut it = p.splitn(2, '=');
+            let k = it.next().unwrap_or(""); let v = it.next().unwrap_or("");
+            post.insert(k.to_string(), Value::Str(v.to_string()));
+        }
+        // Headers (optional)
+        let mut headers: HashMap<String, Value> = HashMap::new();
+        for (k, v) in env::vars() {
+            if k.starts_with("HTTP_") {
+                headers.insert(k.to_string(), Value::Str(v));
+            }
+        }
+        // is_debug flag
+        let is_debug = query.get("debug").map(|v| matches!(v, Value::Str(s) if s=="1")).unwrap_or(false);
+        use std::cell::RefCell;
+        let mut map: HashMap<String, Value> = HashMap::new();
+        map.insert("domain$".to_string(), Value::Str(domain));
+        map.insert("method$".to_string(), Value::Str(method));
+        map.insert("path$".to_string(), Value::Str(path_norm));
+        map.insert("section$".to_string(), Value::Str(section));
+        map.insert("pagekey$".to_string(), Value::Str(pagekey));
+        map.insert("arg1$".to_string(), Value::Str(arg1));
+        map.insert("arg2$".to_string(), Value::Str(arg2));
+        map.insert("arg3$".to_string(), Value::Str(arg3));
+        map.insert("is_debug%".to_string(), Value::Int(if is_debug {1} else {0}));
+        map.insert("query@".to_string(), Value::Dict(Rc::new(RefCell::new(query))));
+        map.insert("post@".to_string(), Value::Dict(Rc::new(RefCell::new(post))));
+        map.insert("headers@".to_string(), Value::Dict(Rc::new(RefCell::new(headers))));
+        Ok(Value::Dict(Rc::new(RefCell::new(map))))
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_json_to_value(&self, j: &sj::Value) -> Value {
+        use std::cell::RefCell;
+        match j {
+            sj::Value::Null => Value::Null,
+            sj::Value::Bool(b) => Value::Bool(*b),
+            sj::Value::Number(n) => {
+                if let Some(i) = n.as_i64() { Value::Int(i) }
+                else if let Some(f) = n.as_f64() { Value::Num(f) }
+                else { Value::Null }
+            }
+            sj::Value::String(s) => Value::Str(s.clone()),
+            sj::Value::Array(a) => {
+                let list: Vec<Value> = a.iter().map(|v| self.yore_json_to_value(v)).collect();
+                Value::List(Rc::new(RefCell::new(list)))
+            }
+            sj::Value::Object(o) => {
+                let mut m: HashMap<String, Value> = HashMap::new();
+                for (k, v) in o.iter() { m.insert(k.clone(), self.yore_json_to_value(v)); }
+                Value::Dict(Rc::new(RefCell::new(m)))
+            }
+        }
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_resolve_page(&self, req: &Value) -> Result<Value> {
+        use std::cell::RefCell;
+        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized; call YORE_INIT% first".into()))?;
+        let reqm = match req { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RESOLVE_PAGE: req@ must be a Dict".into())) };
+        let section = match reqm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
+        let pagekey = match reqm.get("pagekey$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
+        let section_dir = self.yore_section_dirname(&y.domain_dir, &section);
+        let base = y.domain_dir.join(&section_dir);
+        let path = base.join(format!("{}.json", pagekey));
+        let alt = base.join("home.json");
+        let mut found: Option<PathBuf> = None;
+        if path.is_file() { found = Some(path); }
+        else if pagekey == "home" && alt.is_file() { found = Some(alt); }
+        // Build page map
+        let mut page: HashMap<String, Value> = HashMap::new();
+        page.insert("section$".to_string(), Value::Str(section));
+        page.insert("pagekey$".to_string(), Value::Str(pagekey));
+        if let Some(fp) = found {
+            if let Some(j) = self.yore_load_json_if_exists(&fp) {
+                // common fields
+                if let Some(v) = j.get("view").and_then(|x| x.as_str()) { page.insert("view$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("theme").and_then(|x| x.as_str()) { page.insert("theme$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("title").and_then(|x| x.as_str()) { page.insert("title$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("views") { page.insert("views@".to_string(), self.yore_json_to_value(v)); }
+                if let Some(v) = j.get("module_hook").and_then(|x| x.as_str()) { page.insert("module_hook$".to_string(), Value::Str(v.to_string())); }
+                page.insert("raw_json@".to_string(), self.yore_json_to_value(&j));
+            }
+        } else {
+            // indicate 404
+            page.insert("view$".to_string(), Value::Str("home".to_string()));
+            page.insert("status%".to_string(), Value::Int(404));
+        }
+        Ok(Value::Dict(Rc::new(RefCell::new(page))))
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_build_context(&self, req: &Value, page: &Value) -> Result<Value> {
+        use std::cell::RefCell;
+        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        let mut ctx: HashMap<String, Value> = HashMap::new();
+        // carry over request basics
+        let reqm = match req { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: req@ must be a Dict".into())) };
+        for k in ["section$","pagekey$","arg1$","arg2$","arg3$","method$","path$"] {
+            if let Some(v) = reqm.get(k) { ctx.insert(k.to_string(), v.clone()); }
+        }
+        if let Some(v) = reqm.get("query@") { ctx.insert("query@".to_string(), v.clone()); }
+        if let Some(v) = reqm.get("post@") { ctx.insert("post@".to_string(), v.clone()); }
+        ctx.insert("domain$".to_string(), Value::Str(y.domain.clone()));
+        // env.json
+        if let Some(j) = &y.env { ctx.insert("env@".to_string(), self.yore_json_to_value(j)); }
+        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), self.yore_json_to_value(j)); }
+        if let Some(db) = &y.db { ctx.insert("db@".to_string(), db.clone()); }
+        // page fields
+        let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: page@ must be a Dict".into())) };
+        for k in ["view$","theme$","title$","raw_json@","views@","module_hook$"] {
+            if let Some(v) = pm.get(k) { ctx.insert(k.to_string(), v.clone()); }
+        }
+        Ok(Value::Dict(Rc::new(RefCell::new(ctx))))
+    }
+
+    #[cfg(feature = "obj-yore")]
+    fn yore_render_page_template(&self, page: &Value, _ctx: &Value) -> Result<String> {
+        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        // If Yore was initialized but no domain directory is present, provide
+        // a clear, actionable HTML message instead of failing with a generic error.
+        if !y.domain_dir_exists {
+            let dd = y.domain_dir.display().to_string();
+            let suggest_default = self.yore_section_dirname(&y.domain_dir, "default");
+            let views_dir = y.domain_dir.join(&suggest_default).join("views");
+            let view_home = views_dir.join("home.html");
+            let page_json = y.domain_dir.join(&suggest_default).join("home.json");
+            return Ok(format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Yore: setup required</title>\
+                <style>body{{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:2rem;line-height:1.5}}code{{background:#f4f4f4;padding:.1rem .3rem;border-radius:.2rem}}</style>\
+                </head><body>\
+                <h1>Yore: domain folder not found</h1>\
+                <p>Expected a domain directory for <code>{domain}</code> at:</p>\
+                <pre>{dir}</pre>\
+                <p>Please create the following minimal structure, then refresh:</p>\
+                <pre>{dir}\\{sec}\n{views}\n{home}\n{page}</pre>\
+                <p>Where <code>home.html</code> is your view template and <code>home.json</code> (optional) contains page metadata.</p>\
+                <p>See docs/FEATURES/obj-yore.md for details.</p>\
+                </body></html>",
+                domain = y.domain,
+                dir = dd,
+                sec = suggest_default,
+                views = views_dir.display(),
+                home = view_home.display(),
+                page = page_json.display()
+            ));
+        }
+        let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RENDER_PAGE$: page@ must be a Dict".into())) };
+        let section = match pm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
+        let view = match pm.get("view$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
+        let section_dir = self.yore_section_dirname(&y.domain_dir, &section);
+        let base = y.domain_dir.join(&section_dir).join("views");
+        let p1 = base.join(format!("{}.html", view));
+        let p2 = base.join(format!("{}.blade.php", view));
+        let p3 = base.join(format!("{}.blade", view));
+        let content_res: std::io::Result<String> = if p1.is_file() { fs::read_to_string(&p1) }
+            else if p2.is_file() { fs::read_to_string(&p2) }
+            else if p3.is_file() { fs::read_to_string(&p3) }
+            else { Ok(format!("<!-- Yore: view '{}' not found under {} -->", view, base.display())) };
+        match content_res {
+            Ok(s) => Ok(s),
+            Err(e) => Ok(format!("<!-- Yore: failed to read view '{}': {} -->", view, e)),
+        }
+    }
+
     fn glob_match_simple(&self, pat: &str, name: &str) -> bool {
         #[allow(clippy::collapsible_else_if)]
         fn inner(p: &[u8], s: &[u8], case_insens: bool) -> bool {
@@ -844,6 +1149,45 @@ impl VM {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        let prev_ptr = basil_bytecode::CURRENT_VM_PTR.with(|p| p.replace(Some(self as *mut VM as *mut ())));
+        let prev_call = basil_bytecode::CURRENT_VM_CALL.with(|c| c.replace(Some(Self::callback_bridge)));
+
+        let res = self.run_internal(None);
+
+        basil_bytecode::CURRENT_VM_PTR.with(|p| p.replace(prev_ptr));
+        basil_bytecode::CURRENT_VM_CALL.with(|c| c.replace(prev_call));
+        res
+    }
+
+    fn callback_bridge(ptr: *mut (), func: Value, args: &[Value]) -> Result<Value> {
+        let vm = unsafe { &mut *(ptr as *mut VM) };
+        vm.call_function(func, args)
+    }
+
+    pub fn call_function(&mut self, func: Value, args: &[Value]) -> Result<Value> {
+        let f = match func {
+            Value::Func(f) => f,
+            _ => return Err(BasilError("Value is not a function".into())),
+        };
+        if f.arity as usize != args.len() {
+            return Err(BasilError(format!("arity mismatch: expected {}, got {}", f.arity, args.len())));
+        }
+
+        let base = self.stack.len();
+        for arg in args {
+            self.stack.push(arg.clone());
+        }
+
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base };
+        self.frames.push(frame);
+
+        let initial_depth = self.frames.len();
+        self.run_internal(Some(initial_depth))?;
+
+        Ok(self.pop().unwrap_or(Value::Null))
+    }
+
+    fn run_internal(&mut self, until_depth: Option<usize>) -> Result<()> {
         if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Started); }
         loop {
             let op = self.read_op()?;
@@ -897,8 +1241,30 @@ impl VM {
                 },
                 Op::Sub => self.bin_num(|a,b| a-b)?,
                 Op::Mul => self.bin_num(|a,b| a*b)?,
-                Op::Div => self.bin_num(|a,b| a/b)?,
-                Op::Mod => self.bin_num(|a,b| a % b)?,
+                Op::Div => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    let a = self.as_num(lb)?;
+                    let b = self.as_num(rb)?;
+                    if b == 0.0 { return Err(BasilError("Division by zero".into())); }
+                    self.stack.push(Value::Num(a / b));
+                },
+                Op::Mod => {
+                    let rb = self.pop()?;
+                    let lb = self.pop()?;
+                    match (&lb, &rb) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b == 0 { return Err(BasilError("Division by zero in MOD".into())); }
+                            self.stack.push(Value::Int(a % b));
+                        }
+                        _ => {
+                            let a = self.as_num(lb)?;
+                            let b = self.as_num(rb)?;
+                            if b == 0.0 { return Err(BasilError("Division by zero in MOD".into())); }
+                            self.stack.push(Value::Num(a % b));
+                        }
+                    }
+                },
                 Op::Neg => {
                     let v = self.pop()?;
                     let n = self.as_num(v)?;
@@ -1046,6 +1412,9 @@ impl VM {
                         self.fh_close_owner_depth(depth);
                     }
                     if self.frames.is_empty() { break; }
+                    if let Some(target) = until_depth {
+                        if self.frames.len() < target { break; }
+                    }
                 }
 
                 Op::Print => {
@@ -1456,6 +1825,287 @@ impl VM {
                     args.reverse();
 
                     match bid {
+                        141 => { // REMOVE$(hay$, needle$)
+                            if argc != 2 { return Err(BasilError("REMOVE$ expects 2 arguments".into())); }
+                            let hay = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REMOVE$ arg 1 must be string".into())) };
+                            let needle = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REMOVE$ arg 2 must be string".into())) };
+                            if needle.is_empty() { self.stack.push(Value::Str(hay)); }
+                            else { self.stack.push(Value::Str(hay.replace(&needle, ""))); }
+                        }
+                        142 => { // REPLACE$(needle$, new$, hay$)
+                            if argc != 3 { return Err(BasilError("REPLACE$ expects 3 arguments".into())); }
+                            let needle = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REPLACE$ arg 1 must be string".into())) };
+                            let newv = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REPLACE$ arg 2 must be string".into())) };
+                            let hay = match &args[2] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REPLACE$ arg 3 must be string".into())) };
+                            if needle.is_empty() { self.stack.push(Value::Str(hay)); }
+                            else { self.stack.push(Value::Str(hay.replace(&needle, &newv))); }
+                        }
+                        143 => { // INSERT$(hay$, ins$, pos%)
+                            if argc != 3 { return Err(BasilError("INSERT$ expects 3 arguments".into())); }
+                            let hay = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("INSERT$ arg 1 must be string".into())) };
+                            let ins = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("INSERT$ arg 2 must be string".into())) };
+                            let pos_i = match &args[2] { Value::Int(i)=>*i, Value::Num(n)=> n.trunc() as i64, _=> return Err(BasilError("INSERT$ position must be numeric".into())) };
+                            // Convert pos (1-based chars) to byte index
+                            let nchars = hay.chars().count() as i64;
+                            let idx0 = if pos_i <= 0 { 0 } else if pos_i > nchars { nchars } else { pos_i - 1 } as usize;
+                            // find byte index at character idx0
+                            let mut byte_idx = 0usize;
+                            if idx0 == 0 { byte_idx = 0; }
+                            else {
+                                let mut seen = 0usize;
+                                for (b, _) in hay.char_indices() {
+                                    if seen == idx0 { byte_idx = b; break; }
+                                    seen += 1;
+                                    byte_idx = hay.len();
+                                }
+                            }
+                            let (left, right) = hay.split_at(byte_idx);
+                            let mut out = String::with_capacity(left.len() + ins.len() + right.len());
+                            out.push_str(left); out.push_str(&ins); out.push_str(right);
+                            self.stack.push(Value::Str(out));
+                        }
+                        144 => { // DATE$()
+                            if argc != 0 { return Err(BasilError("DATE$ expects 0 arguments".into())); }
+                            let now = Local::now();
+                            self.stack.push(Value::Str(now.format("%Y-%m-%d").to_string()));
+                        }
+                        145 => { // TIME$()
+                            if argc != 0 { return Err(BasilError("TIME$ expects 0 arguments".into())); }
+                            let now = Local::now();
+                            self.stack.push(Value::Str(now.format("%H:%M:%S").to_string()));
+                        }
+                        146 => { // NOW$()
+                            if argc != 0 { return Err(BasilError("NOW$ expects 0 arguments".into())); }
+                            let now = Local::now();
+                            self.stack.push(Value::Str(now.format("%Y-%m-%d %H:%M:%S").to_string()));
+                        }
+                        147 => { // EXPLODE(src$, delim1$ [,kvDelim$])
+                            if !(argc == 2 || argc == 3) { return Err(BasilError("EXPLODE expects 2 or 3 arguments".into())); }
+                            let src = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("EXPLODE arg 1 must be string".into())) };
+                            let d1 = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("EXPLODE arg 2 must be string".into())) };
+                            if d1.is_empty() { return Err(BasilError("EXPLODE: delimiter must not be empty".into())); }
+                            if argc == 2 {
+                                use std::cell::RefCell;
+                                let mut items: Vec<Value> = Vec::new();
+                                let _start = 0usize;
+                                if d1.is_empty() {
+                                    items.push(Value::Str(src));
+                                } else {
+                                    let _cur = src.as_str();
+                                    if d1.len() == 1 {
+                                        let ch = d1.chars().next().unwrap();
+                                        let mut tmp = String::new();
+                                        for c in src.chars() {
+                                            if c == ch { items.push(Value::Str(std::mem::take(&mut tmp))); }
+                                            else { tmp.push(c); }
+                                        }
+                                        items.push(Value::Str(tmp));
+                                    } else {
+                                        // substring split preserving empties
+                                        let mut s = src.as_str();
+                                        loop {
+                                            if let Some(i) = s.find(&d1) {
+                                                let (a,b) = s.split_at(i);
+                                                items.push(Value::Str(a.to_string()));
+                                                s = &b[d1.len()..];
+                                            } else {
+                                                items.push(Value::Str(s.to_string()));
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                self.stack.push(Value::List(Rc::new(RefCell::new(items))));
+                            } else {
+                                let d2 = match &args[2] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("EXPLODE arg 3 must be string".into())) };
+                                if d2.is_empty() { return Err(BasilError("EXPLODE: key/value delimiter must not be empty".into())); }
+                                use std::cell::RefCell;
+                                let mut map: HashMap<String, Value> = HashMap::new();
+                                // split pairs
+                                let pairs: Vec<&str> = if d1.len()==1 {
+                                    src.split(d1.chars().next().unwrap()).collect()
+                                } else {
+                                    // substring splitter preserving empties
+                                    let mut v: Vec<&str> = Vec::new();
+                                    let mut s = src.as_str();
+                                    loop {
+                                        if let Some(i) = s.find(&d1) {
+                                            let (a,b) = s.split_at(i);
+                                            v.push(a);
+                                            s = &b[d1.len()..];
+                                        } else { v.push(s); break; }
+                                    }
+                                    v
+                                };
+                                for p in pairs {
+                                    if p.is_empty() { map.insert(String::new(), Value::Str(String::new())); continue; }
+                                    if let Some(i) = p.find(&d2) {
+                                        let (k, rest) = p.split_at(i);
+                                        let v = &rest[d2.len()..];
+                                        map.insert(k.to_string(), Value::Str(v.to_string()));
+                                    } else {
+                                        map.insert(p.to_string(), Value::Str(String::new()));
+                                    }
+                                }
+                                self.stack.push(Value::Dict(Rc::new(RefCell::new(map))));
+                            }
+                        }
+                        149 => { // RENDER$(template$ [, context@])
+                            if !(argc == 1 || argc == 2) { return Err(BasilError("RENDER$ expects 1 or 2 arguments".into())); }
+                            let tpl = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("RENDER$ arg 1 must be string (template$)".into())) };
+                            let ctx_opt = if argc == 2 {
+                                match &args[1] {
+                                    Value::Dict(rc) => Some(rc.clone()),
+                                    _ => return Err(BasilError("RENDER$ arg 2 must be a Dictionary (context@)".into())),
+                                }
+                            } else { None };
+                            let rendered = render::render_template(self, &tpl, ctx_opt)?;
+                            self.stack.push(Value::Str(rendered));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        150 => { // YORE_INIT%([db_or_handle])
+                            if !(argc == 0 || argc == 1) { return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into())); }
+                            let db_opt = if argc == 1 { Some(args[0].clone()) } else { None };
+                            // Prefer detected domain/dir if it exists; otherwise, still
+                            // initialize Yore with an expected domain dir so follow‑up calls
+                            // can produce clearer errors/warnings instead of "not initialized".
+                            let (mut domain, base_dir) = self.yore_detect_domain_and_dir();
+                            let dir_exists = base_dir.is_some();
+
+                            // Compute an expected directory even if missing, for better diagnostics.
+                            let dir: PathBuf = if let Some(d) = base_dir {
+                                d
+                            } else {
+                                // Derive expected domain + path
+                                use std::env;
+                                let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+                                if host.is_empty() {
+                                    host = env::var("SERVER_NAME").ok().unwrap_or_default();
+                                }
+                                let host_l = host.to_ascii_lowercase();
+                                let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
+                                let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+                                if is_local {
+                                    domain = "_local".to_string();
+                                } else {
+                                    domain = host_norm;
+                                }
+                                let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                                root.join("pages").join("_domains").join(&domain)
+                            };
+
+                            let env = if dir_exists { self.yore_load_json_if_exists(&dir.join("env.json")) } else { None };
+                            let mods = if dir_exists { self.yore_load_json_if_exists(&dir.join("modules.json")) } else { None };
+                            self.yore = Some(YoreCtx { domain, domain_dir: dir, env, modules: mods, db: db_opt, domain_dir_exists: dir_exists });
+                            // Return 1 if the domain dir exists, otherwise 0 to signal setup needed.
+                            self.stack.push(Value::Int(if dir_exists { 1 } else { 0 }));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        151 => { // YORE_REQUEST()
+                            if argc != 0 { return Err(BasilError("YORE_REQUEST expects 0 arguments".into())); }
+                            let req = self.yore_build_request()?;
+                            self.stack.push(req);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        152 => { // YORE_RESOLVE_PAGE(req@)
+                            if argc != 1 { return Err(BasilError("YORE_RESOLVE_PAGE expects 1 argument (req@)".into())); }
+                            let req = args[0].clone();
+                            let page = self.yore_resolve_page(&req)?;
+                            self.stack.push(page);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        153 => { // YORE_BUILD_CONTEXT(req@, page@)
+                            if argc != 2 { return Err(BasilError("YORE_BUILD_CONTEXT expects 2 arguments (req@, page@)".into())); }
+                            let ctx = self.yore_build_context(&args[0], &args[1])?;
+                            self.stack.push(ctx);
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        154 => { // YORE_RENDER_PAGE$(page@, ctx@)
+                            if argc != 2 { return Err(BasilError("YORE_RENDER_PAGE$ expects 2 arguments (page@, ctx@)".into())); }
+                            let tpl = self.yore_render_page_template(&args[0], &args[1])?;
+                            self.stack.push(Value::Str(tpl));
+                        }
+                        #[cfg(feature = "obj-yore")]
+                        155 => { // YORE_HANDLE_REQUEST$()
+                            if argc != 0 { return Err(BasilError("YORE_HANDLE_REQUEST$ expects 0 arguments".into())); }
+                            // lazy init if needed
+                            if self.yore.is_none() {
+                                let (mut dom, ddir) = self.yore_detect_domain_and_dir();
+                                let dir_exists = ddir.is_some();
+                                let dir: PathBuf = if let Some(d) = ddir {
+                                    d
+                                } else {
+                                    // Derive expected domain + path for clearer diagnostics
+                                    use std::env;
+                                    let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+                                    if host.is_empty() { host = env::var("SERVER_NAME").ok().unwrap_or_default(); }
+                                    let host_l = host.to_ascii_lowercase();
+                                    let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
+                                    let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+                                    if is_local { dom = "_local".to_string(); } else { dom = host_norm; }
+                                    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                                    root.join("pages").join("_domains").join(&dom)
+                                };
+                                self.yore = Some(YoreCtx { domain: dom, domain_dir: dir, env: None, modules: None, db: None, domain_dir_exists: dir_exists });
+                            }
+                            let req = self.yore_build_request()?;
+                            let page = self.yore_resolve_page(&req)?;
+                            let ctx = self.yore_build_context(&req, &page)?;
+                            let tpl = self.yore_render_page_template(&page, &ctx)?;
+                            let ctx_rc = match ctx { Value::Dict(rc)=>rc, _=> return Err(BasilError("YORE: internal error building context".into())) };
+                            let html = render::render_template(self, &tpl, Some(ctx_rc))?;
+                            self.stack.push(Value::Str(html));
+                        }
+                        148 => { // IMPLODE$(var, delim1$ [,delim2$])
+                            if !(argc == 2 || argc == 3) { return Err(BasilError("IMPLODE$ expects 2 or 3 arguments".into())); }
+                            let delim1 = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("IMPLODE$ arg 2 must be string (delim1)".into())) };
+                            let delim2_opt: Option<String> = if argc==3 { match &args[2] { Value::Str(s)=>Some(s.clone()), _=> return Err(BasilError("IMPLODE$ arg 3 must be string (delim2)".into())) } } else { None };
+                            match &args[0] {
+                                Value::List(rc) => {
+                                    if argc != 2 { return Err(BasilError("IMPLODE$: list form expects 2 arguments".into())); }
+                                    let v = rc.borrow();
+                                    let s = v.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(&delim1);
+                                    self.stack.push(Value::Str(s));
+                                }
+                                Value::Array(arr_rc) => {
+                                    let arr = arr_rc.as_ref();
+                                    if arr.dims.len() == 1 {
+                                        if argc != 2 { return Err(BasilError("IMPLODE$: 1-D array form expects 2 arguments".into())); }
+                                        let data = arr.data.borrow();
+                                        let s = data.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(&delim1);
+                                        self.stack.push(Value::Str(s));
+                                    } else if arr.dims.len() == 2 {
+                                        if argc != 3 { return Err(BasilError("IMPLODE$: 2-D array form expects 3 arguments (need delim2)".into())); }
+                                        let d2 = delim2_opt.as_ref().unwrap();
+                                        if arr.dims[1] != 2 { return Err(BasilError("IMPLODE$: array must have exactly 2 columns".into())); }
+                                        let rows = arr.dims[0];
+                                        let data = arr.data.borrow();
+                                        let mut parts: Vec<String> = Vec::with_capacity(rows);
+                                        for r in 0..rows {
+                                            let k = format!("{}", data[r*2].clone());
+                                            let v = format!("{}", data[r*2+1].clone());
+                                            parts.push(format!("{}{}{}", k, d2, v));
+                                        }
+                                        self.stack.push(Value::Str(parts.join(&delim1)));
+                                    } else {
+                                        return Err(BasilError("IMPLODE$: array must be 1-D or 2-D (2 columns)".into()));
+                                    }
+                                }
+                                Value::Dict(rc) => {
+                                    if argc != 3 { return Err(BasilError("IMPLODE$: dict form expects 3 arguments (need delim2)".into())); }
+                                    let d2 = delim2_opt.as_ref().unwrap();
+                                    let m = rc.borrow();
+                                    let mut parts: Vec<String> = Vec::with_capacity(m.len());
+                                    for (k, v) in m.iter() {
+                                        parts.push(format!("{}{}{}", k, d2, v));
+                                    }
+                                    self.stack.push(Value::Str(parts.join(&delim1)));
+                                }
+                                other => {
+                                    return Err(BasilError(format!("IMPLODE$: unsupported type {}", self.type_of(other))));
+                                }
+                            }
+                        }
                         64 => { // EXEPATH$()
                             if argc != 0 { return Err(BasilError("EXEPATH$ expects 0 arguments".into())); }
                             let s = match std::env::current_exe() {
@@ -3041,6 +3691,15 @@ impl VM {
                                     if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
                                     self.stack.push(v[idx0].clone());
                                 }
+                                Value::Array(arr_rc) => {
+                                    // Support [] for 1-D arrays as well; arrays are 0-based.
+                                    let idx = self.to_i64(index)?;
+                                    let arr = arr_rc.as_ref();
+                                    if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
+                                    if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
+                                    let val = arr.data.borrow()[idx as usize].clone();
+                                    self.stack.push(val);
+                                }
                                 Value::Dict(rc) => {
                                     let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
                                     let m = rc.borrow();
@@ -3061,8 +3720,38 @@ impl VM {
                                     if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
                                     let idx0 = (idx - 1) as usize;
                                     let mut v = rc.borrow_mut();
-                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
+                                    // Auto-extend with Nulls to accommodate gaps (gap-fill always on)
+                                    if idx0 >= v.len() {
+                                        while v.len() <= idx0 { v.push(Value::Null); }
+                                    }
                                     v[idx0] = value;
+                                    self.stack.push(Value::Null);
+                                }
+                                Value::Array(arr_rc) => {
+                                    // Support [] for 1-D arrays as well; arrays are fixed-size, 0-based.
+                                    let idx = self.to_i64(index)?;
+                                    let arr = arr_rc.as_ref();
+                                    if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
+                                    if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
+                                    let coerced = match &arr.elem {
+                                        ElemType::Num => match value { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {} into numeric array", self.type_of(&other)))) },
+                                        ElemType::Int => match value { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {} into integer array", self.type_of(&other)))) },
+                                        ElemType::Str => match value { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
+                                        ElemType::Obj(Some(tname)) => match value {
+                                            Value::Object(rc) => {
+                                                let got = rc.borrow().type_name().to_string();
+                                                if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
+                                                else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
+                                            }
+                                            Value::Null => Value::Null,
+                                            other => return Err(BasilError(format!("cannot store non-object {} into typed OBJECT[] array", self.type_of(&other)))),
+                                        },
+                                        ElemType::Obj(None) => match value {
+                                            Value::Object(_) | Value::Null => value,
+                                            other => return Err(BasilError(format!("cannot store non-object {} into OBJECT[] array", self.type_of(&other)))),
+                                        },
+                                    };
+                                    arr.data.borrow_mut()[idx as usize] = coerced;
                                     self.stack.push(Value::Null);
                                 }
                                 Value::Dict(rc) => {

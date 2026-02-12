@@ -1,0 +1,3 @@
+DIM a%(3)
+a%[1] = 5
+PRINTLN a%[1]

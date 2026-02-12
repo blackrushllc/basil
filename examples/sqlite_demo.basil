@@ -1,23 +1,23 @@
 PRINTLN "SQLite demo"
 
-' Open or create a database in the current directory
+// Open or create a database in the current directory
 LET db% = SQLITE_OPEN%("demo.db")
 IF db% == 0 THEN BEGIN
   PRINTLN "Failed to open DB"
   EXIT 1
 END
 
-' Ensure table exists
+// Ensure table exists
 LET aff% = SQLITE_EXEC%(db%, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
 PRINTLN "DDL ok, rows% = ", aff%
 
-' Insert a row
+// Insert a row
 LET aff% = SQLITE_EXEC%(db%, "INSERT INTO users(name) VALUES ('Erik')")
 LET id% = SQLITE_LAST_INSERT_ID%(db%)
 PRINTLN "Inserted id = ", id%
 
-' Prepare 2-D array and fill with query results.
-' The array will be auto-redimensioned by whole-array assignment.
+// Prepare 2-D array and fill with query results.
+// The array will be auto-redimensioned by whole-array assignment.
 DIM rows$(0,0)
 LET rows$() = SQLITE_QUERY2D$(db%, "SELECT id, name FROM users ORDER BY id")
 
@@ -29,10 +29,10 @@ FOR r% = 0 TO rmax% - 1
   PRINTLN rows$(r%, 0), " - ", rows$(r%, 1)
 NEXT
 
-' Empty results demo
+// Empty results demo
 DIM empty$(0,0)
 LET empty$() = SQLITE_QUERY2D$(db%, "SELECT * FROM users WHERE 1=0")
 PRINTLN "Empty result rows=", ARRAY_ROWS%(empty$), " cols=", ARRAY_COLS%(empty$)
 
-' Close DB
+// Close DB
 SQLITE_CLOSE(db%)

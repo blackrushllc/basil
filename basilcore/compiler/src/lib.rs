@@ -50,12 +50,20 @@ pub mod service;
 
 pub fn compile(ast: &Program) -> Result<BCProgram> {
     let mut c = C::new();
-    // Pre-scan to collect all routine names (FUNC/SUB) with arity and kind so calls can be resolved before definitions
+    // Pre-scan to collect all routine names (FUNC/SUB) and DECLARE prototypes with arity and kind
     for s in ast {
-        if let Stmt::Func { kind, name, params, .. } = s {
-            let uname = name.to_ascii_uppercase();
-            c.fn_names.insert(uname.clone());
-            c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
+        match s {
+            Stmt::Func { kind, name, params, .. } => {
+                let uname = name.to_ascii_uppercase();
+                c.fn_names.insert(uname.clone());
+                c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
+            }
+            Stmt::Declare { kind, name, params } => {
+                let uname = name.to_ascii_uppercase();
+                c.fn_names.insert(uname.clone());
+                c.routines.insert(uname, RoutineInfo { arity: params.len(), is_sub: matches!(kind, basil_ast::FuncKind::Sub) });
+            }
+            _ => {}
         }
     }
     // Pre-scan to collect all global CONST names so we can enforce immutability inside functions even if CONST appears later
@@ -74,6 +82,7 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
     for s in ast {
         match s {
             Stmt::Func { .. } => { /* already emitted above */ }
+            Stmt::Declare { .. } => { /* no code for prototypes */ }
             _ => c.emit_stmt_toplevel(s)?,
         }
     }
@@ -111,7 +120,7 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
         }
     }
     c.chunk.push_op(Op::Halt);
-    Ok(BCProgram { chunk: c.chunk, globals: c.globals })
+    Ok(BCProgram { chunk: c.chunk, globals: c.globals, source_map: None })
 }
 
 struct RoutineInfo { arity: usize, is_sub: bool }
@@ -217,6 +226,10 @@ impl C {
 
     fn emit_stmt_toplevel(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            // Prototype declarations produce no code
+            Stmt::Declare { .. } => {
+                // no-op at codegen time; names were recorded during pre-scan
+            }
             // CONST at top-level: evaluate once and store to a global; mark as const
             Stmt::Const { name, init } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
@@ -649,6 +662,20 @@ impl C {
             }
             Stmt::SetIndexSquare { target, index, value } => {
                 let mut chunk = std::mem::take(&mut self.chunk);
+                // If target is a variable that does not end with '@', treat as array set using []
+                if let &Expr::Var(ref name) = target {
+                    if !name.ends_with('@') {
+                        // At toplevel we only have globals
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        self.emit_expr_in(&mut chunk, index, None)?;
+                        self.emit_expr_in(&mut chunk, value, None)?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(1u8);
+                        self.chunk = chunk;
+                        return Ok(());
+                    }
+                }
+                // Otherwise, list/dict set via builtin 254
                 self.emit_expr_in(&mut chunk, target, None)?;
                 self.emit_expr_in(&mut chunk, index, None)?;
                 self.emit_expr_in(&mut chunk, value, None)?;
@@ -945,6 +972,8 @@ impl C {
 
     fn emit_stmt_func(&mut self, chunk: &mut Chunk, s: &Stmt, env: &mut LocalEnv) -> Result<()> {
         match s {
+            // DECLARE inside function scope is ignored at codegen (names are handled at pre-scan)
+            Stmt::Declare { .. } => { /* no-op */ }
             // Local constant: evaluate and store to local; remember name to forbid reassignment
             Stmt::Const { name, init } => {
                 self.emit_expr_in(chunk, init, Some(env))?;
@@ -1330,6 +1359,24 @@ impl C {
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::SetIndexSquare { target, index, value } => {
+                // Support [] on arrays inside functions: if the target is a plain variable not ending with '@',
+                // treat as array element assignment and emit ArrSet directly. Otherwise, use list/dict builtin 254.
+                if let &Expr::Var(ref name) = target {
+                    if !name.ends_with('@') {
+                        // Load array reference (prefer local when present), then index and value, then ArrSet with arity 1
+                        if let Some(slot) = env.lookup(name) {
+                            chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                        } else {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        }
+                        self.emit_expr_in(chunk, index, Some(env))?;
+                        self.emit_expr_in(chunk, value, Some(env))?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(1u8);
+                        return Ok(());
+                    }
+                }
+                // list/dict set via builtin 254
                 self.emit_expr_in(chunk, target, Some(env))?;
                 self.emit_expr_in(chunk, index, Some(env))?;
                 self.emit_expr_in(chunk, value, Some(env))?;
@@ -1643,6 +1690,29 @@ impl C {
                 chunk.push_op(Op::Builtin); chunk.push_u8(252u8); chunk.push_u8(argc);
             }
             Expr::IndexSquare { target, index } => {
+                // Support square-bracket indexing for both lists/dicts and arrays.
+                // Heuristic: if the target is a variable whose name does NOT end with '@',
+                // treat as array indexing (ArrGet with 1 index). Otherwise, use list/dict builtin.
+                if let Expr::Var(name) = &**target {
+                    if !name.ends_with('@') {
+                        // Array get using []
+                        if let Some(env) = env {
+                            if let Some(slot) = env.lookup(name) {
+                                chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
+                            } else {
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                            }
+                        } else {
+                            let g = self.gslot(name);
+                            chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        }
+                        self.emit_expr_in(chunk, index, env)?;
+                        chunk.push_op(Op::ArrGet); chunk.push_u8(1u8);
+                        return Ok(());
+                    }
+                }
+                // Fallback: list/dict get via builtin 253
                 self.emit_expr_in(chunk, target, env)?;
                 self.emit_expr_in(chunk, index, env)?;
                 chunk.push_op(Op::Builtin); chunk.push_u8(253u8); chunk.push_u8(2u8);
@@ -1851,6 +1921,25 @@ impl C {
                         "URLENCODE$" => Some(22u8),
                         "URLDECODE$" => Some(23u8),
                         "STRING$" => Some(26u8),
+                        // --- New string/collection/date-time builtins ---
+                        "REMOVE$" => Some(141u8),
+                        "REPLACE$" => Some(142u8),
+                        "INSERT$" => Some(143u8),
+                        "DATE$" => Some(144u8),
+                        "TIME$" => Some(145u8),
+                        "NOW$"  => Some(146u8),
+                        "EXPLODE" => Some(147u8),
+                        "IMPLODE$" => Some(148u8),
+                        // --- Template rendering ---
+                        "RENDER$" => Some(149u8),
+                        // --- Yore web kernel builtins ---
+                        #[cfg(feature = "obj-yore")] "YORE_INIT%" => Some(150u8),
+                        #[cfg(feature = "obj-yore")] "YORE_INIT" => Some(150u8),
+                        #[cfg(feature = "obj-yore")] "YORE_REQUEST" => Some(151u8),
+                        #[cfg(feature = "obj-yore")] "YORE_RESOLVE_PAGE" => Some(152u8),
+                        #[cfg(feature = "obj-yore")] "YORE_BUILD_CONTEXT" => Some(153u8),
+                        #[cfg(feature = "obj-yore")] "YORE_RENDER_PAGE$" => Some(154u8),
+                        #[cfg(feature = "obj-yore")] "YORE_HANDLE_REQUEST$" => Some(155u8),
                         // --- Math intrinsics ---
                         "ABS" => Some(70u8),
                         "ATN" => Some(71u8),
@@ -2289,6 +2378,7 @@ impl C {
 
     fn emit_stmt_tl_in_chunk(&mut self, chunk: &mut Chunk, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Declare { .. } => { /* no-op */ }
             Stmt::Const { name, init } => {
                 // top-level in-chunk CONST handling (inside blocks)
                 self.emit_expr_in(chunk, init, None)?;
@@ -2549,6 +2639,19 @@ impl C {
                 chunk.push_op(Op::SetProp); chunk.push_u16(pci);
             }
             Stmt::SetIndexSquare { target, index, value } => {
+                // Support [] on arrays inside toplevel chunks (e.g., inside FOR/WHILE bodies):
+                // if the target is a plain variable not ending with '@', emit ArrSet directly.
+                if let &Expr::Var(ref name) = target {
+                    if !name.ends_with('@') {
+                        let g = self.gslot(name);
+                        chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                        self.emit_expr_in(chunk, index, None)?;
+                        self.emit_expr_in(chunk, value, None)?;
+                        chunk.push_op(Op::ArrSet); chunk.push_u8(1u8);
+                        return Ok(());
+                    }
+                }
+                // Otherwise list/dict set via builtin 254
                 self.emit_expr_in(chunk, target, None)?;
                 self.emit_expr_in(chunk, index, None)?;
                 self.emit_expr_in(chunk, value, None)?;

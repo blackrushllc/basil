@@ -10,10 +10,10 @@ PRINTLN "Response length: ", LEN(body$)
 PRINTLN "Preview (first 120 chars):"
 PRINTLN LEFT$(body$, 120)
 
-' Optional: print full body
-' PRINTLN body$
+// Optional: print full body
+// PRINTLN body$
 
-'' Simple POST demo (echo service)
+//' Simple POST demo (echo service)
 
 LET post_url$ = "https://httpbin.org/post"
 LET json$ = "{\"hello\": \"world\", \"number\": 123}" ' Yes, this is how to raw dog a JSON string in BASIL

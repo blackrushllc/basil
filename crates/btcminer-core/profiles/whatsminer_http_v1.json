@@ -1,0 +1,22 @@
+{
+"profile_name": "whatsminer_http_v1",
+"kind": "generic-http-json",
+"auth": { "type": "basic", "username_key": "admin", "password_key": "admin" },
+"endpoints": {
+"info":  { "method": "GET", "path": "/cgi-bin/get_device_info.cgi" },
+"stats": { "method": "GET", "path": "/cgi-bin/get_miner_stats.cgi" }
+},
+"extract": {
+"model": "model",
+"firmware": "firmware",
+"uptime_s": "uptime",
+"hashrate_ghs": "hashrate",
+"temp_max_c": "temp_max",
+"fan_rpm_avg": "fan_speed",
+"accepted": "accepted",
+"rejected": "rejected",
+"pool_url": "pools[0].url",
+"pool_user": "pools[0].user"
+},
+"notes": "WhatsMiner template. Placeholders used for JSON paths."
+}

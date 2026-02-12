@@ -2,7 +2,7 @@ REM File I/O demo: open, write, readline, seek, eof
 
 LET path$ = "examples_demo.txt";
 
-' Write a few lines
+// Write a few lines
 LET w% = FOPEN(path$, "w");
 FWRITELN(w%, "Alpha");
 FWRITELN(w%, "Beta");
@@ -10,14 +10,14 @@ FWRITELN(w%, "Gamma");
 FFLUSH(w%);
 FCLOSE(w%);
 
-' Read back line by line
+// Read back line by line
 LET r% = FOPEN(path$, "r");
 WHILE NOT FEOF(r%) BEGIN
   LET line$ = FREADLINE$(r%);
   IF LEN(line$) > 0 THEN PRINTLN "LINE:", line$; ELSE PRINTLN "(blank line)";
 END
 
-' Seek demonstration
+// Seek demonstration
 PRINTLN "--- SEEK DEMO ---";
 FSEEK(r%, 0, 0);                ' rewind to beginning
 PRINTLN "Pos=", FTELL&(r%);

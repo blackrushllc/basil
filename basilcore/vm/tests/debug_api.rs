@@ -15,7 +15,7 @@ fn breakpoint_and_output_events() {
     chunk.push_op(Op::Const); chunk.push_u16(cidx);
     chunk.push_op(Op::Print);
     chunk.push_op(Op::Halt);
-    let prog = BCProgram { chunk, globals: vec![] };
+    let prog = BCProgram { chunk, globals: vec![], source_map: None };
 
     let dbg = Debugger::new();
     // Watch events

@@ -366,22 +366,27 @@ impl Parser {
             return Ok(Stmt::Try { try_body, catch_var, catch_body, finally_body });
         }
 
-        // DECLARE SUB/FUNC name(params) — prototype only, no body; treated as no-op (forward calls already supported)
+        // DECLARE SUB/FUNC name(params) — prototype only, no body
         if self.match_k(TokenKind::Declare) {
             // optional SUB/FUNC/FUNCTION keyword
-            if self.check(TokenKind::Func) { let _ = self.next(); }
+            let mut kind = basil_ast::FuncKind::Func;
+            if self.check(TokenKind::Func) {
+                let kw = self.next().unwrap();
+                if kw.lexeme.eq_ignore_ascii_case("SUB") { kind = basil_ast::FuncKind::Sub; }
+            }
             // name and params
-            let _name = self.expect_ident()?;
+            let name = self.expect_ident()?;
             self.expect(TokenKind::LParen)?;
+            let mut params: Vec<String> = Vec::new();
             if !self.check(TokenKind::RParen) {
                 loop {
-                    let _ = self.expect_ident()?;
+                    params.push(self.expect_ident()?);
                     if !self.match_k(TokenKind::Comma) { break; }
                 }
             }
             self.expect(TokenKind::RParen)?;
             self.terminate_stmt()?;
-            return Ok(Stmt::Block(Vec::new()));
+            return Ok(Stmt::Declare { kind, name, params });
         }
 
         // FUNC/SUB name(params) block
@@ -519,41 +524,38 @@ impl Parser {
             return Ok(Stmt::Let { name, indices, init });
         }
 
-        if self.match_k(TokenKind::Print) {
+        if self.match_k(TokenKind::Print) || self.match_k(TokenKind::Println) {
+            let is_println = self.tokens[self.i - 1].kind == TokenKind::Println;
             // Parse PRINT as a sequence of prints so column-tracking (SPC/TAB/AT) works correctly
             let mut exprs: Vec<Expr> = Vec::new();
-            let first = self.parse_expr_bp(0)?;
-            exprs.push(first);
-            while self.match_k(TokenKind::Comma) {
-                // Insert a tab separator between comma-separated items for compatibility with prior behavior
-                exprs.push(Expr::Str("\t".to_string()));
-                let next = self.parse_expr_bp(0)?;
-                exprs.push(next);
+            
+            // Check for empty PRINT/PRINTLN
+            let mut last_sep = None;
+            if !self.check_terminate() {
+                let first = self.parse_expr_bp(0)?;
+                exprs.push(first);
+                while self.match_k(TokenKind::Comma) || (self.check(TokenKind::Semicolon) && self.tokens[self.i].lexeme == ";" && self.match_k(TokenKind::Semicolon)) {
+                    let sep = self.tokens[self.i - 1].kind.clone();
+                    last_sep = Some(sep.clone());
+                    if sep == TokenKind::Comma {
+                        exprs.push(Expr::Str("\t".to_string()));
+                    }
+                    if self.check_terminate() { break; }
+                    let next = self.parse_expr_bp(0)?;
+                    exprs.push(next);
+                    last_sep = None;
+                }
             }
+            
+            let trailing = matches!(last_sep, Some(TokenKind::Comma) | Some(TokenKind::Semicolon));
+            if is_println && !trailing {
+                exprs.push(Expr::Str("\n".to_string()));
+            }
+            
             self.terminate_stmt()?;
-            if exprs.len() == 1 {
-                return Ok(Stmt::Print { expr: exprs.remove(0) });
-            } else {
-                let mut body: Vec<Stmt> = Vec::with_capacity(exprs.len());
-                for e in exprs { body.push(Stmt::Print { expr: e }); }
-                return Ok(Stmt::Block(body));
-            }
-        }
-
-        if self.match_k(TokenKind::Println) {
-            // PRINTLN prints items and then a newline as a final print
-            let mut exprs: Vec<Expr> = Vec::new();
-            let first = self.parse_expr_bp(0)?;
-            exprs.push(first);
-            while self.match_k(TokenKind::Comma) {
-                exprs.push(Expr::Str("\t".to_string()));
-                let next = self.parse_expr_bp(0)?;
-                exprs.push(next);
-            }
-            // final newline
-            exprs.push(Expr::Str("\n".to_string()));
-            self.terminate_stmt()?;
-            if exprs.len() == 1 {
+            if exprs.is_empty() {
+                return Ok(Stmt::Block(vec![]));
+            } else if exprs.len() == 1 {
                 return Ok(Stmt::Print { expr: exprs.remove(0) });
             } else {
                 let mut body: Vec<Stmt> = Vec::with_capacity(exprs.len());
@@ -1245,6 +1247,83 @@ impl Parser {
             }
         }
 
+        // Shorthand: list[] = expr  → SetIndexSquare(list, LEN(list)+1, expr)
+        if self.check(TokenKind::Ident) {
+            let save_i = self.i;
+            let name = self.expect_ident()?;
+            if self.match_k(TokenKind::LBracket) {
+                if self.match_k(TokenKind::RBracket) {
+                    if self.match_k(TokenKind::Assign) {
+                        let value = self.parse_expr_bp(0)?;
+                        self.terminate_stmt()?;
+                        let len_call = Expr::Call { callee: Box::new(Expr::Var("LEN".to_string())), args: vec![Expr::Var(name.clone())] };
+                        let idx_expr = Expr::Binary { op: BinOp::Add, lhs: Box::new(len_call), rhs: Box::new(Expr::Number(1.0)) };
+                        return Ok(Stmt::SetIndexSquare { target: Expr::Var(name), index: idx_expr, value });
+                    }
+                }
+            }
+            // not the sugar; rewind
+            self.i = save_i;
+        }
+
+        // Compound assignments and ++/-- shorthands
+        if self.check(TokenKind::Ident) {
+            let save_i = self.i;
+            let name = self.expect_ident()?;
+            // x += y  or  x -= y
+            let mut is_plus_eq = false;
+            let mut is_minus_eq = false;
+            if self.match_k(TokenKind::Plus) {
+                if self.match_k(TokenKind::Assign) { is_plus_eq = true; }
+                else { self.i -= 1; }
+            } else if self.match_k(TokenKind::Minus) {
+                if self.match_k(TokenKind::Assign) { is_minus_eq = true; }
+                else { self.i -= 1; }
+            }
+            if is_plus_eq || is_minus_eq {
+                let rhs = self.parse_expr_bp(0)?;
+                self.terminate_stmt()?;
+                // For @-suffixed names with dict literal RHS, expand to multiple key sets
+                if name.ends_with('@') {
+                    if let Expr::Dict(entries) = rhs.clone() {
+                        let mut stmts: Vec<Stmt> = Vec::new();
+                        for (k, v) in entries {
+                            let idx = Expr::Str(k);
+                            stmts.push(Stmt::SetIndexSquare { target: Expr::Var(name.clone()), index: idx, value: v });
+                        }
+                        return Ok(Stmt::Block(stmts));
+                    }
+                    if is_plus_eq {
+                        // list append sugar: name += rhs  → name[LEN(name)+1] = rhs
+                        let len_call = Expr::Call { callee: Box::new(Expr::Var("LEN".to_string())), args: vec![Expr::Var(name.clone())] };
+                        let idx_expr = Expr::Binary { op: BinOp::Add, lhs: Box::new(len_call), rhs: Box::new(Expr::Number(1.0)) };
+                        return Ok(Stmt::SetIndexSquare { target: Expr::Var(name), index: idx_expr, value: rhs });
+                    }
+                    // '-=' not defined for lists/dicts; fall through to arithmetic on variable
+                }
+                // Default arithmetic/string concat: name = name (+|-) rhs
+                let op = if is_plus_eq { BinOp::Add } else { BinOp::Sub };
+                let expr = Expr::Binary { op, lhs: Box::new(Expr::Var(name.clone())), rhs: Box::new(rhs) };
+                return Ok(Stmt::Let { name, indices: None, init: expr });
+            }
+            // x++ or x--
+            let mut incdec: Option<i32> = None;
+            if self.match_k(TokenKind::Plus) {
+                if self.match_k(TokenKind::Plus) { incdec = Some(1); } else { self.i -= 1; }
+            } else if self.match_k(TokenKind::Minus) {
+                if self.match_k(TokenKind::Minus) { incdec = Some(-1); } else { self.i -= 1; }
+            }
+            if let Some(delta) = incdec {
+                self.terminate_stmt()?;
+                let rhs = if delta == 1 { Expr::Number(1.0) } else { Expr::Number(1.0) };
+                let op = if delta == 1 { BinOp::Add } else { BinOp::Sub };
+                let expr = Expr::Binary { op, lhs: Box::new(Expr::Var(name.clone())), rhs: Box::new(rhs) };
+                return Ok(Stmt::Let { name, indices: None, init: expr });
+            }
+            // not a compound; rewind
+            self.i = save_i;
+        }
+
         // Fallback: detect assignment-like forms; allow implicit assignment without LET.
         // Also allow obj.Prop = expr and square-bracket index sets.
         let save_i = self.i;
@@ -1333,6 +1412,10 @@ impl Parser {
         let e = self.parse_expr_bp(0)?;
         self.terminate_stmt()?;
         Ok(Stmt::ExprStmt(e))
+    }
+
+    fn check_terminate(&self) -> bool {
+        self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof)
     }
 
     // Accept ';' OR EOF after a statement
