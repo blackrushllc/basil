@@ -1,0 +1,37 @@
+REM Basil Game Engine Example: Move Sprite
+REM Requires obj-game feature
+
+LET g@ = NEW GAME()
+LET a@ = g@.Assets
+LET i@ = g@.Input
+LET d@ = g@.Draw
+
+LET playerX = 100.0
+LET playerY = 100.0
+LET playerSpeed = 200.0
+
+SUB init()
+    a@.LoadTexture("player", "assets/player.png")
+    PRINT "Game initialized."
+END SUB
+
+SUB update(dt)
+    IF i@.KeyDown("LEFT") THEN playerX = playerX - playerSpeed * dt
+    IF i@.KeyDown("RIGHT") THEN playerX = playerX + playerSpeed * dt
+    IF i@.KeyDown("UP") THEN playerY = playerY - playerSpeed * dt
+    IF i@.KeyDown("DOWN") THEN playerY = playerY + playerSpeed * dt
+    
+    REM Boundary checks
+    IF playerX < 0 THEN playerX = 0
+    IF playerY < 0 THEN playerY = 0
+END SUB
+
+SUB draw()
+    d@.Clear(0.1, 0.2, 0.3, 1.0)
+    d@.Sprite("player", playerX, playerY)
+END SUB
+
+g@.Window(800, 600, "Basil Move Sprite Demo")
+PRINT "Starting game loop..."
+g@.Run(init, update, draw)
+PRINT "Game finished."

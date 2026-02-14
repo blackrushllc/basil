@@ -1,0 +1,5 @@
+DIM a%(3)
+FOR i% = 1 TO 3
+    a%[i%] = i%
+    PRINTLN a%[i%]
+NEXT

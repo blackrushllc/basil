@@ -4,7 +4,7 @@ PRINTLN "Comments demo"
 
 
 // Simple Comments demo
-
+//
 // comtemporary comment
 REM old school comment (must be one one line)
 REM PRINTLN "comment demo" ' tick comment no longer allowed

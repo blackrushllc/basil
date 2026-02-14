@@ -9,6 +9,9 @@ https://github.com/blackrushllc/basil/releases/tag/Beta
 > ### This is what hobbyists should learn.
 > ### This is what professionals should learn.
 > ### This is the only programming language you need.
+> ### Basic-Like or C-Like syntax, but modern.
+> ### AI-Aware from the ground up.
+> ### Develop for the web with Basil-Serve and Php-like tags.
 
 >
 > Invite link to Blackrush Slack (Never Expires)
@@ -25,7 +28,7 @@ SQL(MySQL/Postgres, RDS, Sqlite, ORM, etc), MIDI (Audio, DAW), and even a Totall
 (Jolt Cola not included)
 
 >
-> Complete Online Reference: https://yobasic.com/basil/reference.html
+> Complete Online Reference: https://basilbasic.com/basil/reference.html
 >
 > Look at the /docs/ folder for guides, development notes, and more.
 >
@@ -49,9 +52,9 @@ using \<?basil .. ?> tags like Php.
 
 🌱 Basil includes the ability to have your favorite AI train itself on how to make Basil Library Objects ("Mods") and write Basil code.
 
-🌱 Read the previous line again
-
 🌱 Basil has a built-in ORM (Object Relational Mapping) for SQL databases.
+
+🌱 Basil has Php-like CGI templating with Laravel Blade-Like view rendering.
 
 🌱 Basil has a Rad 1980's GWBASIC interface if you want to use that. You can even instantiate Classes for manual testing, enter a program (with line numbers!) and run it, save it, load it, list it, and more. Cowabunga!
 
@@ -157,19 +160,19 @@ See:
  + examples/website/ - a simple Basil CGI web app with login, register, user home, logout
  + Useful links:
 
-🌿 https://yobasic.com - The website for Basil
+🌿 https://basilbasic.com - The website for Basil
 
-🌿 https://yobasic.com/basil//basil.html - The original 15 Minute Presentation Handout (nicer one below)
+🌿 https://basilbasic.com/basil/basil.html - The original 15 Minute Presentation Handout (nicer one below)
 
-🌿 https://yobasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
+🌿 https://basilbasic.com/basil/cgi.basil - Live BASIL CGI demo (just to prove it works)
 
-🌿 https://yobasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
+🌿 https://basilbasic.com/basil/reference.html - comprehensive Basil Language Reference (kept current)
 
-🌿 https://yobasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
+🌿 https://basilbasic.com/basil/hello.basil - literally just a PRINT "Hello" with no CGI anything (just to prove it works) 
 
-🌿 https://yobasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
+🌿 https://basilbasic.com/basil/website/index.basil - A simple Basil CGI web app with login, register, user home, logout
 
-
+🌿 https://YoBASIC.com/basic - A free online BASIC tutorial site by Blackrush LLC
 
 # The Basil Programming Language for Education
 
@@ -255,6 +258,7 @@ functionality out of the box. These include:
 - 🌿 Database access (SQLite, SQL, ORM Wrappers)
 - 🌿 JSON and CSV handling
 - 🌿 Web Development (Templating HTML with embedded <?Basil🌿 .. ?> like Php)
+- 🌿 Laravel Blade-like view rendering
 - 🌿 AWS integration
 - 🌿 Advance Screen UI (CrossTerm)
 - 🌿 AI/ML interfaces
@@ -280,11 +284,14 @@ Basil🌿  keeps backward compatibility while also adding new features.  Recentl
 - 🌱 WebAssembly (WASM) support
 - 🌱 Distributed processing (DPROC)
 - 🌱 Interop with Rust, Go, and C#
+- 🌱 Laravel Blade-like view rendering
 
 At the time of this writing we are also working on:
-- 🌱 An web-based IDE (Integrated Development Environment)
+- 🌱 An web-based tutorial IDE (Integrated Development Environment)
 - 🌱 JetBrains integration
 - 🌱 VS Code integration
+- 🌱 Runtime loadable modules
+- 🌱 Apache/Nginx integration
 
 ... and we are open to suggestions!
 
@@ -309,7 +316,9 @@ projects, and friendly enough to keep students in the game—so more learners fi
 
 Github Repository: https://github.com/blackrushllc/basil
 
-Complete Online Reference: https://yobasic.com/basil/reference.html
+Complete Online Reference: https://basilbasic.com/basil/reference.html
+
+WIP, Interactive Online Wiki and reference (Written in Basil!): https://blackrushbasic.com/
 
 Email: BlackrushDrive@Gmail.com
 

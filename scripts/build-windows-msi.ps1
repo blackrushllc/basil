@@ -24,6 +24,7 @@ cargo build -p basilc --release --features obj-all
 # Build the others normally (adjust features if needed)
 cargo build -p bcc --release
 cargo build -p basil-serve --release
+# cargo build -p basil-serve --release --features obj-all
 
 Write-Host "2) Stage DOCS (docs/** + README.md + WHATS_NEW.md)..."
 # Copy docs/**

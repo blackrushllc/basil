@@ -1,0 +1,31 @@
+#USE DB_MYSQL, ORM
+
+REM  Read the .env file
+PRINTLN "Read .env file:";
+LET b% = LOADENV%(); // defaults to .env
+
+REM  Get the DSN from the environment and create a DB and ORM objects
+
+LET dsn$ = ENV$("DB_DSN")
+DIM db@ AS DB_MYSQL(dsn$)
+DIM orm@ AS ORM(db@)
+
+orm@.ModelFromTable$("users")
+
+DIM sel$(0)
+sel$(0) = "UPPER(LEFT(name,1)) AS initial"
+
+result$ = orm@.Table("users").Select$(sel$).Get()
+PRINT result$ // Outputs <array ORM_ROW 17>
+
+result$ = orm@.Table("users").Select$(sel$).Unique().Get()
+PRINT result$ // Outputs <array ORM_ROW 5>
+
+result$ = orm@.Table("users").Select$(sel$).Pluck("initial")
+PRINT result$ // Outputs parse error: parse error at line 25: unexpected token in expression: Some(Print)
+
+ltter$ = orm@.Table("users").Select$(["UPPER(LEFT(name,1)) AS initial"]).Pluck("initial")
+PRINT ltter$
+
+ltter$ = orm@.Table("users").Select$("UPPER(LEFT(name,1)) AS initial").Unique().Pluck("initial")
+PRINT ltter$

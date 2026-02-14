@@ -1,29 +1,43 @@
 ### What `BEGIN` means in this BASIC interpreter
 
-`BEGIN` is not normally part of the BASIC language.
+`BEGIN` is not normally part of classic BASIC.
 
 In this project (BASIL), `BEGIN` introduces a block — a sequence of statements treated as a single statement — and `END` closes that block.
 
-From the grammar and parser:
+From the grammar and parser (current):
 - `block := "BEGIN" { ...statements... } "END"`
 - You can use a block wherever the grammar accepts a single `statement`.
+- Many constructs also support brace blocks: `{ ... }`.
+- Some constructs now support an "implicit" body that continues until a construct-specific terminator (e.g., `END WHILE`, `NEXT`, `END FUNC`).
 
 ### Where it’s used and when it’s required
-Looking at the parser logic:
+Looking at the parser logic (updated):
 - IF…THEN
     - Single-statement form: `IF cond THEN <one statement> [ELSE <one statement>]` — no `BEGIN` required.
-    - Block form: `IF cond THEN BEGIN ... [ELSE ...] END`
-        - If you use `BEGIN` after `THEN`, the parser expects the `THEN`-block as a statement list terminated by `END`.
-        - If there’s an `ELSE`, the `ELSE`-block can also be either a single statement or `BEGIN ... END`.
+    - Block forms supported today:
+        - `IF cond THEN BEGIN ... [ELSE ...] END [IF]`
+        - `IF cond { ... } [ELSE { ... }]`
+    - BEGIN-less multi-line IF (implicit until `END IF`) is not currently allowed.
+- WHILE
+    - Three forms are accepted:
+        1) `WHILE cond BEGIN ... END [WHILE]`
+        2) `WHILE cond { ... }`
+        3) Implicit body: `WHILE cond` followed by statements until `END [WHILE]`.
 - FOR / FOR EACH
-    - Body can be a single statement (no `BEGIN`) or a block using `BEGIN ... END`.
-    - After the body, `NEXT [ident]` is required by the parser.
+    - Three forms are accepted for the loop body:
+        1) `BEGIN ... END`
+        2) `{ ... }`
+        3) Implicit body: statements continue until the matching `NEXT [ident]`.
+    - `NEXT [ident]` is required and terminates the loop body.
 - Standalone blocks
     - You can write a bare `BEGIN ... END` to create a scoped block (`Stmt::Block`).
 - FUNC definitions
-    - Here, `BEGIN` is mandatory. After a `FUNC` header, the parser explicitly requires `BEGIN` and then reads until the matching `END`.
+    - Three forms are accepted for function bodies:
+        1) `BEGIN ... END [FUNC]`
+        2) `{ ... }`
+        3) Implicit body: statements continue until `END [FUNC]`.
 
-Concrete examples from the repo:
+Concrete examples:
 - `examples/hello.basil` lines 7–11:
   ```
   IF ans$ == "Y" THEN BEGIN
@@ -31,6 +45,22 @@ Concrete examples from the repo:
     PRINT "\nBlinken";
     PRINT "\nNod;
   END
+  ```
+- WHILE without `BEGIN`:
+  ```
+  WHILE i < 10
+      PRINT i
+      i = i + 1
+  END WHILE
+  ```
+- FOR without `BEGIN` (body runs until `NEXT`):
+  ```
+  FOR j = 5 TO 1 STEP -1
+      PRINT j
+      FOR i = 1 TO 5
+          PRINTLN i
+      NEXT i
+  NEXT j
   ```
 - `README.md` grammar also documents `block := "BEGIN" { declaration } "END"`.
 
@@ -73,13 +103,11 @@ Technically yes, but you must replace its role with some other delimiting rule. 
     - Standalone blocks: If you still want arbitrarily scoped blocks, you need an alternative (`{ ... }` or drop the feature).
 
 ### Practical recommendation
-- Keep `BEGIN`/`END` for v0: It matches the current implementation and examples, keeps the grammar simple, and allows both single-statement and multi-statement forms cleanly.
-- If you want to remove it later, the least disruptive BASIC-like path is to:
-    - Introduce `END IF`, `END FOR`, `END FUNC` (and optionally `ENDIF` as a single token),
-    - Make `IF ... THEN` parse a list of statements until its dedicated end token,
-    - Keep `NEXT` as the loop terminator or switch to `END FOR`,
-    - Replace function `BEGIN` with `END FUNC`.
-    - Update docs and examples accordingly.
+- We now support implicit bodies where unambiguous and backward compatible:
+    - WHILE: implicit until `END [WHILE]`.
+    - FOR / FOR EACH: implicit until `NEXT [ident]`.
+    - FUNC: implicit until `END [FUNC]` was already supported; documented here for clarity.
+- IF: BEGIN-less multi-line form is deferred due to ambiguity with the single-statement form; use `BEGIN ... END` or `{ ... }` for multi-statement IF bodies today.
 
 ### Short answers to your question
 - What is `BEGIN` used for? To start a multi-statement block that ends with `END`.

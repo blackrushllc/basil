@@ -52,3 +52,27 @@ If the interpolated form is malformed, you may see these errors (with the actual
 - TYPE$("Hi #{x%}") returns "STRING".
 - DESCRIBE works as with any other string value.
 
+### Windows paths and backslashes
+
+On Windows, remember that backslash is the string escape character. That means sequences like "\n", "\t", and "\"" are special — and any other character after a backslash is taken literally but the backslash itself is consumed. For example, "\s" becomes just "s".
+
+This affects path concatenation. If you write:
+
+```
+LET dest$ = EXEPATH$()
+LET path$ = dest$ + "\splash.png"
+```
+
+you will actually get a file named "splash.png" appended directly after the last path segment (e.g., "...\\releasesplash.png"), because the "\\" before "s" was treated as an escape and removed.
+
+Preferred options:
+- Use forward slashes (Windows accepts them): `dest$ + "/splash.png"`
+- Or escape the backslash: `dest$ + "\\splash.png"`
+
+Example:
+```
+LET dest$ = EXEPATH$()
+LET file$ = dest$ + "/splash.png"  ' or: dest$ + "\\splash.png"
+PRINTLN file$
+```
+

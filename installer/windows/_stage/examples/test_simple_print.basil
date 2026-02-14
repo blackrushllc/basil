@@ -1,0 +1,2 @@
+PRINT "Result: "; 1+1
+PRINTLN ""

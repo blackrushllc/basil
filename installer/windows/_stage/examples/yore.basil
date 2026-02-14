@@ -1,0 +1,23 @@
+  #CGI_NO_HEADER
+  LET okEnv% = LOADENV%()  # defaults to .env
+
+  LET dsn$ = ENV$("DB_DSN")
+  DIM db@ AS DB_MYSQL(dsn$)
+// OR:
+// LET sldb% = SQLITE_OPEN%("demo.db")
+
+  LET isOk% = YORE_INIT(db@)
+// OR:
+// LET isOk% = YORE_INIT(sldb%)
+// OR:
+// LET isOk% = YORE_INIT()
+
+  DIM req@   = YORE_REQUEST()
+  DIM page@  = YORE_RESOLVE_PAGE(req@)
+  DIM ctx@   = YORE_BUILD_CONTEXT(req@, page@)
+  LET html$  = YORE_RENDER_PAGE$(page@, ctx@)
+  LET output$ = RENDER$(html$, ctx@)
+
+  PRINT "Status: 200 OK\r\n";
+  PRINT "Content-Type: text/html; charset=utf-8\r\n\r\n";
+  PRINT output$
