@@ -5,7 +5,7 @@ _.basil
 .basil
 *.basilx
 /target/
-/dist/
+/downloads/dist/
 *.iml
 *.iws
 *.ipr

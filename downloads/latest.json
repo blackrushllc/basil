@@ -1,0 +1,233 @@
+{
+  "version": "1.0.0",
+  "base_url": "https://basrun.com/downloads/1.0.0",
+  "generated_at_utc": "2026-02-15T16:16:33Z",
+  "artifacts": {
+    "Basil.msi": {
+      "windows": {
+        "file": "windows/Basil.msi",
+        "sha256": "c229208d6bffe33af244ab65ddf881ce57c1e6c92b3bc72e7913b46ddf0c24af",
+        "size": 12476416,
+        "mtime": 1771086695
+      }
+    }
+    ,
+    "basil-serve.exe": {
+      "windows": {
+        "file": "windows/basil-serve.exe",
+        "sha256": "111b60344ddec35ddf043717d65ff21145931329fa984cc085d19e9189487b73",
+        "size": 3969024,
+        "mtime": 1771086697
+      }
+    }
+    ,
+    "basilc": {
+      "linux": {
+        "file": "linux/basilc",
+        "sha256": "2b5adbc6ceb11a042d733e5339589d04e3fe4ec28ce35f605daf5fcbe89a87ed",
+        "size": 50959272,
+        "mtime": 1771086859
+      }
+      ,
+      "mac": {
+        "file": "mac/basilc",
+        "sha256": "42cffd751359e89f232bff7d1478c460ce4818e37d47ff476b98f80997d1a8e0",
+        "size": 36789648,
+        "mtime": 1771096423
+      }
+    }
+    ,
+    "basilc-bmx": {
+      "linux": {
+        "file": "linux/basilc-bmx",
+        "sha256": "9de900da65fd93af3d6e988f06613d839da3386778f4e3cb63e3d633a7d0c853",
+        "size": 7349432,
+        "mtime": 1771086840
+      }
+      ,
+      "mac": {
+        "file": "mac/basilc-bmx",
+        "sha256": "a3647279eed15c1e96a4380fa0f73d417408f854f1d69d234f30a5bd2cd2f5e0",
+        "size": 6206400,
+        "mtime": 1771096410
+      }
+    }
+    ,
+    "basilc-bmx.exe": {
+      "windows": {
+        "file": "windows/basilc-bmx.exe",
+        "sha256": "4b2bf72c88a5c6c150fd419cac6799dcb7d52ee30ed4774020cfbeba8df500a0",
+        "size": 6139904,
+        "mtime": 1771086687
+      }
+    }
+    ,
+    "basilc-daw": {
+      "linux": {
+        "file": "linux/basilc-daw",
+        "sha256": "d13407353f4387e8040b7d620745fe6c3d78185de016eeffea37f0d78b8e6dc7",
+        "size": 9897216,
+        "mtime": 1771086838
+      }
+      ,
+      "mac": {
+        "file": "mac/basilc-daw",
+        "sha256": "c14caba0743dec1fa5a338ba5af0ac19517e054ab45d583d5e0ab6394fa158c3",
+        "size": 8395152,
+        "mtime": 1771096408
+      }
+    }
+    ,
+    "basilc-daw.exe": {
+      "windows": {
+        "file": "windows/basilc-daw.exe",
+        "sha256": "094a038f6b57fb8e311118141160a34856ba1e5ae6319339441a4f660daeb18b",
+        "size": 8233984,
+        "mtime": 1771086683
+      }
+    }
+    ,
+    "basilc-naked": {
+      "linux": {
+        "file": "linux/basilc-naked",
+        "sha256": "02d9caa137bb6e1d45e5407b726bdf81b28d7e539eedb986b4a5c4a0a0c2d502",
+        "size": 7294664,
+        "mtime": 1771086836
+      }
+      ,
+      "mac": {
+        "file": "mac/basilc-naked",
+        "sha256": "9c5e02fec4c88a85f336407d474899736cb5dd291b369ca73ab6a0e425a930ac",
+        "size": 6166128,
+        "mtime": 1771096407
+      }
+    }
+    ,
+    "basilc-naked.exe": {
+      "windows": {
+        "file": "windows/basilc-naked.exe",
+        "sha256": "7d2ebbd1d69b0853bd0cc5294ac32492b46fbfc8d2cf34491ac36e5ee4383c58",
+        "size": 6083072,
+        "mtime": 1771086680
+      }
+    }
+    ,
+    "basilc-safe": {
+      "linux": {
+        "file": "linux/basilc-safe",
+        "sha256": "b24cf981aec008c98d6bea3114ce669321a34c301a8b717e9d21d1b712079004",
+        "size": 35932640,
+        "mtime": 1771172138
+      }
+    }
+    ,
+    "basilc.exe": {
+      "windows": {
+        "file": "windows/basilc.exe",
+        "sha256": "88e280d4a7f9f80a17e32b4f496c2ece15748ce6bf1ca4a355c901ff66004e79",
+        "size": 36763136,
+        "mtime": 1771086679
+      }
+    }
+    ,
+    "bcc": {
+      "linux": {
+        "file": "linux/bcc",
+        "sha256": "cb977c2a6568c370561b629bf2b38c397c7fc4f52a7b6f5e582dab7753df5955",
+        "size": 966336,
+        "mtime": 1771086834
+      }
+      ,
+      "mac": {
+        "file": "mac/bcc",
+        "sha256": "71ced93f2afa99ff09cc83152c476e7fb433a68bbeb1571d0987039d9a53e5a4",
+        "size": 841424,
+        "mtime": 1771096405
+      }
+    }
+    ,
+    "bcc-bmx": {
+      "linux": {
+        "file": "linux/bcc-bmx",
+        "sha256": "cb977c2a6568c370561b629bf2b38c397c7fc4f52a7b6f5e582dab7753df5955",
+        "size": 966336,
+        "mtime": 1771086833
+      }
+      ,
+      "mac": {
+        "file": "mac/bcc-bmx",
+        "sha256": "71ced93f2afa99ff09cc83152c476e7fb433a68bbeb1571d0987039d9a53e5a4",
+        "size": 841424,
+        "mtime": 1771096404
+      }
+    }
+    ,
+    "bcc-bmx.exe": {
+      "windows": {
+        "file": "windows/bcc-bmx.exe",
+        "sha256": "bb50ab66dc25bfac298a3a46a3fe975e01c5a9b58d0f9901cbbcfca390793264",
+        "size": 986112,
+        "mtime": 1771086672
+      }
+    }
+    ,
+    "bcc-daw": {
+      "linux": {
+        "file": "linux/bcc-daw",
+        "sha256": "cb977c2a6568c370561b629bf2b38c397c7fc4f52a7b6f5e582dab7753df5955",
+        "size": 966336,
+        "mtime": 1771086832
+      }
+      ,
+      "mac": {
+        "file": "mac/bcc-daw",
+        "sha256": "71ced93f2afa99ff09cc83152c476e7fb433a68bbeb1571d0987039d9a53e5a4",
+        "size": 841424,
+        "mtime": 1771096404
+      }
+    }
+    ,
+    "bcc-daw.exe": {
+      "windows": {
+        "file": "windows/bcc-daw.exe",
+        "sha256": "bb50ab66dc25bfac298a3a46a3fe975e01c5a9b58d0f9901cbbcfca390793264",
+        "size": 986112,
+        "mtime": 1771086671
+      }
+    }
+    ,
+    "bcc-naked": {
+      "linux": {
+        "file": "linux/bcc-naked",
+        "sha256": "cb977c2a6568c370561b629bf2b38c397c7fc4f52a7b6f5e582dab7753df5955",
+        "size": 966336,
+        "mtime": 1771086831
+      }
+      ,
+      "mac": {
+        "file": "mac/bcc-naked",
+        "sha256": "71ced93f2afa99ff09cc83152c476e7fb433a68bbeb1571d0987039d9a53e5a4",
+        "size": 841424,
+        "mtime": 1771096402
+      }
+    }
+    ,
+    "bcc-naked.exe": {
+      "windows": {
+        "file": "windows/bcc-naked.exe",
+        "sha256": "bb50ab66dc25bfac298a3a46a3fe975e01c5a9b58d0f9901cbbcfca390793264",
+        "size": 986112,
+        "mtime": 1771086670
+      }
+    }
+    ,
+    "bcc.exe": {
+      "windows": {
+        "file": "windows/bcc.exe",
+        "sha256": "bb50ab66dc25bfac298a3a46a3fe975e01c5a9b58d0f9901cbbcfca390793264",
+        "size": 986112,
+        "mtime": 1771086669
+      }
+    }
+  }
+}
