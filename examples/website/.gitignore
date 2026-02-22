@@ -1,0 +1,17 @@
+# JetBrains IDEs (IntelliJ IDEA, WebStorm, etc.)
+.idea/
+*.iml
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log files
+*.log
+
+# Build artifacts
+*.basilx
+# Node modules (if using Node.js for any part of the project)
+node_modules/
+

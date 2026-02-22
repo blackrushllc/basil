@@ -2106,6 +2106,33 @@ impl VM {
                                 }
                             }
                         }
+                        156 => { // SPLIT$(src$ [, delim$])
+                            if !(argc == 1 || argc == 2) { return Err(BasilError("SPLIT$ expects 1 or 2 arguments".into())); }
+                            let src = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("SPLIT$ arg 1 must be string".into())) };
+                            let delim = if argc == 2 {
+                                match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("SPLIT$ arg 2 must be string".into())) }
+                            } else {
+                                ",".to_string()
+                            };
+
+                            let mut items: Vec<String> = Vec::new();
+                            if delim.is_empty() {
+                                items.push(src);
+                            } else {
+                                let mut s = src.as_str();
+                                loop {
+                                    if let Some(i) = s.find(&delim) {
+                                        let (a,b) = s.split_at(i);
+                                        items.push(a.to_string());
+                                        s = &b[delim.len()..];
+                                    } else {
+                                        items.push(s.to_string());
+                                        break;
+                                    }
+                                }
+                            }
+                            self.stack.push(VM::make_string_array(items));
+                        }
                         64 => { // EXEPATH$()
                             if argc != 0 { return Err(BasilError("EXEPATH$ expects 0 arguments".into())); }
                             let s = match std::env::current_exe() {
@@ -2572,6 +2599,11 @@ impl VM {
                             std::thread::sleep(std::time::Duration::from_millis(msu));
                             self.stack.push(Value::Int(0));
                         }
+                        25 => { // STR$(x)
+                            if argc != 1 { return Err(BasilError("STR$ expects 1 argument".into())); }
+                            let s = format!("{}", args[0]);
+                            self.stack.push(Value::Str(s));
+                        }
                         26 => { // STRING$(n, ch$ or code%)
                             if argc != 2 { return Err(BasilError("STRING$ expects 2 arguments".into())); }
                             let n = self.to_i64(&args[0])?;
@@ -2586,6 +2618,13 @@ impl VM {
                             };
                             let out = if unit.is_empty() || n == 0 { String::new() } else { unit.repeat(n) };
                             self.stack.push(Value::Str(out));
+                        }
+                        27 => { // VAL(s$)
+                            if argc != 1 { return Err(BasilError("VAL expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.trim(), other => return Err(BasilError(format!("VAL: expected string, got {}", self.type_of(other)))) };
+                            if let Ok(i) = s.parse::<i64>() { self.stack.push(Value::Int(i)); }
+                            else if let Ok(f) = s.parse::<f64>() { self.stack.push(Value::Num(f)); }
+                            else { self.stack.push(Value::Num(0.0)); }
                         }
                         // --- Math intrinsics ---
                         70 => { // ABS(x)

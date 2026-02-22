@@ -1031,7 +1031,10 @@ fn cmd_test(mut args: Vec<String>) {
             }
         }
     }
-    let program = if let Some(p) = program_opt { p } else {
+    let (program, local_smap_opt) = if let Some(p) = program_opt {
+        let sm = p.source_map.clone();
+        (p, sm)
+    } else {
         // Preprocess before parsing
         let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
             Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
@@ -1040,20 +1043,22 @@ fn cmd_test(mut args: Vec<String>) {
         let pp_opts = build_pre_opts(PathBuf::from(&path), env_paths);
         let preprocessed = match pre::preprocess(&pre.basil_source, &pp_opts) { Ok(p)=>p, Err(e)=>{ eprintln!("preprocess error: {}", e); std::process::exit(1);} };
         let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        match compile(&ast) { Ok(p)=>{
-            let body = serialize_program(&p);
-            let mut hdr = Vec::with_capacity(32 + body.len());
-            hdr.extend_from_slice(b"BSLX");
-            hdr.extend_from_slice(&3u32.to_le_bytes());
-            hdr.extend_from_slice(&1u32.to_le_bytes());
-            hdr.extend_from_slice(&flags.to_le_bytes());
-            hdr.extend_from_slice(&source_size.to_le_bytes());
-            hdr.extend_from_slice(&source_mtime_ns.to_le_bytes());
-            hdr.extend_from_slice(&body);
-            let tmp = cache_path.with_extension("basilx.tmp");
-            if let Ok(mut f) = File::create(&tmp) { let _ = f.write_all(&hdr); let _ = f.sync_all(); let _ = fs::rename(&tmp, &cache_path); }
-            p
-        }, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1)} }
+        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1)} };
+        // Phase B: attach source map
+        let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        prog.source_map = Some(map.clone());
+        let body = serialize_program(&prog);
+        let mut hdr = Vec::with_capacity(32 + body.len());
+        hdr.extend_from_slice(b"BSLX");
+        hdr.extend_from_slice(&3u32.to_le_bytes());
+        hdr.extend_from_slice(&1u32.to_le_bytes());
+        hdr.extend_from_slice(&flags.to_le_bytes());
+        hdr.extend_from_slice(&source_size.to_le_bytes());
+        hdr.extend_from_slice(&source_mtime_ns.to_le_bytes());
+        hdr.extend_from_slice(&body);
+        let tmp = cache_path.with_extension("basilx.tmp");
+        if let Ok(mut f) = File::create(&tmp) { let _ = f.write_all(&hdr); let _ = f.sync_all(); let _ = fs::rename(&tmp, &cache_path); }
+        (prog, Some(map))
     };
 
     let comments_map = extract_comments_map(&pre.basil_source);
@@ -1063,9 +1068,16 @@ fn cmd_test(mut args: Vec<String>) {
     let mock = MockInputProvider::new(seed);
     let mut vm = VM::new_with_test(program, mock, trace, Some(path.clone()), Some(comments_map), max_inputs);
     if let Err(e) = vm.run() {
-        let line = vm.current_line();
-        if line > 0 { eprintln!("runtime error at line {}: {}", line, e); }
-        else { eprintln!("runtime error: {}", e); }
+        let line = vm.current_line() as usize;
+        if line > 0 {
+            if let Some(sm) = &local_smap_opt {
+                if line < sm.lines.len() {
+                    let (fi, ln) = sm.lines[line];
+                    let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                    eprintln!("runtime error at line {} in {}: {}", ln, fname, e);
+                } else { eprintln!("runtime error at line {}: {}", line, e); }
+            } else { eprintln!("runtime error at line {}: {}", line, e); }
+        } else { eprintln!("runtime error: {}", e); }
         std::process::exit(1);
     }
 }

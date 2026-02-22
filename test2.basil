@@ -1,0 +1,2 @@
+PRINT STR$(42);
+PRINT VAL("123");
