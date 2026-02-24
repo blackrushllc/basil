@@ -2,8 +2,6 @@
 
 This list contains every keyword recognized by the core Basil interpreter, excluding all add-on feature modules (anything gated by `--features`, such as `obj-term`, `obj-daw`, `obj-json`, etc.).
 
-Generated: 2025-11-08 20:05 (local)
-
 Notes:
 - All entries are uppercase as they commonly appear in docs; Basil is case-insensitive for keywords.
 - Built-in functions are included (they are part of the core language surface without feature flags).
