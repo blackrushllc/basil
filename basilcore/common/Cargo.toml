@@ -7,3 +7,6 @@ edition = "2021"
 [lib]
 name = "basil_common"
 path = "src/lib.rs"
+
+[dependencies]
+chrono = "0.4"

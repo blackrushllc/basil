@@ -1181,6 +1181,9 @@ dependencies = [
 [[package]]
 name = "basil-common"
 version = "0.0.1"
+dependencies = [
+ "chrono",
+]
 
 [[package]]
 name = "basil-compiler"
@@ -1373,6 +1376,7 @@ name = "basil-serve"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "basil-common",
  "basil_web",
  "clap",
  "tokio",
@@ -1408,6 +1412,7 @@ dependencies = [
  "async-stream",
  "axum",
  "base64 0.22.1",
+ "basil-common",
  "bytes",
  "camino",
  "clap",
@@ -1480,6 +1485,7 @@ name = "bcc"
 version = "0.0.1"
 dependencies = [
  "backend-rs",
+ "basil-common",
  "basil-frontend",
  "basil-ir",
  "sha2",

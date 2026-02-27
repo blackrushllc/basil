@@ -295,7 +295,8 @@ fn print_help() {
     //println!("  doc  (bouquet)     Generate docs (stub)\n");
     //println!("  --ai               Start AI REPL (streaming chat)");
     println!("  --analyze <file> [--json]  Run compiler analysis and print diagnostics/symbols");
-    println!("  --debug <file>             Run Basil VM with JSON debug events\n");
+    println!("  --debug <file>             Run Basil VM with JSON debug events");
+    println!("  -v, --version              Show version information\n");
     println!("Usage:");
     println!("  basilc <command> [args]\n");
     println!("Examples:");
@@ -596,6 +597,10 @@ fn cli_main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     // Parse and strip preprocessor-related flags early so they don't confuse subcommand parsing
     parse_preproc_flags(&mut args);
+    if !args.is_empty() && (args[0] == "--version" || args[0] == "-v") {
+        basil_common::print_suite_version("basilc", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_help();
         let path = args.get(0).cloned();
@@ -851,7 +856,6 @@ fn resolve_script_path() -> Option<String> {
     }
     None
 }
-
 
 /// --- New: tiny dispatcher ---
 

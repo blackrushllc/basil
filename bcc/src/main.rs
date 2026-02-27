@@ -8,11 +8,15 @@ use basil_ir::lower_to_ir;
 use backend_rs::{emit_project, BuildOptions, DepSource};
 
 fn print_help() {
-    println!("bcc aot <input.basil> [options]\n\nOptions:\n  -o <outdir>                Output dir for final exe (unused; prints project path)\n  --name <prog>              Package/binary name\n  --features <spec>          @auto (default) | @all | obj-audio,obj-midi,...\n  --target <triple>          Rust target triple\n  --opt <0|1|2|3>            Optimize level (default 3)\n  --lto <off|thin|fat>       Link-time optimization (default thin)\n  --emit-project <dir>       Emit Cargo project only, don’t build\n  --dep-source <mode>        crates-io (default) | local | vendor\n  --local-runtime <dir>      Repo root containing crates/libbasilrt (for --dep-source local)\n  --vendor-dir <dir>         Directory containing a cargo vendor bundle (for --dep-source vendor)\n  --keep-build               Keep temp build directory\n  --quiet                    Less output\n  -h, --help                 Show this help\n");
+    println!("bcc aot <input.basil> [options]\n\nOptions:\n  -o <outdir>                Output dir for final exe (unused; prints project path)\n  --name <prog>              Package/binary name\n  --features <spec>          @auto (default) | @all | obj-audio,obj-midi,...\n  --target <triple>          Rust target triple\n  --opt <0|1|2|3>            Optimize level (default 3)\n  --lto <off|thin|fat>       Link-time optimization (default thin)\n  --emit-project <dir>       Emit Cargo project only, don’t build\n  --dep-source <mode>        crates-io (default) | local | vendor\n  --local-runtime <dir>      Repo root containing crates/libbasilrt (for --dep-source local)\n  --vendor-dir <dir>         Directory containing a cargo vendor bundle (for --dep-source vendor)\n  --keep-build               Keep temp build directory\n  --quiet                    Less output\n  -v, --version              Show version information\n  -h, --help                 Show this help\n");
 }
 
 fn main() {
     let mut args: Vec<String> = env::args().skip(1).collect();
+    if !args.is_empty() && (args[0] == "-v" || args[0] == "--version") {
+        basil_common::print_suite_version("bcc", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" { print_help(); return; }
     let cmd = args.remove(0);
     if cmd != "aot" { eprintln!("error: unknown command '{}'. Use 'bcc aot <file>'.", cmd); std::process::exit(2); }

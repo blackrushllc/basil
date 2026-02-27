@@ -10,6 +10,7 @@ process-runner = []
 lib-runner = []
 
 [dependencies]
+basil-common = { workspace = true }
 anyhow = "1"
 thiserror = "1"
 axum = { version = "0.7", features = ["http1", "tokio"] }

@@ -22,6 +22,9 @@ pub struct Config {
 #[command(name = "basil-serve")] 
 #[command(about = "Dev web server for Basil projects (static + CGI + templates)")]
 struct Args {
+    #[arg(short = 'v', long, action = clap::ArgAction::SetTrue, help = "Show version information")]
+    version: bool,
+
     #[arg(long, env = "BASIL_SERVE_ROOT")]
     root: String,
 

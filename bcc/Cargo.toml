@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
+basil-common   = { workspace = true }
 basil-frontend = { path = "../crates/basil-frontend" }
 basil-ir       = { path = "../crates/basil-ir" }
 backend-rs     = { path = "../crates/backend-rs" }

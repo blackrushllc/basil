@@ -49,3 +49,43 @@ impl std::error::Error for BasilError {}
 
 
 pub type Result<T> = std::result::Result<T, BasilError>;
+
+use chrono::{DateTime, Local};
+use std::path::Path;
+
+pub fn get_file_date(path: Option<&Path>) -> String {
+    path.and_then(|p| p.metadata().ok())
+        .and_then(|m| m.modified().ok())
+        .map(|t| {
+            let datetime: DateTime<Local> = t.into();
+            datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+pub fn print_suite_version(current_tool: &str, version: &str) {
+    let current_exe = std::env::current_exe().ok();
+
+    println!("Basil BASIC Suite - {} v{}", current_tool, version);
+    println!("Builds in this suite:");
+
+    // 1. current_tool (assumed to be the same version)
+    println!("  - {:<12} {} ({})", format!("{}:", current_tool), version, get_file_date(current_exe.as_deref()));
+
+    // 2. Siblings
+    if let Some(dir) = current_exe.as_ref().and_then(|p| p.parent()) {
+        let tools = ["basilc", "bcc", "basil-serve"];
+        for tool in tools {
+            if tool == current_tool { continue; }
+            
+            let tool_exe = if cfg!(windows) { format!("{}.exe", tool) } else { tool.to_string() };
+            let tool_path = dir.join(tool_exe);
+            
+            if tool_path.exists() {
+                println!("  - {:<12} {} ({})", format!("{}:", tool), version, get_file_date(Some(&tool_path)));
+            } else {
+                println!("  - {:<12} {} (not found in suite directory)", format!("{}:", tool), version);
+            }
+        }
+    }
+}

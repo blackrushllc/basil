@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
+basil-common = { workspace = true }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
