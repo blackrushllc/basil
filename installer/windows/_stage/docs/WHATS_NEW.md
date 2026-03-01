@@ -12,6 +12,8 @@
 ### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
 
 ### 🌿 New stuff just added:
++ Web version YoBASIC.com and basic.js (a subset of Basil)
++ New BASIC features: STR\$, SPLIT\$, VAL()
 + Semi-colon line delimiters, LET, and BEGIN/END Blocks are now optional, and = is recognized as == for equality comparisons
 + Multi-line string literals and single quotes are now supported
 + Triple-quoted multi-line strings are now supported: use """ ... """ for convenient multi-line string blocks

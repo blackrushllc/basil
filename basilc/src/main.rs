@@ -206,10 +206,24 @@ fn cmd_debug(path: Option<String>) {
         Ok(p) => p,
         Err(e) => { eprintln!("preprocess error: {}", e); std::process::exit(1); }
     };
-    let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-    let mut program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
-    // Phase B: embed source map
     let debug_smap = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+    let ast = match parse(&preprocessed.text) {
+        Ok(a) => a,
+        Err(e) => {
+            let msg = debug_smap.format_error(e.0);
+            eprintln!("parse error: {}", msg);
+            std::process::exit(1);
+        }
+    };
+    let mut program = match compile(&ast) {
+        Ok(p) => p,
+        Err(e) => {
+            let msg = debug_smap.format_error(e.0);
+            eprintln!("compile error: {}", msg);
+            std::process::exit(1);
+        }
+    };
+    // Phase B: embed source map
     program.source_map = Some(debug_smap.clone());
     let dbg = Debugger::new();
     let rx = dbg.subscribe();
@@ -534,11 +548,25 @@ fn cmd_run(path: Option<String>) {
         let sm = p.source_map.clone();
         (p, sm)
     } else {
-        // Parse → compile the precompiled Basil source
-        let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
         // Phase B: attach source map
         let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        // Parse → compile the precompiled Basil source
+        let ast = match parse(&preprocessed.text) {
+            Ok(a) => a,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("parse error: {}", msg);
+                std::process::exit(1);
+            }
+        };
+        let mut prog = match compile(&ast) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("compile error: {}", msg);
+                std::process::exit(1);
+            }
+        };
         prog.source_map = Some(map.clone());
         // Write cache atomically
         let body = serialize_program(&prog);
@@ -1046,10 +1074,24 @@ fn cmd_test(mut args: Vec<String>) {
         };
         let pp_opts = build_pre_opts(PathBuf::from(&path), env_paths);
         let preprocessed = match pre::preprocess(&pre.basil_source, &pp_opts) { Ok(p)=>p, Err(e)=>{ eprintln!("preprocess error: {}", e); std::process::exit(1);} };
-        let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1)} };
         // Phase B: attach source map
         let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        let ast = match parse(&preprocessed.text) {
+            Ok(a) => a,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("parse error: {}", msg);
+                std::process::exit(1);
+            }
+        };
+        let mut prog = match compile(&ast) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("compile error: {}", msg);
+                std::process::exit(1);
+            }
+        };
         prog.source_map = Some(map.clone());
         let body = serialize_program(&prog);
         let mut hdr = Vec::with_capacity(32 + body.len());

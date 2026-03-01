@@ -409,6 +409,27 @@ pub struct SourceMapMini {
     pub lines: Vec<(u16, u32)>, // 1-based indexing; lines[pre_line]
 }
 
+impl SourceMapMini {
+    pub fn format_error(&self, msg: String) -> String {
+        if msg.starts_with("[line ") {
+            if let Some(end_pos) = msg.find(']') {
+                let line_str = &msg[6..end_pos];
+                if let Ok(line_num) = line_str.parse::<usize>() {
+                    let rest = msg[end_pos+1..].trim();
+                    if line_num < self.lines.len() {
+                        let (fi, ln) = self.lines[line_num];
+                        let fname = self.files.get(fi as usize).map(|s| {
+                            std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)
+                        }).unwrap_or("<unknown>");
+                        return format!("at line {} in {}: {}", ln, fname, rest);
+                    }
+                }
+            }
+        }
+        msg
+    }
+}
+
 // --- Simple (de)serializer for Program used by .basilx cache ---
 pub fn serialize_program(p: &Program) -> Vec<u8> {
     fn w_u8(b: &mut Vec<u8>, v: u8) { b.push(v); }

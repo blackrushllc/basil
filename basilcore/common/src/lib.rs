@@ -47,6 +47,10 @@ pub struct BasilError(pub String);
 impl std::fmt::Display for BasilError { fn fmt(&self, f:&mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) } }
 impl std::error::Error for BasilError {}
 
+pub fn basil_error(line: u32, msg: &str) -> BasilError {
+    BasilError(format!("[line {}] {}", line, msg))
+}
+
 
 pub type Result<T> = std::result::Result<T, BasilError>;
 

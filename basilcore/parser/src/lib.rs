@@ -54,6 +54,10 @@ struct Parser { tokens: Vec<Token>, i: usize, with_depth: usize, catch_depth: us
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self { Self { tokens, i: 0, with_depth: 0, catch_depth: 0 } }
 
+    fn error(&self, msg: &str) -> BasilError {
+        basil_common::basil_error(self.peek_line(), msg)
+    }
+
     fn parse_program(&mut self) -> Result<Program> {
         let mut stmts = Vec::new();
         while !self.check(TokenKind::Eof) {
@@ -77,7 +81,7 @@ impl Parser {
             let name = self.expect_ident()?;
             // Disallow type suffixes on CONST names
             if name.ends_with('$') || name.ends_with('%') || name.ends_with('@') {
-                return Err(BasilError("CONST name must not have a type suffix ($, %, @)".into()));
+                return Err(self.error("CONST name must not have a type suffix ($, %, @)"));
             }
             self.expect(TokenKind::Assign)?;
             let init = self.parse_expr_bp(0)?;
@@ -99,10 +103,10 @@ impl Parser {
                 loop {
                     while self.match_k(TokenKind::Semicolon) {}
                     if self.check(TokenKind::RBrace) { let _ = self.next(); break; }
-                    if self.check(TokenKind::Eof) { return Err(BasilError("Expected '}' to terminate SELECT CASE body.".into())); }
+                    if self.check(TokenKind::Eof) { return Err(self.error("Expected '}' to terminate SELECT CASE body.")); }
                     if self.match_k(TokenKind::Case) {
                         if self.match_k(TokenKind::Else) {
-                            if saw_else { return Err(BasilError("Only one CASE ELSE is allowed.".into())); }
+                            if saw_else { return Err(self.error("Only one CASE ELSE is allowed.")); }
                             saw_else = true;
                             while self.match_k(TokenKind::Semicolon) {}
                             let mut body: Vec<Stmt> = Vec::new();
@@ -110,7 +114,7 @@ impl Parser {
                                 while self.match_k(TokenKind::Semicolon) {}
                                 if self.check(TokenKind::RBrace) { break; }
                                 if self.check(TokenKind::Case) { break; }
-                                if self.check(TokenKind::Eof) { return Err(BasilError("Expected '}' to terminate SELECT CASE body.".into())); }
+                                if self.check(TokenKind::Eof) { return Err(self.error("Expected '}' to terminate SELECT CASE body.")); }
                                 let line = self.peek_line();
                                 let s = self.parse_stmt()?;
                                 body.push(Stmt::Line(line));
@@ -130,7 +134,7 @@ impl Parser {
                                     Some(TokenKind::LtEq) => { let _ = self.next(); BinOp::Le },
                                     Some(TokenKind::Gt) => { let _ = self.next(); BinOp::Gt },
                                     Some(TokenKind::GtEq) => { let _ = self.next(); BinOp::Ge },
-                                    _ => return Err(BasilError("Use 'CASE IS <op> <expr>' with one comparator operator.".into())),
+                                    _ => return Err(self.error("Use 'CASE IS <op> <expr>' with one comparator operator.")),
                                 };
                                 let rhs = self.parse_expr_bp(0)?;
                                 patterns.push(basil_ast::CasePattern::Compare { op, rhs });
@@ -147,7 +151,7 @@ impl Parser {
                             break;
                         }
                         if patterns.is_empty() {
-                            return Err(BasilError("CASE requires at least one value, range, or comparator.".into()));
+                            return Err(self.error("CASE requires at least one value, range, or comparator."));
                         }
                         while self.match_k(TokenKind::Semicolon) {}
                         let mut body: Vec<Stmt> = Vec::new();
@@ -163,7 +167,7 @@ impl Parser {
                         arms.push(basil_ast::CaseArm { patterns, body });
                         continue;
                     }
-                    return Err(BasilError("Expected 'CASE' or '}' inside SELECT CASE.".into()));
+                    return Err(self.error("Expected 'CASE' or '}' inside SELECT CASE."));
                 }
                 return Ok(Stmt::SelectCase { selector, arms, else_body });
             }
@@ -1707,7 +1711,7 @@ impl Parser {
         }
     }
     fn expect_ident(&mut self) -> Result<String> {
-        if self.check(TokenKind::Ident) { Ok(self.next().unwrap().lexeme) } else { Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))) }
+        if self.check(TokenKind::Ident) { Ok(self.next().unwrap().lexeme) } else { Err(self.error("expected identifier")) }
     }
     // Accept an identifier or a keyword token as a member name after '.'
     fn expect_member_name(&mut self) -> Result<String> {
@@ -1760,7 +1764,7 @@ impl Parser {
             | Some(TokenKind::Eval) => {
                 Ok(self.next().unwrap().lexeme)
             }
-            _ => Err(BasilError(format!("parse error at line {}: expected identifier", self.peek_line()))),
+            _ => Err(self.error("expected identifier")),
         }
     }
     fn check(&self, k: TokenKind) -> bool { self.peek_kind() == Some(k) }
@@ -1779,7 +1783,7 @@ impl Parser {
         let fname = self.expect_ident()?;
         // Optional classic array dims for fields not supported in this minimal pass
         if self.match_k(TokenKind::LParen) {
-            return Err(BasilError(format!("parse error at line {}: array fields in TYPE not supported yet", self.peek_line())));
+            return Err(self.error("array fields in TYPE not supported yet"));
         }
         // Type clause or infer from suffix
         let kind = if self.match_k(TokenKind::As) {
@@ -1803,7 +1807,7 @@ impl Parser {
                 let tname = self.expect_ident()?;
                 SFK::Struct(tname)
             } else {
-                return Err(BasilError(format!("parse error at line {}: expected type after AS", self.peek_line())));
+                return Err(self.error("expected type after AS"));
             }
         } else {
             if fname.ends_with('%') { SFK::Int32 }
