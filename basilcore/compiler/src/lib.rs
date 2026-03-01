@@ -1929,6 +1929,7 @@ impl C {
                         "GET$" => Some(11u8),
                         "POST$" => Some(12u8),
                         "REQUEST$" => Some(13u8),
+                        "REQUEST_BODY$" => Some(28u8),
                         "UCASE$" => Some(14u8),
                         "UCASE" => Some(14u8),
                         "LCASE$" => Some(15u8),
@@ -2688,6 +2689,35 @@ impl C {
                 chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
             }
             Stmt::ExprStmt(e) => {
+                // Special-case: direct SUB call as a statement at toplevel-in-chunk (e.g., inside IF/WHILE bodies)
+                if let Expr::Call { callee, args } = e {
+                    if let Expr::Var(name) = &**callee {
+                        let uname = name.to_ascii_uppercase();
+                        if let Some(info) = self.routines.get(&uname) {
+                            if info.is_sub {
+                                // Arity check
+                                if info.arity != args.len() {
+                                    return Err(BasilError(format!("procedure '{}' expects {} arguments but {} given", name, info.arity, args.len())));
+                                }
+                                // Ensure no nested SUB calls inside arguments
+                                for a in args {
+                                    if let Some(sub_name) = expr_contains_sub_call(&self.routines, a) {
+                                        return Err(self.error(format!("SUB call '{}' has no value; cannot be used inside arguments", sub_name)));
+                                    }
+                                }
+                                // Emit callee and arguments and call
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                                for a in args { self.emit_expr_in(chunk, a, None)?; }
+                                chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
+                                // discard result (SUB has no value)
+                                chunk.push_op(Op::Pop);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                // Generic expression statement (includes FUNC calls): validate no SUB in value context
                 self.emit_expr_in(chunk, e, None)?;
                 chunk.push_op(Op::Pop);
             }

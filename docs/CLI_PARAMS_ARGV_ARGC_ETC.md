@@ -176,3 +176,16 @@ Similarly, update `cmd_test` to collect any "unknown" arguments and pass them to
 - `GET_SWITCH$(name$)`: Returns the parameters following a switch until the next switch or end of arguments.
 
 This implementation covers both the classic `COMMAND$` approach and modern `argc/argv` styles, while providing powerful helpers for CLI application developers.
+
+### Recent Changes (Error Reporting & Code Quality)
+
+#### 1. Enhanced Error Reporting
+- Implemented a source mapping mechanism that translates internal line numbers to original source file names and line numbers for all compile and parse errors.
+- Added a `basil_error` helper in `basilcore/common` to standardize error formatting as `at line N in filename: message`.
+- Modified the `basilc` CLI to catch and format errors using the `SourceMapMini` before displaying them to the user.
+- Updated the "SUB call has no value" compile error to explicitly include the name of the SUB being called and the correct location in the source file.
+
+#### 2. Code Quality & Consistency
+- Resolved `dead_code` warnings in `basilcore/parser` and `basilcore/lexer` by integrating the `self.error()` helper method.
+- Standardized error reporting across the lexer and parser to ensure consistent use of line-number prefixes.
+- Improved error messages for various edge cases (e.g., CONST name type suffixes, string interpolation errors).

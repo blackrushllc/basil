@@ -319,6 +319,7 @@ pub struct VM {
     // Caches for CGI params
     get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
     post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
+    request_body_cache: Option<String>,       // raw body from stdin
     // File I/O
     file_table: HashMap<i64, FileHandleEntry>,
     next_fh: i64,
@@ -487,6 +488,7 @@ impl VM {
             mock: None,
             get_params_cache: None,
             post_params_cache: None,
+            request_body_cache: None,
             file_table: HashMap::new(),
             next_fh: 1,
             close_handles_on_ret: true,
@@ -771,20 +773,33 @@ impl VM {
             self.get_params_cache = Some(v);
         }
     }
+    fn ensure_request_body(&mut self) {
+        if self.request_body_cache.is_some() { return; }
+        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+        if clen == 0 {
+            self.request_body_cache = Some(String::new());
+            return;
+        }
+        let mut body = Vec::with_capacity(clen);
+        let _ = io::stdin().take(clen as u64).read_to_end(&mut body);
+        let s = String::from_utf8_lossy(&body).to_string();
+        self.request_body_cache = Some(s);
+    }
     fn ensure_post_params(&mut self) {
         if self.post_params_cache.is_some() { return; }
-        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-        if clen == 0 { self.post_params_cache = Some(Vec::new()); return; }
+        self.ensure_request_body();
+        let body_s = self.request_body_cache.as_ref().cloned().unwrap_or_default();
+        if body_s.is_empty() {
+            self.post_params_cache = Some(Vec::new());
+            return;
+        }
         let ctype = env::var("CONTENT_TYPE").unwrap_or_default();
         if !ctype.to_ascii_lowercase().starts_with("application/x-www-form-urlencoded") {
             // unsupported type for now
             self.post_params_cache = Some(Vec::new());
             return;
         }
-        let mut body = Vec::with_capacity(clen);
-        let _ = io::stdin().take(clen as u64).read_to_end(&mut body);
-        let s = String::from_utf8_lossy(&body).to_string();
-        let v = self.parse_pairs(&s);
+        let v = self.parse_pairs(&body_s);
         self.post_params_cache = Some(v);
     }
     fn make_string_array(vals: Vec<String>) -> Value {
@@ -2625,6 +2640,12 @@ impl VM {
                             if let Ok(i) = s.parse::<i64>() { self.stack.push(Value::Int(i)); }
                             else if let Ok(f) = s.parse::<f64>() { self.stack.push(Value::Num(f)); }
                             else { self.stack.push(Value::Num(0.0)); }
+                        }
+                        28 => { // REQUEST_BODY$()
+                            if argc != 0 { return Err(BasilError("REQUEST_BODY$ expects 0 arguments".into())); }
+                            self.ensure_request_body();
+                            let s = self.request_body_cache.clone().unwrap_or_default();
+                            self.stack.push(Value::Str(s));
                         }
                         // --- Math intrinsics ---
                         70 => { // ABS(x)
