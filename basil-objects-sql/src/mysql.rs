@@ -176,6 +176,10 @@ impl MySqlObj {
                 let data = arr.data.borrow();
                 data.iter().map(|v| match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=>n.to_string(), Value::Bool(b)=>b.to_string(), _=> String::new() }).collect()
             }
+            Value::List(list) => {
+                let data = list.borrow();
+                data.iter().map(|v| match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=>n.to_string(), Value::Bool(b)=>b.to_string(), _=> String::new() }).collect()
+            }
             _ => {
                 if args.len() == 2 {
                     vec![str_arg(&args[1])]

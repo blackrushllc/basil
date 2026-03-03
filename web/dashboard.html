@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>EMC Desk — Dashboard</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body class="page page-dashboard">
+  <div class="app-shell">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="left">
+        <button id="navToggle" class="btn btn-ghost" type="button" aria-label="Toggle sidebar">☰</button>
+        <div class="brand-inline">
+          <span class="brand-mark small">EMC</span>
+          <span class="brand-title">EMC Desk</span>
+        </div>
+      </div>
+
+      <div class="center">
+        <div class="global-search">
+          <input id="globalPrompt" placeholder="Ask: no-shows last 30 days by chiropractor..." />
+          <button id="runPrompt" class="btn btn-primary" type="button">Run</button>
+        </div>
+      </div>
+
+      <div class="right">
+        <button id="recalculateKpis" class="btn btn-ghost" title="Recalculate KPIs">🔄</button>
+        <button id="newWindowMenu" class="btn btn-secondary" type="button">New ▾</button>
+        <button id="themeToggle" class="btn btn-ghost" type="button">🌓</button>
+        <div class="user-menu menu-wrap">
+          <button id="userBtn" class="btn btn-ghost" type="button">owner ▾</button>
+          <div id="userDropdown" class="menu hidden">
+            <button id="editAiKnowledge" class="menu-item">AI Onboarding</button>
+            <button id="openDocs" class="menu-item">UI Help</button>
+            <button id="logout" class="menu-item danger">Logout</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main split -->
+    <div class="main">
+
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <section class="panel">
+          <h3>Workspace</h3>
+          <div class="muted small">Local persisted desktop</div>
+
+          <div class="row wrap">
+            <button id="openDesktop" class="btn btn-primary">Open Desktop</button>
+            <button id="resetDesktop" class="btn btn-danger">Reset</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Quick Reports</h3>
+          <div id="quickReports" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <h3>Saved</h3>
+          <div id="savedArtifacts" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <h3>Filters</h3>
+          <div class="filters">
+            <label class="field">
+              <span>Date range</span>
+              <select id="dateRange">
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="365">Last 12 months</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Reseller</span>
+              <select id="resellerFilter"></select>
+            </label>
+            <label class="field">
+              <span>Status</span>
+              <select id="statusFilter"></select>
+            </label>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Content -->
+      <main class="content">
+        <!-- Dashboard view -->
+        <section id="dashboardView" class="dashboard-view">
+          <div class="kpi-grid" id="kpiGrid"></div>
+
+          <div class="dash-row">
+            <section class="panel grow">
+              <header class="panel-header">
+                <h3>Trends</h3>
+                <div class="muted small">Mock chart tiles (wire to real data later)</div>
+              </header>
+              <div id="trendTiles" class="tile-grid"></div>
+            </section>
+
+            <section class="panel side">
+              <header class="panel-header">
+                <h3>Recent Activity</h3>
+              </header>
+              <div id="activityFeed" class="feed"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <header class="panel-header">
+              <h3>Suggested Questions</h3>
+              <div class="muted small">Click to open as windows</div>
+            </header>
+            <div id="suggestedQuestions" class="chips"></div>
+          </section>
+        </section>
+
+        <!-- Desktop view -->
+        <section id="desktopView" class="desktop-view hidden">
+          <div class="desktop-toolbar">
+            <div class="left">
+              <button id="backToDashboard" class="btn btn-secondary">← Dashboard</button>
+              <div class="muted small">Drag windows. Double-click title to maximize.</div>
+            </div>
+            <div class="right">
+              <button id="tileWindows" class="btn btn-ghost">Tile</button>
+              <button id="cascadeWindows" class="btn btn-ghost">Cascade</button>
+              <button id="newTableWin" class="btn btn-secondary">+ Table</button>
+              <button id="newSummaryWin" class="btn btn-secondary">+ Summary</button>
+              <button id="newChartWin" class="btn btn-secondary">+ Chart</button>
+            </div>
+          </div>
+
+          <div id="desktop" class="desktop" aria-label="Workspace desktop"></div>
+
+          <div id="taskbar" class="taskbar" aria-label="Taskbar"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="data/mock-data.js"></script>
+  <script src="assets/mock-api.js"></script>
+  <script src="assets/app.js"></script>
+  <script src="assets/dashboard.js"></script>
+</body>
+</html>

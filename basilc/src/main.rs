@@ -296,6 +296,7 @@ fn print_help() {
     println!("Basil CLI (80's version)\n");
     println!("Commands (aliases in parentheses):");
     println!("  run  (sprout)      Parse → compile → run a .basil file");
+    println!("  brun               Force rebuild and run a .basil file");
     println!("  test (cultivate)   Run program in test mode with auto-mocked input");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
     println!("  make               Write embedded includes to the current directory (see --list)\n");
@@ -315,6 +316,7 @@ fn print_help() {
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
+    println!("  basilc brun examples/hello.basil");
     println!("  basilc lex examples/hello.basil");
     println!("  basilc make --list");
     println!("  basilc make examples");
@@ -414,7 +416,7 @@ fn cmd_make(args: Vec<String>) {
                 // Optionally run when it's a single file
                 let skip = env::var("BASILC_MAKE_SKIP_RUN").ok().unwrap_or_default();
                 if skip != "1" {
-                    cmd_run(Some(out.display().to_string()));
+                    cmd_run(Some(out.display().to_string()), false);
                 }
             }
             Err(e) => { eprintln!("write: {}", e); std::process::exit(1); }
@@ -435,12 +437,12 @@ fn cmd_make(args: Vec<String>) {
     std::process::exit(2);
 }
 
-fn cmd_run(path: Option<String>) {
+fn cmd_run(path: Option<String>, force_rebuild: bool) {
     // Require a path
     let input_path = match path {
         Some(p) => p,
         None => {
-            eprintln!("usage: basilc run <file.basil>");
+            eprintln!("usage: basilc {} <file.basil>", if force_rebuild { "brun" } else { "run" });
             std::process::exit(2);
         }
     };
@@ -528,16 +530,18 @@ fn cmd_run(path: Option<String>) {
 
     // Try cache load
     let mut program_opt: Option<basil_bytecode::Program> = None;
-    if let Ok(bytes) = fs::read(&cache_path) {
-        if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
-            let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
-            let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
-            let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
-            let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
-            let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
-                let prog_bytes = &bytes[32..];
-                match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
+    if !force_rebuild {
+        if let Ok(bytes) = fs::read(&cache_path) {
+            if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
+                let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
+                let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
+                let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
+                let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+                let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+                if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+                    let prog_bytes = &bytes[32..];
+                    match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
+                }
             }
         }
     }
@@ -660,8 +664,8 @@ fn cli_main() {
                 std::process::exit(1);
             }
         }
-        "run" => {
-            cmd_run(args.get(0).cloned());
+        "run" | "brun" => {
+            cmd_run(args.get(0).cloned(), cmd == "brun");
         }
         "make" => {
             cmd_make(args);

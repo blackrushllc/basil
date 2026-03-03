@@ -2025,6 +2025,7 @@ impl C {
                         #[cfg(feature = "obj-curl")] "HTTP_POST$" => Some(125u8),
                         #[cfg(feature = "obj-json")] "JSON_PARSE$" => Some(126u8),
                         #[cfg(feature = "obj-json")] "JSON_STRINGIFY$" => Some(127u8),
+                        #[cfg(feature = "obj-json")] "JSON_DECODE@" => Some(136u8),
                         #[cfg(feature = "obj-csv")] "CSV_PARSE$" => Some(128u8),
                         #[cfg(feature = "obj-csv")] "CSV_WRITE$" => Some(129u8),
                         #[cfg(feature = "obj-sqlite")] "SQLITE_OPEN%" => Some(130u8),

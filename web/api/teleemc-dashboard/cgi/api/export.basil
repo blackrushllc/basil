@@ -1,0 +1,53 @@
+#CGI_NO_HEADER
+#include "../lib/teleemc_config.basil"
+#include "../lib/teleemc_cgi.basil"
+#include "../lib/teleemc_auth.basil"
+
+  // POST /api/export
+
+  IF RequireAuth%() == 0 THEN
+      EmitAuthError();
+      EXIT
+  END
+
+  LET b$ = ReadRequestBody$();
+  DIM body AS JSON_DATA(b$)
+  LET aid$ = body["artifact_id"];
+  LET f$ = body["format"];
+  IF LEN(f$) == 0 THEN LET f$ = "csv";
+
+  IF LEN(aid$) == 0 THEN
+      SendJson(400, "{\"ok\":false,\"error\":\"bad_request\"}");
+      EXIT
+  END
+
+  LET path$ = ".basil/teleemc/artifacts/" + aid$ + ".json";
+  LET h% = FOPEN(path$, "r");
+  IF h% < 0 THEN
+      SendJson(404, "{\"ok\":false,\"error\":\"not_found\"}");
+      EXIT
+  END
+  
+  LET art$ = FREAD$(h%, 1000000);
+  FCLOSE(h%);
+
+  DIM art AS JSON_DATA(art$)
+
+  IF f$ == "csv" THEN
+      LET sql$ = art["sql"];
+      DIM db@ AS DB_MYSQL(TeleemcDsn$());
+      LET res@ = db@.QueryTable$(sql$);
+      LET csv$ = "";
+      FOR EACH line$ IN res@
+          LET csv$ = csv$ + line$ + "\n";
+      NEXT
+      SendDownload(200, "text/csv", "teleemc_" + aid$ + ".csv", csv$);
+  ELSE IF f$ == "txt" THEN
+      LET sql$ = art["sql"];
+      LET out$ = "Artifact: " + aid$ + "\nSQL: " + sql$;
+      SendText(200, "text/plain", out$);
+  ELSE IF f$ == "pdf" THEN
+      SendJson(501, "{\"ok\":false,\"error\":\"not_implemented\"}");
+  ELSE
+      SendJson(400, "{\"ok\":false,\"error\":\"bad_request\"}");
+  END

@@ -1,0 +1,78 @@
+#CGI_NO_HEADER
+#include "../lib/teleemc_config.basil"
+#include "../lib/teleemc_cgi.basil"
+#include "../lib/teleemc_auth.basil"
+
+  // GET /api/dashboard/kpis
+  // Returns aggregated KPI data
+
+  // 1) Auth
+  IF RequireAuth%() == 0 THEN
+      EmitAuthError();
+      EXIT
+  END
+
+  // 2) Execute DB Queries
+  LET kpis$ = "[]";
+  LET dbErr$ = "";
+  TRY
+      DIM db@ AS DB_MYSQL(TeleemcDsn$());
+      LET c$ = TeleemcRootCertPath$();
+      IF LEN(c$) > 0 THEN
+          LET db@.RootCertPath$ = c$;
+      END
+      LET db@.CommandTimeoutMs% = 30000;
+
+
+      // KPI 1: Total Patients
+      LET q1$ = "SELECT COUNT(*) as total FROM patients WHERE deleted_at IS NULL";
+      LET r1$ = db@.Query$(q1$);
+
+      // KPI 2: Active Chiropractors
+      LET q2$ = "SELECT COUNT(*) as total FROM chiropractors WHERE status = 1";
+      LET r2$ = db@.Query$(q2$);
+
+      // KPI 3: Total Balance
+      LET q3$ = "SELECT SUM(balance) as total FROM patients WHERE deleted_at IS NULL";
+      LET r3$ = db@.Query$(q3$);
+
+      // Construct a simple JSON response
+      // r1, r2, r3 are JSON arrays of row objects, e.g. [{"total": 123}]
+      LET kpis$ = "["
+
+      // We assume r1, r2, r3 each have at least one row with a "total" key
+      LET r1_total$ = "0";
+      IF LEN(r1$) > 5 THEN
+          DIM j1 AS JSON_DATA(r1$)
+          LET r1_total$ = TRIM$(STR$(j1[1]["total"]))
+      END
+      IF LEN(r1_total$) == 0 THEN LET r1_total$ = "0"
+      LET kpis$ = kpis$ + "{\"label\":\"Total Patients\",\"value\":" + r1_total$ + "},"
+
+      LET r2_total$ = "0";
+      IF LEN(r2$) > 5 THEN
+          DIM j2 AS JSON_DATA(r2$)
+          LET r2_total$ = TRIM$(STR$(j2[1]["total"]))
+      END
+      IF LEN(r2_total$) == 0 THEN LET r2_total$ = "0"
+      LET kpis$ = kpis$ + "{\"label\":\"Active Chiropractors\",\"value\":" + r2_total$ + "},"
+
+      LET r3_total$ = "0";
+      IF LEN(r3$) > 5 THEN
+          DIM j3 AS JSON_DATA(r3$)
+          LET r3_total$ = TRIM$(STR$(j3[1]["total"]))
+      END
+      IF LEN(r3_total$) == 0 THEN LET r3_total$ = "0"
+      LET kpis$ = kpis$ + "{\"label\":\"Total Balance\",\"value\":" + r3_total$ + "}"
+
+      LET kpis$ = kpis$ + "]"
+  CATCH e$
+      LET dbErr$ = e$;
+  END TRY
+
+  IF LEN(dbErr$) > 0 THEN
+      SendJson(500, "{\"ok\":false,\"error\":\"sql_error\",\"details\":\"" + dbErr$ + "\"}");
+      EXIT
+  END
+
+  SendJson(200, "{\"ok\":true,\"kpis\":" + kpis$ + ",\"timestamp\":\"" + ENV$("DATE_LOCAL") + " " + ENV$("TIME_LOCAL") + "\"}");

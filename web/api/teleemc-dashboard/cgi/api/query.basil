@@ -1,0 +1,91 @@
+#CGI_NO_HEADER
+#include "../lib/teleemc_config.basil"
+#include "../lib/teleemc_cgi.basil"
+#include "../lib/teleemc_auth.basil"
+#include "../lib/teleemc_sql_guard.basil"
+#include "../lib/teleemc_ai_sql.basil"
+
+  // POST /api/query
+  // Maps natural language to SQL and returns results
+
+  // 1) Auth
+  IF RequireAuth%() == 0 THEN
+      EmitAuthError();
+      EXIT
+  END
+
+  // 2) Body
+  LET b$ = ReadRequestBody$();
+  LET prompt$ = "";
+  LET kind$ = "table";
+  IF INSTR(ContentType$(), "application/json") > 0 THEN
+      DIM b AS JSON_DATA(b$)
+      LET prompt$ = b["prompt"];
+      LET kind$ = b["kind"];
+  ELSE
+      LET qs$ = ENV$("QUERY_STRING");
+      IF LEFT$(qs$, 7) == "prompt=" THEN
+          LET prompt$ = MID$(qs$, 8);
+      END
+  END
+
+  IF LEN(prompt$) == 0 THEN
+      prompt$="Count how many patients we have with the last name Smith?";
+      // SendJson(400, "{\"ok\":false,\"error\":\"bad_request\"}");
+      // EXIT
+  END
+
+  // 3) AI Plan
+  LET plan$ = MakeSqlPlanJson$(prompt$);
+  LET err$ = ParseSqlPlanOrError$(plan$);
+  IF LEN(err$) > 0 THEN
+      SendJson(200, err$);
+      EXIT
+  END
+
+  // 4) Extract and Guardrails
+  DIM plan AS JSON_DATA(plan$)
+  LET sql$ = plan["sql"];
+  LET val$ = ValidateSqlOrError$(sql$);
+  IF LEN(val$) > 0 THEN
+      SendJson(200, val$);
+      EXIT
+  END
+
+  LET sql$ = EnforceSoftDeletes$(sql$);
+  LET sql$ = EnforceLimit$(sql$, TeleemcMaxRows%());
+
+  // 5) Execute DB
+  LET rows$ = "[]";
+  LET dbErr$ = "";
+  TRY
+      DIM db@ AS DB_MYSQL(TeleemcDsn$());
+      LET c$ = TeleemcRootCertPath$();
+      IF LEN(c$) > 0 THEN
+          LET db@.RootCertPath$ = c$;
+      END
+      LET db@.CommandTimeoutMs% = 30000;
+      LET params@ = plan["params"]
+      LET rows$ = db@.Query$(sql$, params@);
+  CATCH e$
+      LET dbErr$ = e$;
+  END TRY
+
+  IF LEN(dbErr$) > 0 THEN
+      SendJson(500, "{\"ok\":false,\"error\":\"sql_error\"}");
+      EXIT
+  END
+
+  // 6) Artifact Persistence
+  LET aid$ = "A" + TRIM$(STR$(LEN(prompt$) + LEN(sql$)));
+  MKDIRS%(".basil/teleemc/artifacts/");
+  LET h% = FOPEN(".basil/teleemc/artifacts/" + aid$ + ".json", "w");
+  IF h% >= 0 THEN
+      FWRITELN(h%, "{\"sql\":\"" + sql$ + "\",\"rows\":" + rows$ + "}");
+      FCLOSE(h%);
+  END
+
+  // 7) Response
+  LET escapedSql$ = REPLACE$("\"", "\\\"", sql$);
+  LET res$ = "{\"ok\":true,\"artifact_id\":\"" + aid$ + "\",\"sql\":\"" + escapedSql$ + "\",\"rows\":" + rows$ + "}";
+  SendJson(200, res$);
