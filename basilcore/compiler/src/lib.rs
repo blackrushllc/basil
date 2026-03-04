@@ -125,32 +125,44 @@ pub fn compile(ast: &Program) -> Result<BCProgram> {
 
 struct RoutineInfo { arity: usize, is_sub: bool }
 
-fn expr_contains_sub_call(routines: &HashMap<String, RoutineInfo>, e: &Expr) -> bool {
+fn expr_contains_sub_call(routines: &HashMap<String, RoutineInfo>, e: &Expr) -> Option<String> {
     match e {
         Expr::Call { callee, args } => {
             if let Expr::Var(name) = &**callee {
                 let uname = name.to_ascii_uppercase();
                 if let Some(info) = routines.get(&uname) {
-                    if info.is_sub { return true; }
+                    if info.is_sub { return Some(name.clone()); }
                 }
             }
             for a in args {
-                if expr_contains_sub_call(routines, a) { return true; }
+                if let Some(sub) = expr_contains_sub_call(routines, a) { return Some(sub); }
             }
-            false
+            None
         }
         Expr::UnaryNeg(e1) | Expr::UnaryNot(e1) => expr_contains_sub_call(routines, e1),
-        Expr::Binary { lhs, rhs, .. } => expr_contains_sub_call(routines, lhs) || expr_contains_sub_call(routines, rhs),
+        Expr::Binary { lhs, rhs, .. } => expr_contains_sub_call(routines, lhs).or_else(|| expr_contains_sub_call(routines, rhs)),
         Expr::MemberGet { target, .. } => expr_contains_sub_call(routines, target),
         Expr::MemberCall { target, args, .. } => {
-            if expr_contains_sub_call(routines, target) { return true; }
-            for a in args { if expr_contains_sub_call(routines, a) { return true; } }
-            false
+            if let Some(sub) = expr_contains_sub_call(routines, target) { return Some(sub); }
+            for a in args { if let Some(sub) = expr_contains_sub_call(routines, a) { return Some(sub); } }
+            None
         }
-        Expr::NewObject { args, .. } => args.iter().any(|a| expr_contains_sub_call(routines, a)),
+        Expr::NewObject { args, .. } => {
+            for a in args { if let Some(sub) = expr_contains_sub_call(routines, a) { return Some(sub); } }
+            None
+        }
         Expr::NewClass { filename } => expr_contains_sub_call(routines, filename),
         Expr::Eval(inner) => expr_contains_sub_call(routines, inner),
-        _ => false,
+        Expr::List(items) => {
+            for it in items { if let Some(sub) = expr_contains_sub_call(routines, it) { return Some(sub); } }
+            None
+        }
+        Expr::Dict(entries) => {
+            for (_, v) in entries { if let Some(sub) = expr_contains_sub_call(routines, v) { return Some(sub); } }
+            None
+        }
+        Expr::IndexSquare { target, index } => expr_contains_sub_call(routines, target).or_else(|| expr_contains_sub_call(routines, index)),
+        _ => None,
     }
 }
 
@@ -214,6 +226,10 @@ impl C {
             var_struct_array_globs: HashMap::new(),
             const_globs: HashSet::new(),
         }
+    }
+
+    fn error(&self, msg: String) -> BasilError {
+        basil_common::basil_error(self.cur_line, &msg)
     }
 
     fn gslot(&mut self, name: &str) -> u8 {
@@ -696,8 +712,8 @@ impl C {
                                 }
                                 // Ensure no nested SUB calls inside arguments
                                 for a in args {
-                                    if expr_contains_sub_call(&self.routines, a) {
-                                        return Err(BasilError("SUB call has no value; cannot be used inside arguments".into()));
+                                    if let Some(sub_name) = expr_contains_sub_call(&self.routines, a) {
+                                        return Err(self.error(format!("SUB call '{}' has no value; cannot be used inside arguments", sub_name)));
                                     }
                                 }
                                 // Emit callee and arguments and call
@@ -1393,8 +1409,8 @@ impl C {
                                     return Err(BasilError(format!("procedure '{}' expects {} arguments but {} given", name, info.arity, args.len())));
                                 }
                                 for a in args {
-                                    if expr_contains_sub_call(&self.routines, a) {
-                                        return Err(BasilError("SUB call has no value; cannot be used inside arguments".into()));
+                                    if let Some(sub_name) = expr_contains_sub_call(&self.routines, a) {
+                                        return Err(self.error(format!("SUB call '{}' has no value; cannot be used inside arguments", sub_name)));
                                     }
                                 }
                                 // Emit callee and args
@@ -1657,10 +1673,10 @@ impl C {
     }
 
     fn emit_expr_in(&mut self, chunk: &mut Chunk, e: &Expr, env: Option<&LocalEnv>) -> Result<()> {
-            // Forbid SUB calls in value contexts (allowed only as direct statements)
-            if expr_contains_sub_call(&self.routines, e) {
-                return Err(BasilError("SUB call has no value; cannot be used in an expression. Call it as a statement: NAME(...);".into()));
-            }
+        // Forbid SUB calls in value contexts (allowed only as direct statements)
+        if let Some(sub_name) = expr_contains_sub_call(&self.routines, e) {
+            return Err(self.error(format!("SUB call '{}' has no value; cannot be used in an expression. Call it as a statement: {}(...);", sub_name, sub_name)));
+        }
         match e {
             Expr::Number(n) => {
                 let idx = chunk.add_const(Value::Num(*n));
@@ -1913,6 +1929,7 @@ impl C {
                         "GET$" => Some(11u8),
                         "POST$" => Some(12u8),
                         "REQUEST$" => Some(13u8),
+                        "REQUEST_BODY$" => Some(28u8),
                         "UCASE$" => Some(14u8),
                         "UCASE" => Some(14u8),
                         "LCASE$" => Some(15u8),
@@ -2008,6 +2025,7 @@ impl C {
                         #[cfg(feature = "obj-curl")] "HTTP_POST$" => Some(125u8),
                         #[cfg(feature = "obj-json")] "JSON_PARSE$" => Some(126u8),
                         #[cfg(feature = "obj-json")] "JSON_STRINGIFY$" => Some(127u8),
+                        #[cfg(feature = "obj-json")] "JSON_DECODE@" => Some(136u8),
                         #[cfg(feature = "obj-csv")] "CSV_PARSE$" => Some(128u8),
                         #[cfg(feature = "obj-csv")] "CSV_WRITE$" => Some(129u8),
                         #[cfg(feature = "obj-sqlite")] "SQLITE_OPEN%" => Some(130u8),
@@ -2223,7 +2241,7 @@ impl C {
                                     chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                                 }
                             } else {
-                                return Err(BasilError(format!("Leading '.' member requires a WITH block (at line {})", self.cur_line)));
+                                return Err(self.error("Leading '.' member requires a WITH block".to_string()));
                             }
                         }
                         None => {
@@ -2231,7 +2249,7 @@ impl C {
                                 let g = self.gslot(&nm);
                                 chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                             } else {
-                                return Err(BasilError(format!("Leading '.' member requires a WITH block (at line {})", self.cur_line)));
+                                return Err(self.error("Leading '.' member requires a WITH block".to_string()));
                             }
                         }
                     }
@@ -2672,6 +2690,35 @@ impl C {
                 chunk.push_op(Op::Builtin); chunk.push_u8(254u8); chunk.push_u8(3u8);
             }
             Stmt::ExprStmt(e) => {
+                // Special-case: direct SUB call as a statement at toplevel-in-chunk (e.g., inside IF/WHILE bodies)
+                if let Expr::Call { callee, args } = e {
+                    if let Expr::Var(name) = &**callee {
+                        let uname = name.to_ascii_uppercase();
+                        if let Some(info) = self.routines.get(&uname) {
+                            if info.is_sub {
+                                // Arity check
+                                if info.arity != args.len() {
+                                    return Err(BasilError(format!("procedure '{}' expects {} arguments but {} given", name, info.arity, args.len())));
+                                }
+                                // Ensure no nested SUB calls inside arguments
+                                for a in args {
+                                    if let Some(sub_name) = expr_contains_sub_call(&self.routines, a) {
+                                        return Err(self.error(format!("SUB call '{}' has no value; cannot be used inside arguments", sub_name)));
+                                    }
+                                }
+                                // Emit callee and arguments and call
+                                let g = self.gslot(name);
+                                chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
+                                for a in args { self.emit_expr_in(chunk, a, None)?; }
+                                chunk.push_op(Op::Call); chunk.push_u8(args.len() as u8);
+                                // discard result (SUB has no value)
+                                chunk.push_op(Op::Pop);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                // Generic expression statement (includes FUNC calls): validate no SUB in value context
                 self.emit_expr_in(chunk, e, None)?;
                 chunk.push_op(Op::Pop);
             }

@@ -52,8 +52,10 @@ use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::io::copy;
 use chrono::Local;
-#[cfg(feature = "obj-yore")]
+#[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
 use serde_json as sj;
+#[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
+use serde_json::{Value as JValue};
 
 pub mod debug;
 mod render; // template rendering engine
@@ -70,8 +72,6 @@ use base64::{engine::general_purpose, Engine as _};
 use basil_objects::zip as zip_utils;
 #[cfg(feature = "obj-curl")]
 use basil_objects::curl as curl_utils;
-#[cfg(any(feature = "obj-json", feature = "obj-csv"))]
-use serde_json::{Value as JValue};
 #[cfg(feature = "obj-csv")]
 use csv::{ReaderBuilder, WriterBuilder};
 #[cfg(feature = "obj-sqlite")]
@@ -319,6 +319,7 @@ pub struct VM {
     // Caches for CGI params
     get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
     post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
+    request_body_cache: Option<String>,       // raw body from stdin
     // File I/O
     file_table: HashMap<i64, FileHandleEntry>,
     next_fh: i64,
@@ -487,6 +488,7 @@ impl VM {
             mock: None,
             get_params_cache: None,
             post_params_cache: None,
+            request_body_cache: None,
             file_table: HashMap::new(),
             next_fh: 1,
             close_handles_on_ret: true,
@@ -771,20 +773,33 @@ impl VM {
             self.get_params_cache = Some(v);
         }
     }
+    fn ensure_request_body(&mut self) {
+        if self.request_body_cache.is_some() { return; }
+        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+        if clen == 0 {
+            self.request_body_cache = Some(String::new());
+            return;
+        }
+        let mut body = Vec::with_capacity(clen);
+        let _ = io::stdin().take(clen as u64).read_to_end(&mut body);
+        let s = String::from_utf8_lossy(&body).to_string();
+        self.request_body_cache = Some(s);
+    }
     fn ensure_post_params(&mut self) {
         if self.post_params_cache.is_some() { return; }
-        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-        if clen == 0 { self.post_params_cache = Some(Vec::new()); return; }
+        self.ensure_request_body();
+        let body_s = self.request_body_cache.as_ref().cloned().unwrap_or_default();
+        if body_s.is_empty() {
+            self.post_params_cache = Some(Vec::new());
+            return;
+        }
         let ctype = env::var("CONTENT_TYPE").unwrap_or_default();
         if !ctype.to_ascii_lowercase().starts_with("application/x-www-form-urlencoded") {
             // unsupported type for now
             self.post_params_cache = Some(Vec::new());
             return;
         }
-        let mut body = Vec::with_capacity(clen);
-        let _ = io::stdin().take(clen as u64).read_to_end(&mut body);
-        let s = String::from_utf8_lossy(&body).to_string();
-        let v = self.parse_pairs(&s);
+        let v = self.parse_pairs(&body_s);
         self.post_params_cache = Some(v);
     }
     fn make_string_array(vals: Vec<String>) -> Value {
@@ -984,8 +999,8 @@ impl VM {
         Ok(Value::Dict(Rc::new(RefCell::new(map))))
     }
 
-    #[cfg(feature = "obj-yore")]
-    fn yore_json_to_value(&self, j: &sj::Value) -> Value {
+    #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
+    fn json_to_value(&self, j: &sj::Value) -> Value {
         use std::cell::RefCell;
         match j {
             sj::Value::Null => Value::Null,
@@ -997,12 +1012,12 @@ impl VM {
             }
             sj::Value::String(s) => Value::Str(s.clone()),
             sj::Value::Array(a) => {
-                let list: Vec<Value> = a.iter().map(|v| self.yore_json_to_value(v)).collect();
+                let list: Vec<Value> = a.iter().map(|v| self.json_to_value(v)).collect();
                 Value::List(Rc::new(RefCell::new(list)))
             }
             sj::Value::Object(o) => {
                 let mut m: HashMap<String, Value> = HashMap::new();
-                for (k, v) in o.iter() { m.insert(k.clone(), self.yore_json_to_value(v)); }
+                for (k, v) in o.iter() { m.insert(k.clone(), self.json_to_value(v)); }
                 Value::Dict(Rc::new(RefCell::new(m)))
             }
         }
@@ -1032,9 +1047,9 @@ impl VM {
                 if let Some(v) = j.get("view").and_then(|x| x.as_str()) { page.insert("view$".to_string(), Value::Str(v.to_string())); }
                 if let Some(v) = j.get("theme").and_then(|x| x.as_str()) { page.insert("theme$".to_string(), Value::Str(v.to_string())); }
                 if let Some(v) = j.get("title").and_then(|x| x.as_str()) { page.insert("title$".to_string(), Value::Str(v.to_string())); }
-                if let Some(v) = j.get("views") { page.insert("views@".to_string(), self.yore_json_to_value(v)); }
+                if let Some(v) = j.get("views") { page.insert("views@".to_string(), self.json_to_value(v)); }
                 if let Some(v) = j.get("module_hook").and_then(|x| x.as_str()) { page.insert("module_hook$".to_string(), Value::Str(v.to_string())); }
-                page.insert("raw_json@".to_string(), self.yore_json_to_value(&j));
+                page.insert("raw_json@".to_string(), self.json_to_value(&j));
             }
         } else {
             // indicate 404
@@ -1058,8 +1073,8 @@ impl VM {
         if let Some(v) = reqm.get("post@") { ctx.insert("post@".to_string(), v.clone()); }
         ctx.insert("domain$".to_string(), Value::Str(y.domain.clone()));
         // env.json
-        if let Some(j) = &y.env { ctx.insert("env@".to_string(), self.yore_json_to_value(j)); }
-        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), self.yore_json_to_value(j)); }
+        if let Some(j) = &y.env { ctx.insert("env@".to_string(), self.json_to_value(j)); }
+        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), self.json_to_value(j)); }
         if let Some(db) = &y.db { ctx.insert("db@".to_string(), db.clone()); }
         // page fields
         let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: page@ must be a Dict".into())) };
@@ -1485,75 +1500,110 @@ impl VM {
 
                 Op::ArrGet => {
                     let rank = self.read_u8()? as usize;
-                    let mut idxs: Vec<i64> = Vec::with_capacity(rank);
-                    for _ in 0..rank {
-                        let v = self.pop()?;
-                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
-                        idxs.push(n);
-                    }
+                    let mut idxs: Vec<Value> = Vec::with_capacity(rank);
+                    for _ in 0..rank { idxs.push(self.pop()?); }
                     idxs.reverse();
-                    let arr_v = self.pop()?;
-                    let arr_rc = match arr_v { Value::Array(rc) => rc, _ => return Err(BasilError("array access on non-array or not DIMed".into())) };
-                    let arr = arr_rc.as_ref();
-                    if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
-                    for (dim_len, idx) in arr.dims.iter().zip(&idxs) {
-                        if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                    let target = self.pop()?;
+                    match target {
+                        Value::Array(arr_rc) => {
+                            let arr = arr_rc.as_ref();
+                            if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
+                            let mut nidxs = Vec::with_capacity(rank);
+                            for v in idxs {
+                                let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
+                                nidxs.push(n);
+                            }
+                            for (dim_len, idx) in arr.dims.iter().zip(&nidxs) {
+                                if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                            }
+                            let mut lin: usize = 0;
+                            let mut stride: usize = 1;
+                            for d in 0..arr.dims.len() {
+                                let len = arr.dims[arr.dims.len() - 1 - d];
+                                let idx = nidxs[arr.dims.len() - 1 - d] as usize;
+                                if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
+                            }
+                            let val = arr.data.borrow()[lin].clone();
+                            self.stack.push(val);
+                        }
+                        Value::List(list_rc) => {
+                            if rank != 1 { return Err(BasilError("List index must be 1-D".into())); }
+                            let idx = match idxs[0] { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("List index must be numeric".into())) };
+                            let list = list_rc.borrow();
+                            if idx < 1 || (idx as usize) > list.len() { return Err(BasilError(format!("List index {} out of bounds (1..{})", idx, list.len()))); }
+                            self.stack.push(list[(idx - 1) as usize].clone());
+                        }
+                        Value::Dict(dict_rc) => {
+                            if rank != 1 { return Err(BasilError("Dict index must be 1-D".into())); }
+                            let key = match &idxs[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                            let dict = dict_rc.borrow();
+                            if let Some(v) = dict.get(&key) { self.stack.push(v.clone()); }
+                            else { return Err(BasilError(format!("Dict missing key: \"{}\"", key))); }
+                        }
+                        _ => return Err(BasilError("array access on non-array or not DIMed".into())),
                     }
-                    // compute linear index (row-major)
-                    let mut lin: usize = 0;
-                    let mut stride: usize = 1;
-                    for d in 0..arr.dims.len() {
-                        let len = arr.dims[arr.dims.len() - 1 - d];
-                        let idx = idxs[arr.dims.len() - 1 - d] as usize;
-                        if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
-                    }
-                    let val = arr.data.borrow()[lin].clone();
-                    self.stack.push(val);
                 }
 
                 Op::ArrSet => {
                     let rank = self.read_u8()? as usize;
                     let val = self.pop()?;
-                    let mut idxs: Vec<i64> = Vec::with_capacity(rank);
-                    for _ in 0..rank {
-                        let v = self.pop()?;
-                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
-                        idxs.push(n);
-                    }
+                    let mut idxs: Vec<Value> = Vec::with_capacity(rank);
+                    for _ in 0..rank { idxs.push(self.pop()?); }
                     idxs.reverse();
-                    let arr_v = self.pop()?;
-                    let arr_rc = match arr_v { Value::Array(rc) => rc, _ => return Err(BasilError("array write on non-array or not DIMed".into())) };
-                    let arr = arr_rc.as_ref();
-                    if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
-                    for (dim_len, idx) in arr.dims.iter().zip(&idxs) {
-                        if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
-                    }
-                    let mut lin: usize = 0;
-                    let mut stride: usize = 1;
-                    for d in 0..arr.dims.len() {
-                        let len = arr.dims[arr.dims.len() - 1 - d];
-                        let idx = idxs[arr.dims.len() - 1 - d] as usize;
-                        if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
-                    }
-                    let coerced = match &arr.elem {
-                        ElemType::Num => match val { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into numeric array", other))) },
-                        ElemType::Int => match val { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into integer array", other))) },
-                        ElemType::Str => match val { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
-                        ElemType::Obj(Some(tname)) => match val {
-                            Value::Object(rc) => {
-                                let got = rc.borrow().type_name().to_string();
-                                if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
-                                else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
+                    let target = self.pop()?;
+                    match target {
+                        Value::Array(arr_rc) => {
+                            let arr = arr_rc.as_ref();
+                            if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
+                            let mut nidxs = Vec::with_capacity(rank);
+                            for v in idxs {
+                                let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
+                                nidxs.push(n);
                             }
-                            Value::Null => Value::Null,
-                            other => return Err(BasilError(format!("cannot store non-object {:?} into typed OBJECT[] array", other))),
-                        },
-                        ElemType::Obj(None) => match val {
-                            Value::Object(_) | Value::Null => val,
-                            other => return Err(BasilError(format!("cannot store non-object {:?} into OBJECT[] array", other))),
-                        },
-                    };
-                    arr.data.borrow_mut()[lin] = coerced;
+                            for (dim_len, idx) in arr.dims.iter().zip(&nidxs) {
+                                if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                            }
+                            let mut lin: usize = 0;
+                            let mut stride: usize = 1;
+                            for d in 0..arr.dims.len() {
+                                let len = arr.dims[arr.dims.len() - 1 - d];
+                                let idx = nidxs[arr.dims.len() - 1 - d] as usize;
+                                if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
+                            }
+                            let coerced = match &arr.elem {
+                                ElemType::Num => match val { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into numeric array", other))) },
+                                ElemType::Int => match val { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into integer array", other))) },
+                                ElemType::Str => match val { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
+                                ElemType::Obj(Some(tname)) => match val {
+                                    Value::Object(rc) => {
+                                        let got = rc.borrow().type_name().to_string();
+                                        if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
+                                        else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
+                                    }
+                                    Value::Null => Value::Null,
+                                    other => return Err(BasilError(format!("cannot store non-object {:?} into typed OBJECT[] array", other))),
+                                },
+                                ElemType::Obj(None) => match val {
+                                    Value::Object(_) | Value::Null => val,
+                                    other => return Err(BasilError(format!("cannot store non-object {:?} into OBJECT[] array", other))),
+                                },
+                            };
+                            arr.data.borrow_mut()[lin] = coerced;
+                        }
+                        Value::List(list_rc) => {
+                            if rank != 1 { return Err(BasilError("List index must be 1-D".into())); }
+                            let idx = match idxs[0] { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("List index must be numeric".into())) };
+                            let mut list = list_rc.borrow_mut();
+                            if idx < 1 || (idx as usize) > list.len() { return Err(BasilError(format!("List index {} out of bounds (1..{})", idx, list.len()))); }
+                            list[(idx - 1) as usize] = val;
+                        }
+                        Value::Dict(dict_rc) => {
+                            if rank != 1 { return Err(BasilError("Dict index must be 1-D".into())); }
+                            let key = match &idxs[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                            dict_rc.borrow_mut().insert(key, val);
+                        }
+                        _ => return Err(BasilError("array write on non-array or not DIMed".into())),
+                    }
                 }
 
                 // enumeration over arrays
@@ -1635,8 +1685,23 @@ impl VM {
                     let mut args = Vec::with_capacity(argc);
                     for _ in 0..argc { args.push(self.pop()?); }
                     args.reverse();
-                    let obj = self.registry.make(&type_name, &args)?;
-                    self.stack.push(Value::Object(obj));
+                    if type_name.eq_ignore_ascii_case("JSON_DATA") {
+                        #[cfg(feature = "obj-json")]
+                        {
+                            if args.is_empty() { return Err(BasilError("JSON_DATA expects a JSON string".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                            let v: sj::Value = sj::from_str(&s).map_err(|e| BasilError(format!("JSON_DATA parse error: {}", e)))?;
+                            let val = self.json_to_value(&v);
+                            self.stack.push(val);
+                        }
+                        #[cfg(not(feature = "obj-json"))]
+                        {
+                            return Err(BasilError("JSON_DATA requires --features obj-json".into()));
+                        }
+                    } else {
+                        let obj = self.registry.make(&type_name, &args)?;
+                        self.stack.push(Value::Object(obj));
+                    }
                 }
                 Op::GetProp => {
                     let prop_cidx = self.read_u16()? as usize;
@@ -2626,6 +2691,12 @@ impl VM {
                             else if let Ok(f) = s.parse::<f64>() { self.stack.push(Value::Num(f)); }
                             else { self.stack.push(Value::Num(0.0)); }
                         }
+                        28 => { // REQUEST_BODY$()
+                            if argc != 0 { return Err(BasilError("REQUEST_BODY$ expects 0 arguments".into())); }
+                            self.ensure_request_body();
+                            let s = self.request_body_cache.clone().unwrap_or_default();
+                            self.stack.push(Value::Str(s));
+                        }
                         // --- Math intrinsics ---
                         70 => { // ABS(x)
                             if argc != 1 { return Err(BasilError("ABS expects 1 argument".into())); }
@@ -3075,6 +3146,14 @@ impl VM {
                             let entries = zip_utils::zip_list_array(&zip_path)?;
                             let arr = VM::make_string_array(entries);
                             self.stack.push(arr);
+                        }
+                        #[cfg(feature = "obj-json")]
+                        136 => { // JSON_DECODE@(json$)
+                            if argc != 1 { return Err(BasilError("JSON_DECODE@ expects 1 argument".into())); }
+                            let s = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
+                            let v: sj::Value = serde_json::from_str(&s).map_err(|e| BasilError(format!("JSON_DECODE@ error: {}", e)))?;
+                            let val = self.json_to_value(&v);
+                            self.stack.push(val);
                         }
                         #[cfg(feature = "obj-curl")]
                         124 => { // HTTP_GET$(url$)

@@ -1,0 +1,43 @@
+PRINTLN "JSON Decoding Demo"
+
+LET json$ = "{\"name\": \"Ada\", \"age\": 36, \"skills\": [\"Math\", \"Engines\"], \"address\": {\"city\": \"London\", \"zip\": \"SW1\"}}"
+
+REM 1. Using JSON_DECODE@ function
+PRINTLN "--- Method 1: JSON_DECODE@ ---"
+LET p@ = JSON_DECODE@(json$)
+PRINTLN "Name: ", p@["name"]
+PRINTLN "Age:  ", p@["age"]
+PRINTLN "City: ", p@["address"]["city"]
+PRINTLN "Skill 1: ", p@["skills"][1]
+PRINTLN "Skill 2: ", p@["skills"][2]
+
+REM 2. Using DIM ... AS JSON_DATA
+PRINTLN ""
+PRINTLN "--- Method 2: DIM ... AS JSON_DATA ---"
+DIM p AS JSON_DATA(json$)
+PRINTLN "Name: ", p["name"]
+PRINTLN "Age:  ", p["age"]
+PRINTLN "City: ", p["address"]["city"]
+PRINTLN "Skill 1: ", p["skills"][1]
+
+REM 3. Modifying data
+PRINTLN ""
+PRINTLN "--- Method 3: Modifying ---"
+p["age"] = p["age"] + 1
+PRINTLN "New Age: ", p["age"]
+
+p["address"]["city"] = "Manchester"
+PRINTLN "New City: ", p["address"]["city"]
+
+REM 4. For Each over list and dict
+PRINTLN ""
+PRINTLN "--- Method 4: FOR EACH ---"
+PRINTLN "Skills:"
+FOR EACH s$ IN p["skills"] {
+    PRINTLN " - ", s$
+} NEXT
+
+PRINTLN "Address keys:"
+FOR EACH k$ IN p["address"] {
+    PRINTLN " - ", k$, " = ", p["address"][k$]
+} NEXT

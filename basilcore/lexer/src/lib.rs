@@ -140,6 +140,10 @@ impl<'a> Lexer<'a> {
         Ok(out)
     }
 
+    fn error(&self, msg: &str) -> BasilError {
+        basil_common::basil_error(self.tok_line as u32, msg)
+    }
+
     fn next_token(&mut self) -> Result<Token> {
         // If we have injected tokens (e.g., from string interpolation), serve them first
         if let Some(tok) = self.pending.pop_front() {
@@ -205,7 +209,7 @@ impl<'a> Lexer<'a> {
             '!' => {
                 self.advance();
                 if self.match_char('=') { self.make(TokenKind::BangEq) }
-                else { return Err(BasilError("unexpected '!'".into())); }
+                else { return Err(self.error("unexpected '!'")); }
             }
             '<' => {
                 self.advance();
@@ -223,7 +227,7 @@ impl<'a> Lexer<'a> {
             '"' => self.string('"')?,
             c if c.is_ascii_digit() => self.number()?,
             c if is_ident_start(c)  => self.ident_or_kw()?,
-            _ => return Err(BasilError(format!("unexpected char '{}': pos {}", ch, self.pos))),
+            _ => return Err(self.error(&format!("unexpected char '{}': pos {}", ch, self.pos))),
         };
 
         self.post_emit_adjust(&tok);
@@ -356,10 +360,7 @@ impl<'a> Lexer<'a> {
         let content_end = loop {
             let ch = match self.cur {
                 Some(c) => c,
-                None => return Err(BasilError(format!(
-                    "parse error at line {}: unterminated string",
-                    tok_line
-                ))),
+                None => return Err(self.error("unterminated string")),
             };
 
             if ch == delim {
@@ -545,19 +546,13 @@ impl<'a> Lexer<'a> {
                     let expr_end = match expr_end_opt {
                         Some(p) => p,
                         None => {
-                            return Err(BasilError(format!(
-                                "Unterminated interpolation: missing '}}' after '#{{' at line {}.",
-                                tok_line
-                            )));
+                            return Err(self.error("Unterminated interpolation: missing '}' after '#{'"));
                         }
                     };
 
                     let expr_src = &raw[after_hash + '{'.len_utf8()..expr_end];
                     if expr_src.trim().is_empty() {
-                        return Err(BasilError(format!(
-                            "Empty interpolation not allowed: expected expression after '#{{' at line {}.",
-                            tok_line
-                        )));
+                        return Err(self.error("Empty interpolation not allowed: expected expression after '#{'"));
                     }
                     // Tokenize inner expression and wrap in parentheses
                     let mut sub = Lexer::new(expr_src);
@@ -630,7 +625,7 @@ impl<'a> Lexer<'a> {
         }
 
         let lex = &self.src[start..end];
-        let n: f64 = lex.parse().map_err(|e| BasilError(format!("invalid number '{}': {}", lex, e)))?;
+        let n: f64 = lex.parse().map_err(|e| self.error(&format!("invalid number '{}': {}", lex, e)))?;
         let mut tok = self.make_with_span(TokenKind::Number, start, end);
         tok.literal = Some(Literal::Num(n));
         Ok(tok)

@@ -1,0 +1,11 @@
+SUB MySub(x)
+  PRINT x
+END SUB
+
+SUB Test()
+  IF 1 THEN
+    MySub(42)
+  END IF
+END SUB
+
+Test()

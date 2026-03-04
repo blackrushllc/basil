@@ -206,10 +206,24 @@ fn cmd_debug(path: Option<String>) {
         Ok(p) => p,
         Err(e) => { eprintln!("preprocess error: {}", e); std::process::exit(1); }
     };
-    let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-    let mut program = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
-    // Phase B: embed source map
     let debug_smap = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+    let ast = match parse(&preprocessed.text) {
+        Ok(a) => a,
+        Err(e) => {
+            let msg = debug_smap.format_error(e.0);
+            eprintln!("parse error: {}", msg);
+            std::process::exit(1);
+        }
+    };
+    let mut program = match compile(&ast) {
+        Ok(p) => p,
+        Err(e) => {
+            let msg = debug_smap.format_error(e.0);
+            eprintln!("compile error: {}", msg);
+            std::process::exit(1);
+        }
+    };
+    // Phase B: embed source map
     program.source_map = Some(debug_smap.clone());
     let dbg = Debugger::new();
     let rx = dbg.subscribe();
@@ -282,6 +296,7 @@ fn print_help() {
     println!("Basil CLI (80's version)\n");
     println!("Commands (aliases in parentheses):");
     println!("  run  (sprout)      Parse → compile → run a .basil file");
+    println!("  brun               Force rebuild and run a .basil file");
     println!("  test (cultivate)   Run program in test mode with auto-mocked input");
     println!("  lex  (chop)        Dump tokens from a .basil file (debug)");
     println!("  make               Write embedded includes to the current directory (see --list)\n");
@@ -301,6 +316,7 @@ fn print_help() {
     println!("  basilc <command> [args]\n");
     println!("Examples:");
     println!("  basilc run examples/hello.basil");
+    println!("  basilc brun examples/hello.basil");
     println!("  basilc lex examples/hello.basil");
     println!("  basilc make --list");
     println!("  basilc make examples");
@@ -400,7 +416,7 @@ fn cmd_make(args: Vec<String>) {
                 // Optionally run when it's a single file
                 let skip = env::var("BASILC_MAKE_SKIP_RUN").ok().unwrap_or_default();
                 if skip != "1" {
-                    cmd_run(Some(out.display().to_string()));
+                    cmd_run(Some(out.display().to_string()), false);
                 }
             }
             Err(e) => { eprintln!("write: {}", e); std::process::exit(1); }
@@ -421,12 +437,12 @@ fn cmd_make(args: Vec<String>) {
     std::process::exit(2);
 }
 
-fn cmd_run(path: Option<String>) {
+fn cmd_run(path: Option<String>, force_rebuild: bool) {
     // Require a path
     let input_path = match path {
         Some(p) => p,
         None => {
-            eprintln!("usage: basilc run <file.basil>");
+            eprintln!("usage: basilc {} <file.basil>", if force_rebuild { "brun" } else { "run" });
             std::process::exit(2);
         }
     };
@@ -514,16 +530,18 @@ fn cmd_run(path: Option<String>) {
 
     // Try cache load
     let mut program_opt: Option<basil_bytecode::Program> = None;
-    if let Ok(bytes) = fs::read(&cache_path) {
-        if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
-            let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
-            let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
-            let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
-            let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
-            let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
-                let prog_bytes = &bytes[32..];
-                match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
+    if !force_rebuild {
+        if let Ok(bytes) = fs::read(&cache_path) {
+            if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
+                let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
+                let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
+                let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
+                let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+                let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+                if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+                    let prog_bytes = &bytes[32..];
+                    match deserialize_program(prog_bytes) { Ok(p)=>program_opt=Some(p), Err(_)=>{ /* fall through to recompile */ } }
+                }
             }
         }
     }
@@ -534,11 +552,25 @@ fn cmd_run(path: Option<String>) {
         let sm = p.source_map.clone();
         (p, sm)
     } else {
-        // Parse → compile the precompiled Basil source
-        let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1);} };
         // Phase B: attach source map
         let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        // Parse → compile the precompiled Basil source
+        let ast = match parse(&preprocessed.text) {
+            Ok(a) => a,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("parse error: {}", msg);
+                std::process::exit(1);
+            }
+        };
+        let mut prog = match compile(&ast) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("compile error: {}", msg);
+                std::process::exit(1);
+            }
+        };
         prog.source_map = Some(map.clone());
         // Write cache atomically
         let body = serialize_program(&prog);
@@ -632,8 +664,8 @@ fn cli_main() {
                 std::process::exit(1);
             }
         }
-        "run" => {
-            cmd_run(args.get(0).cloned());
+        "run" | "brun" => {
+            cmd_run(args.get(0).cloned(), cmd == "brun");
         }
         "make" => {
             cmd_make(args);
@@ -1046,10 +1078,24 @@ fn cmd_test(mut args: Vec<String>) {
         };
         let pp_opts = build_pre_opts(PathBuf::from(&path), env_paths);
         let preprocessed = match pre::preprocess(&pre.basil_source, &pp_opts) { Ok(p)=>p, Err(e)=>{ eprintln!("preprocess error: {}", e); std::process::exit(1);} };
-        let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ eprintln!("parse error: {}", e); std::process::exit(1);} };
-        let mut prog = match compile(&ast) { Ok(p)=>p, Err(e)=>{ eprintln!("compile error: {}", e); std::process::exit(1)} };
         // Phase B: attach source map
         let map = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+        let ast = match parse(&preprocessed.text) {
+            Ok(a) => a,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("parse error: {}", msg);
+                std::process::exit(1);
+            }
+        };
+        let mut prog = match compile(&ast) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = map.format_error(e.0);
+                eprintln!("compile error: {}", msg);
+                std::process::exit(1);
+            }
+        };
         prog.source_map = Some(map.clone());
         let body = serialize_program(&prog);
         let mut hdr = Vec::with_capacity(32 + body.len());

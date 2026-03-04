@@ -89,6 +89,8 @@ How to run (Windows PowerShell)
 Keywords
 - JSON_PARSE$(text$) -> string (canonical JSON)
 - JSON_STRINGIFY$(value) -> string (JSON)
+- JSON_DECODE@(text$) -> dynamic object (List or Dict)
+- DIM var AS JSON_DATA(text$) -> initializes var as dynamic object from JSON
 
 Description
 - JSON_PARSE$ parses text into JSON and re-serializes it in canonical/minified form. Errors if input is not valid JSON.
@@ -96,6 +98,7 @@ Description
   - A JSON string: it parses and normalizes it.
   - Any other string: it wraps it as a JSON string (adds quotes and escapes).
   - Arrays and other values: they are converted to JSON where possible.
+- JSON_DECODE@ and JSON_DATA parse a JSON string into Basil dynamic types (Dict or List). You can access elements using square brackets: `p@["key"]` or `list@[1]`. List indexing is 1-based.
 
 Example
 ```
@@ -104,18 +107,14 @@ LET raw$ = "{\"name\":\"Erik\",\"age\":60,\"likes\":[\"Biking\",\"Hiking\"]}"
 LET canon$ = JSON_PARSE$(raw$)
 PRINTLN "Normalized: ", canon$
 
-LET wrapped$ = JSON_STRINGIFY$("Hello, World!")
-PRINTLN "Wrapped: ", wrapped$
+' Decode to dynamic object
+LET p@ = JSON_DECODE@(raw$)
+PRINTLN "Name: ", p@["name"]
+PRINTLN "First like: ", p@["likes"][1]
 
-LET already$ = JSON_STRINGIFY$(raw$)
-PRINTLN "Already JSON -> normalized: ", already$
-
-DIM A$(3)
-LET A$(0) = "a"
-LET A$(1) = "b"
-LET A$(2) = "c"
-LET json$ = JSON_STRINGIFY$(A$)
-PRINTLN "Array: ", json$
+' Inline declaration (no suffix required on variable name)
+DIM data AS JSON_DATA(raw$)
+PRINTLN "Age: ", data["age"]
 ```
 
 How to run (Windows PowerShell)
