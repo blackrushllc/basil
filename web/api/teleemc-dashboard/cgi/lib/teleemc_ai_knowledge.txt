@@ -1,5 +1,0 @@
-In the 'patients' table, use 'dosa' as the primary 'Date of Service' field.
-Do not relate the patients table to the users table.  The 'users' table is for administrators and chiropractors.
-The 'chiros' table contains all providers, while 'chiropractors' only contains active ones. 
-If asked about 'no-shows', filter patients where 'ns' = 1'.
-
