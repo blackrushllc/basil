@@ -24,7 +24,7 @@ obj-audio = ["hound", "cpal"]
 obj-midi  = ["midir"]
 obj-daw   = ["obj-audio", "obj-midi"]
 # New AI feature object (Phase 1 minimal)
-obj-ai = ["serde_json", "sha1", "sha2", "dirs", "once_cell", "ureq"]
+obj-ai = ["serde", "serde_json", "chrono", "sha1", "sha2", "dirs", "once_cell", "ureq"]
 # New terminal feature object (Crossterm)
 obj-term = ["crossterm"]
 # AWS feature objects (Phase 1)
@@ -71,7 +71,9 @@ base64 = { version = "0.22", optional = true }
 zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
 walkdir = { version = "2", optional = true }
 ureq = { version = "2.9", optional = true, default-features = false, features = ["json", "tls"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+chrono = { version = "0.4", optional = true }
 csv = { version = "1.3", optional = true }
 rusqlite = { version = "0.31", features = ["bundled"], optional = true }
 hound = { version = "3", optional = true }
