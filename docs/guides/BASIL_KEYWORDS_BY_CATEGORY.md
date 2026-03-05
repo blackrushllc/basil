@@ -203,10 +203,60 @@ PRINT "\n---\n"; PRINT full$;
 ```
 
 
-## Exceptions
+## Core Constants
+
+### NULL
+The `NULL` value represents an empty or uninitialized value. It is returned by dictionary lookups when a key is missing, and can be used in comparisons.
+```basil
+LET X = NULL
+IF X == NULL THEN PRINTLN "X is null"
+```
+
+## JSON & Dictionaries (obj-json)
+
+All of the following are part of the obj-json feature module.
+
+### JSON.PARSE
+Parses a JSON string into a Basil value (usually a Dictionary or List).
+```basil
+LET DATA = JSON.PARSE("{ ""name"": ""Basil"" }")
+```
+
+### JSON.STRINGIFY
+Converts a Basil value into its JSON string representation.
+```basil
+LET S$ = JSON.STRINGIFY(DATA)
+```
+
+### CGI.JSON_DATA
+Returns a Dictionary containing all CGI request parameters (GET and POST).
+```basil
+LET PARAMS = CGI.JSON_DATA()
+PRINTLN PARAMS["user"]
+```
+
+### HAS / CONTAINS (Dictionary Method)
+Checks if a key exists in a dictionary. Returns 1 (True) or 0 (False).
+```basil
+IF DICT.HAS("id") THEN PRINTLN "ID present"
+```
+
+### GET / GET$ (Dictionary Method)
+Safely retrieves a value for a key. If the key is missing, returns the provided default value (or NULL if no default is provided).
+```basil
+LET VAL = DICT.GET("theme", "light")
+```
+
+### KEYS / KEYS$ (Dictionary Method)
+Returns a List of all keys present in the dictionary.
+```basil
+LET ALL_KEYS = DICT.KEYS()
+```
 
 ### TRY / CATCH / FINALLY
-Structured exception handling. TRY begins a protected region, CATCH handles an exception (optionally binding a string variable like err$), and FINALLY always runs on exit from the TRY.
+Structured exception handling. TRY begins a protected region, CATCH handles an exception (optionally binding a string variable like err$), and FINALLY always runs on exit from the TRY. 
+
+In Basil, TRY...CATCH intercepts both user-thrown exceptions (via RAISE) and runtime errors (e.g., division by zero, missing methods).
 ```basil
 TRY
   IF x% = 0 THEN RAISE "Divide by zero"

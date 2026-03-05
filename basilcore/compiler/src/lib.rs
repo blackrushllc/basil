@@ -1678,6 +1678,10 @@ impl C {
             return Err(self.error(format!("SUB call '{}' has no value; cannot be used in an expression. Call it as a statement: {}(...);", sub_name, sub_name)));
         }
         match e {
+            Expr::Null => {
+                let idx = chunk.add_const(Value::Null);
+                chunk.push_op(Op::Const); chunk.push_u16(idx);
+            }
             Expr::Number(n) => {
                 let idx = chunk.add_const(Value::Num(*n));
                 chunk.push_op(Op::Const); chunk.push_u16(idx);

@@ -1524,6 +1524,7 @@ impl Parser {
             }
             Some(TokenKind::True) => { let _ = self.next().unwrap(); Ok(Expr::Bool(true)) }
             Some(TokenKind::False) => { let _ = self.next().unwrap(); Ok(Expr::Bool(false)) }
+            Some(TokenKind::Null) => { let _ = self.next().unwrap(); Ok(Expr::Null) }
             Some(TokenKind::Author) => {
                 // Consume AUTHOR token
                 let _ = self.next().unwrap();

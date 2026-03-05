@@ -351,8 +351,8 @@ impl<'a> Lexer<'a> {
                 triple = true;
                 // consume the remaining two quotes
                 self.advance();
-                self.advance();
                 content_start = self.pos;
+                self.advance();
             }
         }
 
