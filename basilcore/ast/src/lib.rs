@@ -42,6 +42,7 @@ SOFTWARE.
 
 #[derive(Debug, Clone)]
 pub enum Expr {
+    Null,
     Number(f64),
     Str(String),
     Bool(bool),

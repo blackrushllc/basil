@@ -1,22 +1,77 @@
-PRINTLN "JSON demo"
+REM Basil JSON and Dictionary Features Demo
+REM This program demonstrates new features added to Basil for better JSON support.
 
-LET raw$ = "{\"name\":\"Erik\",\"age\":60,\"appears\":40,\"dates\":30,\"feels\":20,\"acts\":10,\"likes\":[\"Biking\",\"Hiking\",\"Skiing\"]}"
-LET canon$ = JSON_PARSE$(raw$)
-PRINTLN "Normalized: ", canon$
+PRINTLN "--- Basil JSON and Dictionary Demo ---"
 
-LET wrapped$ = JSON_STRINGIFY$("Hello, World!")
-PRINTLN "Wrapped: ", wrapped$
+REM 1. NULL Support
+PRINTLN "1. NULL Support:"
+LET X = NULL
+IF X == NULL THEN
+    PRINTLN "  X is NULL"
+END IF
+PRINTLN "  Value of X: "; X
+PRINTLN ""
 
-LET already$ = JSON_STRINGIFY$(raw$)
-PRINTLN "Already JSON -> normalized: ", already$
+REM 2. JSON Parsing and Stringifying
+PRINTLN "2. JSON Parsing and Dictionary Literals:"
+REM Dictionary literal
+LET DATA = { "name": "Basil", "version": 1.1, "features": ["JSON", "CGI", "Dictionaries"] }
 
-DIM A$(100);
+PRINTLN "  Name from literal: "; DATA["name"]
 
-FOR i = 0 TO 100
-    LET A$(i) = "Hello, World!"
-NEXT
+REM Stringify it
+LET JSON_STR$ = JSON.STRINGIFY(DATA)
+PRINTLN "  Stringified: "; JSON_STR$
 
-LET json$ = JSON_STRINGIFY$(A$)
-PRINTLN "Array: ", json$
+REM Parse it back
+LET PARSED = JSON.PARSE(JSON_STR$)
+PRINTLN "  Parsed Name: "; PARSED["name"]
+PRINTLN ""
+
+REM 3. Safe Dictionary Indexing and Methods
+PRINTLN "3. Dictionary Methods and Safe Indexing:"
+REM Dictionaries are returned by JSON.PARSE or CGI.JSON_DATA
+LET DICT = DATA
+
+PRINTLN "  Safe indexing (missing key): "; DICT["non_existent"]
+IF DICT["non_existent"] == NULL THEN
+    PRINTLN "  Confirmed: Missing key returns NULL"
+END IF
+
+PRINTLN "  HAS method ('name'): "; DICT.HAS("name")
+PRINTLN "  HAS method ('missing'): "; DICT.HAS("missing")
+
+PRINTLN "  GET method with default: "; DICT.GET("version", 0)
+PRINTLN "  GET method missing key with default: "; DICT.GET("author", "Unknown")
+
+PRINTLN "  KEYS method: "; DICT.KEYS()
+PRINTLN ""
+
+REM 4. CGI Object (Mocking for demonstration)
+PRINTLN "4. CGI Object (Mocked):"
+SETENV QUERY_STRING = "user=dev&action=test"
+LET PARAMS = CGI.JSON_DATA()
+PRINTLN "  CGI User: "; PARAMS["user"]
+PRINTLN "  CGI Action: "; PARAMS["action"]
+PRINTLN ""
+
+REM 5. Robust TRY...CATCH
+PRINTLN "5. Robust TRY...CATCH (Error Handling):"
+TRY
+    PRINTLN "  Attempting division by zero..."
+    LET Z = 10 / 0
+CATCH ERR$
+    PRINTLN "  Caught Runtime Error: "; ERR$
+END TRY
+
+TRY
+    PRINTLN "  Attempting to call a missing method on a dictionary..."
+    DICT.INVALID_METHOD()
+CATCH ERR$
+    PRINTLN "  Caught Runtime Error: "; ERR$
+END TRY
+
+PRINTLN ""
+PRINTLN "Demo Finished."
 
 

@@ -1,0 +1,27 @@
+SUB Test()
+  PRINT "Start Test"
+  GOSUB SubLabel
+  PRINT "Returned from GOSUB"
+  RETURN
+SubLabel:
+  PRINT "In GOSUB"
+  TRY
+    PRINT "In TRY"
+    RETURN
+  CATCH e$
+    PRINT "Should not see this catch"
+  END TRY
+  PRINT "Should not see this 2"
+  RETURN
+END SUB
+
+Test()
+PRINT "After Test"
+
+GOSUB TopLabel
+PRINT "After GOSUB TopLabel"
+EXIT
+
+TopLabel:
+  PRINT "In TopLabel"
+  RETURN

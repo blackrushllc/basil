@@ -269,6 +269,8 @@ struct Frame {
     chunk: Rc<Chunk>,
     ip: usize,
     base: usize,
+    gosub_base: usize,
+    handler_base: usize,
 }
 
 struct ArrEnum {
@@ -285,7 +287,7 @@ struct FileHandleEntry {
     owner_depth: usize,
 }
 
-struct HandlerEntry { handler_ip: usize }
+struct HandlerEntry { handler_ip: usize, stack_depth: usize }
 
 // --- Struct type descriptors for pack/unpack ---
 #[derive(Clone)]
@@ -424,7 +426,7 @@ impl basil_bytecode::BasicObject for ClassInstance {
         // Prepare stack: place arguments starting at base 0
         for a in args { vm.stack.push(a.clone()); }
         // Push frame directly
-        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0 };
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0, gosub_base: 0, handler_base: 0 };
         vm.frames.push(frame);
         vm.run()?;
         // Capture back persistent file handles into this instance
@@ -461,11 +463,87 @@ impl basil_bytecode::BasicObject for ClassInstance {
     }
 }
 
+// --- Native JSON helper object ---
+#[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
+struct JsonObject;
+#[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
+impl basil_bytecode::BasicObject for JsonObject {
+    fn type_name(&self) -> &str { "JSON" }
+    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("JSON has no properties".into())) }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("JSON properties are read-only".into())) }
+    fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
+        match method.to_ascii_uppercase().as_str() {
+            "PARSE" => {
+                if args.is_empty() { return Err(BasilError("JSON.PARSE expects 1 argument".into())); }
+                let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("JSON.PARSE expects string".into())) };
+                let v: sj::Value = sj::from_str(s).map_err(|e| BasilError(format!("JSON.PARSE error: {}", e)))?;
+                Ok(VM::json_to_value_static(&v))
+            }
+            "STRINGIFY" | "STRINGIFY$" => {
+                if args.is_empty() { return Err(BasilError("JSON.STRINGIFY expects 1 argument".into())); }
+                let v = value_to_jvalue(&args[0])?;
+                let out = sj::to_string(&v).map_err(|e| BasilError(format!("JSON.STRINGIFY error: {}", e)))?;
+                Ok(Value::Str(out))
+            }
+            _ => Err(BasilError(format!("JSON has no method '{}'", method))),
+        }
+    }
+    fn descriptor(&self) -> ObjectDescriptor {
+        ObjectDescriptor { type_name: "JSON".into(), version: "1.0".into(), summary: "JSON parser/stringifier".into(), properties: vec![], methods: vec![
+            MethodDesc { name: "PARSE".into(), arity: 1, arg_names: vec!["json$".into()], return_type: "ANY".into() },
+            MethodDesc { name: "STRINGIFY".into(), arity: 1, arg_names: vec!["value".into()], return_type: "STRING".into() },
+        ], examples: vec![] }
+    }
+}
+
+// --- Native CGI helper object ---
+struct CgiObject {}
+impl basil_bytecode::BasicObject for CgiObject {
+    fn type_name(&self) -> &str { "CGI" }
+    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("CGI has no properties".into())) }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("CGI properties are read-only".into())) }
+    fn call(&mut self, method: &str, _args: &[Value]) -> Result<Value> {
+        match method.to_ascii_uppercase().as_str() {
+            "JSON_DATA" | "JSON_DATA$" => {
+                // Return a dictionary of all GET/POST parameters.
+                // We'll use a simplistic environment variable scraper here to avoid
+                // needing full VM state, but it will match VM's REQUEST$() logic.
+                let mut map: HashMap<String, Value> = HashMap::new();
+                if let Ok(qs) = std::env::var("QUERY_STRING") {
+                    for pair in qs.split('&') {
+                        if pair.is_empty() { continue; }
+                        let mut it = pair.split('=');
+                        let k = it.next().unwrap_or("").to_string();
+                        let v = it.next().unwrap_or("").to_string();
+                        // (basic urldecoding would go here)
+                        map.insert(k, Value::Str(v));
+                    }
+                }
+                Ok(Value::Dict(Rc::new(std::cell::RefCell::new(map))))
+            }
+            _ => Err(BasilError(format!("CGI has no method '{}'", method))),
+        }
+    }
+    fn descriptor(&self) -> ObjectDescriptor {
+        ObjectDescriptor { type_name: "CGI".into(), version: "1.0".into(), summary: "CGI request helper".into(), properties: vec![], methods: vec![
+            MethodDesc { name: "JSON_DATA".into(), arity: 0, arg_names: vec![], return_type: "DICT".into() },
+        ], examples: vec![] }
+    }
+}
+
 impl VM {
     pub fn new(p: BCProgram) -> Self {
-        let globals = vec![Value::Null; p.globals.len()];
+        let mut globals = vec![Value::Null; p.globals.len()];
+        for (i, name) in p.globals.iter().enumerate() {
+            match name.to_ascii_uppercase().as_str() {
+                #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
+                "JSON" => { globals[i] = Value::Object(Rc::new(std::cell::RefCell::new(JsonObject))); }
+                "CGI" => { globals[i] = Value::Object(Rc::new(std::cell::RefCell::new(CgiObject {}))); }
+                _ => {}
+            }
+        }
         let top_chunk = Rc::new(p.chunk);
-        let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
+        let frame = Frame { chunk: top_chunk, ip: 0, base: 0, gosub_base: 0, handler_base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
         #[allow(unused_mut)]
@@ -1000,7 +1078,7 @@ impl VM {
     }
 
     #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
-    fn json_to_value(&self, j: &sj::Value) -> Value {
+    fn json_to_value_static(j: &sj::Value) -> Value {
         use std::cell::RefCell;
         match j {
             sj::Value::Null => Value::Null,
@@ -1012,12 +1090,12 @@ impl VM {
             }
             sj::Value::String(s) => Value::Str(s.clone()),
             sj::Value::Array(a) => {
-                let list: Vec<Value> = a.iter().map(|v| self.json_to_value(v)).collect();
+                let list: Vec<Value> = a.iter().map(|v| Self::json_to_value_static(v)).collect();
                 Value::List(Rc::new(RefCell::new(list)))
             }
             sj::Value::Object(o) => {
                 let mut m: HashMap<String, Value> = HashMap::new();
-                for (k, v) in o.iter() { m.insert(k.clone(), self.json_to_value(v)); }
+                for (k, v) in o.iter() { m.insert(k.clone(), Self::json_to_value_static(v)); }
                 Value::Dict(Rc::new(RefCell::new(m)))
             }
         }
@@ -1047,9 +1125,9 @@ impl VM {
                 if let Some(v) = j.get("view").and_then(|x| x.as_str()) { page.insert("view$".to_string(), Value::Str(v.to_string())); }
                 if let Some(v) = j.get("theme").and_then(|x| x.as_str()) { page.insert("theme$".to_string(), Value::Str(v.to_string())); }
                 if let Some(v) = j.get("title").and_then(|x| x.as_str()) { page.insert("title$".to_string(), Value::Str(v.to_string())); }
-                if let Some(v) = j.get("views") { page.insert("views@".to_string(), self.json_to_value(v)); }
+                if let Some(v) = j.get("views") { page.insert("views@".to_string(), Self::json_to_value_static(v)); }
                 if let Some(v) = j.get("module_hook").and_then(|x| x.as_str()) { page.insert("module_hook$".to_string(), Value::Str(v.to_string())); }
-                page.insert("raw_json@".to_string(), self.json_to_value(&j));
+                page.insert("raw_json@".to_string(), Self::json_to_value_static(&j));
             }
         } else {
             // indicate 404
@@ -1073,8 +1151,8 @@ impl VM {
         if let Some(v) = reqm.get("post@") { ctx.insert("post@".to_string(), v.clone()); }
         ctx.insert("domain$".to_string(), Value::Str(y.domain.clone()));
         // env.json
-        if let Some(j) = &y.env { ctx.insert("env@".to_string(), self.json_to_value(j)); }
-        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), self.json_to_value(j)); }
+        if let Some(j) = &y.env { ctx.insert("env@".to_string(), Self::json_to_value_static(j)); }
+        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), Self::json_to_value_static(j)); }
         if let Some(db) = &y.db { ctx.insert("db@".to_string(), db.clone()); }
         // page fields
         let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: page@ must be a Dict".into())) };
@@ -1193,7 +1271,7 @@ impl VM {
             self.stack.push(arg.clone());
         }
 
-        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base };
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base, gosub_base: self.gosub_stack.len(), handler_base: self._handlers.len() };
         self.frames.push(frame);
 
         let initial_depth = self.frames.len();
@@ -1202,11 +1280,55 @@ impl VM {
         Ok(self.pop().unwrap_or(Value::Null))
     }
 
+    fn perform_ret(&mut self, retv: Value, until_depth: Option<usize>) -> Result<bool> {
+        let depth = self.frames.len();
+        let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
+        self.stack.truncate(frame.base);
+        self.stack.push(retv);
+        self.gosub_stack.truncate(frame.gosub_base);
+        self._handlers.truncate(frame.handler_base);
+        if self.close_handles_on_ret {
+            self.fh_close_owner_depth(depth);
+        }
+        if self.frames.is_empty() { return Ok(true); }
+        if let Some(target) = until_depth {
+            if self.frames.len() < target { return Ok(true); }
+        }
+        Ok(false)
+    }
+
     fn run_internal(&mut self, until_depth: Option<usize>) -> Result<()> {
         if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Started); }
         loop {
-            let op = self.read_op()?;
-            match op {
+            if self.suspended { break; }
+            let res = self.run_internal_step(until_depth);
+            match res {
+                Ok(true) => break,
+                Ok(false) => continue,
+                Err(e) => {
+                    if let Some(h) = self._handlers.last() {
+                        let msg = format!("{}", e);
+                        self.stack.truncate(h.stack_depth);
+                        self.current_exception = Some(msg.clone());
+                        self.stack.push(Value::Str(msg));
+                        let target = h.handler_ip;
+                        self.cur().ip = target;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Exited); }
+        if !self.gosub_stack.is_empty() {
+            eprintln!("warning: program terminated with {} pending GOSUB frames (missing RETURN?)", self.gosub_stack.len());
+        }
+        Ok(())
+    }
+
+    fn run_internal_step(&mut self, until_depth: Option<usize>) -> Result<bool> {
+        let op = self.read_op()?;
+        match op {
                 Op::Const => {
                     let i = self.read_u16()? as usize;
                     let v = self.cur().chunk.consts[i].clone();
@@ -1321,8 +1443,15 @@ impl VM {
                     self.cur().ip -= off;
                 }
                 Op::GosubRet => {
-                    let ret_ip = match self.gosub_stack.pop() { Some(ip) => ip, None => return Err(BasilError("RETURN without GOSUB".into())) };
-                    self.cur().ip = ret_ip;
+                    if let Some(ret_ip) = self.gosub_stack.pop() {
+                        self.cur().ip = ret_ip;
+                    } else {
+                        if self.frames.len() > 1 {
+                            if self.perform_ret(Value::Null, until_depth)? { return Ok(true); }
+                        } else {
+                            return Err(BasilError("RETURN without GOSUB".into()));
+                        }
+                    }
                 }
                 Op::GosubPop => {
                     if self.gosub_stack.pop().is_none() { return Err(BasilError("RETURN without GOSUB".into())); }
@@ -1333,7 +1462,8 @@ impl VM {
                     let handler_off = self.read_u16()? as usize;
                     let _finally_off = self.read_u16()? as usize;
                     let target_ip = self.cur().ip + handler_off;
-                    self._handlers.push(HandlerEntry { handler_ip: target_ip });
+                    let stack_depth = self.stack.len();
+                    self._handlers.push(HandlerEntry { handler_ip: target_ip, stack_depth });
                 }
                 Op::TryPop => {
                     let _ = self._handlers.pop();
@@ -1345,6 +1475,7 @@ impl VM {
                     let msg_v = self.pop()?;
                     let msg = format!("{}", msg_v);
                     if let Some(h) = self._handlers.last() {
+                        self.stack.truncate(h.stack_depth);
                         // record message and jump to handler; also make it available on stack
                         self.current_exception = Some(msg.clone());
                         self.stack.push(Value::Str(msg));
@@ -1360,6 +1491,7 @@ impl VM {
                     // Pop current handler if any
                     let _ = self._handlers.pop();
                     if let Some(h) = self._handlers.last() {
+                        self.stack.truncate(h.stack_depth);
                         self.stack.push(Value::Str(msg));
                         let target = h.handler_ip;
                         self.cur().ip = target;
@@ -1372,7 +1504,7 @@ impl VM {
                         std::process::exit(0);
                     } else {
                         self.suspended = true;
-                        return Ok(());
+                        return Ok(true);
                     }
                 }
 
@@ -1386,7 +1518,7 @@ impl VM {
                             if f.arity as usize != argc {
                                 return Err(BasilError(format!("arity mismatch: expected {}, got {}", f.arity, argc)));
                             }
-                            let frame = Frame { chunk: f.chunk.clone(), ip: 0, base };
+                            let frame = Frame { chunk: f.chunk.clone(), ip: 0, base, gosub_base: self.gosub_stack.len(), handler_base: self._handlers.len() };
                             self.frames.push(frame);
                         }
                         _ => return Err(BasilError("CALL target is not a function".into())),
@@ -1418,18 +1550,7 @@ impl VM {
 
                 Op::Ret => {
                     let retv = self.pop().unwrap_or(Value::Null);
-                    let depth = self.frames.len();
-                    let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
-                    self.stack.truncate(frame.base);
-                    self.stack.push(retv);
-                    // auto-close any file handles opened in this frame (unless suppressed for class methods)
-                    if self.close_handles_on_ret {
-                        self.fh_close_owner_depth(depth);
-                    }
-                    if self.frames.is_empty() { break; }
-                    if let Some(target) = until_depth {
-                        if self.frames.len() < target { break; }
-                    }
+                    if self.perform_ret(retv, until_depth)? { return Ok(true); }
                 }
 
                 Op::Print => {
@@ -1538,7 +1659,7 @@ impl VM {
                             let key = match &idxs[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
                             let dict = dict_rc.borrow();
                             if let Some(v) = dict.get(&key) { self.stack.push(v.clone()); }
-                            else { return Err(BasilError(format!("Dict missing key: \"{}\"", key))); }
+                            else { self.stack.push(Value::Null); }
                         }
                         _ => return Err(BasilError("array access on non-array or not DIMed".into())),
                     }
@@ -1691,7 +1812,7 @@ impl VM {
                             if args.is_empty() { return Err(BasilError("JSON_DATA expects a JSON string".into())); }
                             let s = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
                             let v: sj::Value = sj::from_str(&s).map_err(|e| BasilError(format!("JSON_DATA parse error: {}", e)))?;
-                            let val = self.json_to_value(&v);
+                            let val = Self::json_to_value_static(&v);
                             self.stack.push(val);
                         }
                         #[cfg(not(feature = "obj-json"))]
@@ -1716,7 +1837,7 @@ impl VM {
                         Value::Dict(map_rc) => {
                             let m = map_rc.borrow();
                             if let Some(v) = m.get(&prop) { self.stack.push(v.clone()); }
-                            else { return Err(BasilError(format!("Dictionary missing key: \"{}\"", prop))); }
+                            else { self.stack.push(Value::Null); }
                         }
                         other => { let ty = self.type_of(&other); return Err(BasilError(format!("GETPROP on non-object/dict (got TYPE={})", ty))); }, 
                     }
@@ -1750,6 +1871,29 @@ impl VM {
                         Value::Object(rc) => {
                             let v = rc.borrow_mut().call(&method, &args)?;
                             self.stack.push(v);
+                        }
+                        Value::Dict(rc) => {
+                            match method.to_ascii_uppercase().as_str() {
+                                "HAS" | "CONTAINS" => {
+                                    if args.is_empty() { return Err(BasilError("HAS expects 1 argument".into())); }
+                                    let key = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                                    let res = rc.borrow().contains_key(&key);
+                                    self.stack.push(Value::Bool(res));
+                                }
+                                "GET" | "GET$" => {
+                                    if args.is_empty() { return Err(BasilError("GET expects 1 or 2 arguments".into())); }
+                                    let key = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
+                                    let default = args.get(1).cloned().unwrap_or(Value::Null);
+                                    let dict = rc.borrow();
+                                    if let Some(v) = dict.get(&key) { self.stack.push(v.clone()); }
+                                    else { self.stack.push(default); }
+                                }
+                                "KEYS" | "KEYS$" => {
+                                    let keys: Vec<Value> = rc.borrow().keys().cloned().map(Value::Str).collect();
+                                    self.stack.push(Value::List(Rc::new(std::cell::RefCell::new(keys))));
+                                }
+                                _ => return Err(BasilError(format!("Dict has no method '{}'", method))),
+                            }
                         }
                         _ => return Err(BasilError("CALLMETHOD on non-object".into())),
                     }
@@ -3152,7 +3296,7 @@ impl VM {
                             if argc != 1 { return Err(BasilError("JSON_DECODE@ expects 1 argument".into())); }
                             let s = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
                             let v: sj::Value = serde_json::from_str(&s).map_err(|e| BasilError(format!("JSON_DECODE@ error: {}", e)))?;
-                            let val = self.json_to_value(&v);
+                            let val = Self::json_to_value_static(&v);
                             self.stack.push(val);
                         }
                         #[cfg(feature = "obj-curl")]
@@ -3822,7 +3966,7 @@ impl VM {
                                     let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
                                     let m = rc.borrow();
                                     if let Some(v) = m.get(&key) { self.stack.push(v.clone()); }
-                                    else { return Err(BasilError(format!("Dictionary missing key: \"{}\"", key))); }
+                                    else { self.stack.push(Value::Null); }
                                 }
                                 _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
                             }
@@ -3885,17 +4029,11 @@ impl VM {
                 }
 
                 Op::Halt => {
-                    if self.frames.len() == 1 { break; }
+                    if self.frames.len() == 1 { return Ok(true); }
                     else { return Err(BasilError("HALT inside function".into())); }
                 }
-               // other => { return Err(BasilError(format!("unhandled opcode {:?}", other))); }
             }
-        }
-        if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Exited); }
-        if !self.gosub_stack.is_empty() {
-            eprintln!("warning: program terminated with {} pending GOSUB frames (missing RETURN?)", self.gosub_stack.len());
-        }
-        Ok(())
+        Ok(false)
     }
 
     // Debugger integration API

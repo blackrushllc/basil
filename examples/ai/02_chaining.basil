@@ -1,0 +1,19 @@
+// Example 2: Turn-Chaining via previous_response_id
+// Demonstrates chaining a follow-up question without a conversation object.
+
+PRINT "Step 1: First chat call..."
+r1$ = AI.CHAT$("I am building a treehouse. Give me a secret code word for it.")
+PRINT "AI: "; r1$
+
+// Get the response ID from the first call
+resp_id$ = AI.LAST_RESPONSE_ID$()
+PRINT "Response ID to chain from: "; resp_id$
+
+PRINT "---"
+PRINT "Step 2: Follow-up using the response ID..."
+// We pass empty string for conversation_id and the response ID in options
+r2$ = AI.CHAT$("What was that secret code word again?", "", "{\"previous_response_id\":\"" + resp_id$ + "\"}")
+PRINT "AI: "; r2$
+
+PRINT "---"
+PRINT "Done."

@@ -1,0 +1,26 @@
+// Example 1: Conversation Mode
+// Demonstrates creating a persistent conversation, 
+// having the AI remember something, and then deleting it.
+
+PRINT "Creating a new conversation..."
+id$ = AI.CONVERSATION.CREATE$()
+PRINT "Conversation ID: "; id$
+
+PRINT "Asking AI to remember something..."
+r1$ = AI.CHAT$("My favorite color is Blue. Remember that.", id$)
+PRINT "AI: "; r1$
+
+PRINT "---"
+PRINT "Asking later in the same conversation..."
+r2$ = AI.CHAT$("What is my favorite color?", id$)
+PRINT "AI: "; r2$
+
+PRINT "---"
+PRINT "Metadata for last call:"
+PRINT "Last Response ID: "; AI.LAST_RESPONSE_ID$()
+PRINT "Last Meta JSON: "; AI.LAST_META$()
+
+PRINT "---"
+PRINT "Cleaning up (deleting conversation)..."
+AI.CONVERSATION.DELETE(id$)
+PRINT "Done."

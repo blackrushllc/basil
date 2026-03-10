@@ -1,0 +1,12 @@
+FUNCTION MySub(x)
+  PRINT x
+  RETURN 1
+END FUNCTION
+
+SUB Test()
+  IF 1 THEN
+    LET x = MySub(42)
+  END IF
+END SUB
+
+Test()

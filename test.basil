@@ -1,0 +1,13 @@
+LET res$ = "xx"
+
+IF LEN(res$) > 0 THEN
+    LET res$ = UCASE$(res$)
+ELSE
+    IF LEN(res$) = 0 THEN
+        LET res$ = "aaa"
+    ELSE
+        LET res$ = "bbb"
+    END
+END
+
+PRINTLN res$

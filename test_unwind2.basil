@@ -1,0 +1,23 @@
+SUB Test()
+  PRINT "Start Test"
+  WHILE 1
+    PRINT "In WHILE"
+    TRY
+      PRINT "In TRY"
+      RETURN
+    CATCH e$
+      PRINT "Catch"
+    END TRY
+  END WHILE
+END SUB
+
+Test()
+PRINT "After Test"
+
+GOSUB TopLabel
+PRINT "TopLevel GOSUB returned"
+EXIT
+
+TopLabel:
+  PRINT "In TopLabel"
+  RETURN

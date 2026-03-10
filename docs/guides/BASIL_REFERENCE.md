@@ -217,6 +217,15 @@ Exits the nearest enclosing loop.
 FOR I = 1 TO 10 BEGIN IF I = 5 THEN BREAK; END NEXT
 ```
 
+## CGI.JSON_DATA
+*Type:* Function (returns Dictionary)  
+*Feature:* obj-json  
+Returns a Dictionary containing all CGI request parameters (GET and POST).
+```basil
+LET PARAMS = CGI.JSON_DATA()
+PRINTLN PARAMS["user"]
+```
+
 ## CHR$
 *Type:* Function (returns String)  
 Returns a one-character string for the given numeric code point (out of range yields "").
@@ -567,6 +576,13 @@ BEGIN
 END
 ```
 
+## GET
+*Type:* Dictionary Method  
+Safely retrieves a value for a key from a Dictionary. If the key is missing, returns the provided default value (or NULL if no default is provided).
+```basil
+LET val = DICT.GET("key", "default")
+```
+
 ## GET$
 *Type:* Function (returns String Array)  
 Returns an array of GET query parameters (as strings) in CGI mode.
@@ -646,6 +662,13 @@ Escapes special HTML characters of its argument.
 PRINTLN HTML$("<b>& ok</b>");
 ```
 
+## HAS / CONTAINS
+*Type:* Dictionary Method  
+Checks if a key exists in a Dictionary. Returns 1 (True) or 0 (False).
+```basil
+IF DICT.HAS("id") THEN PRINTLN "ID present"
+```
+
 ## HOME
 *Type:* Statement  
 *Feature:* obj-term  
@@ -708,6 +731,29 @@ LET ch$ = INPUTC$("Press a key: ");
 Finds the position (0-based) of a substring within a string starting at an optional index (0 if not found).
 ```basil
 LET p% = INSTR("banana", "na", 2);
+```
+
+## JSON.PARSE
+*Type:* Function (returns Dictionary/List)  
+*Feature:* obj-json  
+Parses a JSON string into a Basil value (usually a Dictionary or List).
+```basil
+LET DATA = JSON.PARSE("{ ""name"": ""Basil"" }")
+```
+
+## JSON.STRINGIFY
+*Type:* Function (returns String)  
+*Feature:* obj-json  
+Converts a Basil value into its JSON string representation.
+```basil
+LET S$ = JSON.STRINGIFY(DATA)
+```
+
+## KEYS / KEYS$
+*Type:* Dictionary Method  
+Returns a List of all keys present in the Dictionary.
+```basil
+LET ALL_KEYS = DICT.KEYS()
 ```
 
 ## LABEL
@@ -801,9 +847,10 @@ IF NOT (A = B) THEN PRINTLN "different";
 
 ## NULL
 *Type:* Data Type  
-Null literal representing “no value”.
+Null literal representing “no value”. It is also returned by Dictionary indexing and the `GET` method when a key is not found.
 ```basil
 LET x = NULL;
+IF DICT["missing"] == NULL THEN PRINTLN "not found";
 ```
 
 ## OR
@@ -1061,7 +1108,9 @@ WRITEFILE "out.txt", "Alpha\n";
 
 ## CATCH
 Type: Flow Control
-Introduces an exception handler for a preceding TRY block. Optionally binds the exception message to a string variable (must end with '$').
+Introduces an exception handler for a preceding TRY block. Optionally binds the exception message to a string variable (must end with '$'). 
+
+In Basil, CATCH intercepts both user-thrown exceptions (via RAISE) and runtime errors (e.g., division by zero, missing methods, out-of-bounds).
 ```basil
 TRY
   RAISE "boom"
@@ -1095,7 +1144,7 @@ END TRY
 
 ## TRY
 Type: Flow Control
-Begins a protected region optionally followed by CATCH and/or FINALLY, terminated by END TRY.
+Begins a protected region optionally followed by CATCH and/or FINALLY, terminated by END TRY. Intercepts both user exceptions and system runtime errors.
 ```basil
 TRY
   IF x% = 0 THEN RAISE "Divide by zero"

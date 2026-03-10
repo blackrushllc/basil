@@ -1,0 +1,7 @@
+SUB Test()
+  FOR i = 1 TO 10
+    PRINT i
+    IF i = 5 THEN BREAK
+  NEXT
+END SUB
+Test()

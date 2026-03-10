@@ -2,10 +2,16 @@
 
 This feature object provides beginner‑friendly AI helpers you can call directly from Basil BASIC programs:
 
-- AI.CHAT$(prompt$[, opts$]) -> string
+- AI.CHAT$(prompt$[, conversation_id$[, opts$]]) -> string
 - AI.STREAM(prompt$[, opts$]) -> string  (streams tokens to STDOUT while building the full reply)
 - AI.EMBED(text$[, opts$]) -> float[]    (1‑D embedding vector)
 - AI.MODERATE%(text$[, opts$]) -> int    (0 = OK, 1 = flagged)
+- AI.CONVERSATION.CREATE$([opts$]) -> string (returns a new conversation ID)
+- AI.CONVERSATION.DELETE(id$)            (cleanup conversation server-side or locally)
+- AI.CONVERSATION.LIST$() -> string      (returns a JSON list of active conversation IDs)
+- AI.LAST_RESPONSE_ID$() -> string       (ID of the last response for turn-chaining)
+- AI.LAST_CONVERSATION_ID$() -> string   (ID of the last conversation used)
+- AI.LAST_META$() -> string              (JSON metadata of the last call)
 - AI.LAST_ERROR$ -> string               (last error message)
 
 It’s designed to be simple by default, with practical knobs via a forgiving JSON‑ish options string.
@@ -21,12 +27,57 @@ The optional opts$ accepts a permissive JSON‑ish string (single quotes OK, unq
 - system (string)
 - temperature (float) default 0.3
 - max_tokens (int) default 400
+- store (bool) whether to store the response for chaining
+- previous_response_id (string) for turn-chaining without conversation objects
+- metadata (object) optional key-value pairs
 - top_p (float) optional
 - stop (string or [string]) optional
 - cache (bool) default true
 - timeout_ms (int) default 60000
 
 Unknown keys are ignored for forward compatibility. For AI.EMBED, you may also pass embed_model.
+
+## Conversations and Persistence
+
+Basil now supports persistent conversations across sessions and devices.
+
+### Server-side (OpenAI) Persistence
+Create a conversation ID and pass it to subsequent `AI.CHAT$` calls. OpenAI will maintain the full message history server-side.
+
+```basil
+id$ = AI.CONVERSATION.CREATE$()
+PRINT AI.CHAT$("My name is Basil.", id$)
+PRINT AI.CHAT$("What is my name?", id$)
+AI.CONVERSATION.DELETE(id$)
+```
+
+### Local Persistence
+If you prefer to keep message history on your own machine, use the `local` backend.
+
+```basil
+id$ = AI.CONVERSATION.CREATE$("{\"backend\":\"local\"}")
+PRINT AI.CHAT$("This history is stored in .basil/ai/conversations/", id$)
+```
+
+### Turn-Chaining (Stateless)
+You can also chain messages without a formal conversation object by using `previous_response_id`.
+
+```basil
+PRINT AI.CHAT$("Think of a secret word.")
+resp_id$ = AI.LAST_RESPONSE_ID$()
+PRINT AI.CHAT$("What was that word?", "", "{\"previous_response_id\":\"" + resp_id$ + "\"}")
+```
+
+Note: `conversation_id` and `previous_response_id` are mutually exclusive.
+
+## Helper Functions
+
+- `AI.LAST_RESPONSE_ID$()`: Returns the ID of the last response (e.g., `resp_...`). Useful for chaining.
+- `AI.LAST_CONVERSATION_ID$()`: Returns the last conversation ID used.
+- `AI.LAST_META$()`: Returns a JSON string with metadata about the last call, including model used and IDs.
+
+## Privacy Note
+Conversation mode stores state server-side at OpenAI until `AI.CONVERSATION.DELETE` is called. For sensitive data, prefer using the local backend or stateless chaining.
 
 Examples:
 
@@ -62,9 +113,8 @@ Build with the AI feature and run the demos:
 
 - cargo run -q -p basilc --features obj-ai -- run examples\obj-ai\01_hello_ai.basil
 - cargo run -q -p basilc --features obj-ai -- run examples\obj-ai\02_stream_joke.basil
-- cargo run -q -p basilc --features obj-ai -- run examples\obj-ai\03_explain_file.basil
-- cargo run -q -p basilc --features obj-ai -- run examples\obj-ai\04_embeddings_search.basil
-- cargo run -q -p basilc --features obj-ai -- run examples\obj-ai\05_moderation_gate.basil
+- cargo run -q -p basilc --features obj-ai -- run examples\ai\01_conversation.basil
+- cargo run -q -p basilc --features obj-ai -- run examples\ai\02_chaining.basil
 
 Tip: To get deterministic outputs locally without hitting any network, either:
 

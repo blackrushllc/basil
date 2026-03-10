@@ -11,8 +11,8 @@ path = "src/lib.rs"
 [features]
 default = []
 # Phase 1 features
-obj-sql-mysql = ["dep:sqlx", "sqlx/mysql", "sqlx/runtime-tokio", "sqlx/tls-rustls", "dep:tokio", "dep:once_cell", "dep:serde_json"]
-obj-sql-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio", "sqlx/tls-rustls", "dep:tokio", "dep:once_cell", "dep:serde_json"]
+obj-sql-mysql = ["dep:sqlx", "sqlx/mysql", "sqlx/runtime-tokio", "sqlx/tls-rustls", "dep:tokio", "dep:once_cell", "dep:serde_json", "dep:sqlx-mysql", "dep:chrono", "dep:bigdecimal"]
+obj-sql-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio", "sqlx/tls-rustls", "dep:tokio", "dep:once_cell", "dep:serde_json", "dep:sqlx-postgres", "dep:chrono", "dep:bigdecimal"]
 obj-sql = ["obj-sql-mysql", "obj-sql-postgres"]
 
 [dependencies]
@@ -21,6 +21,10 @@ basil-bytecode = { workspace = true }
 once_cell = { version = "1", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time"], optional = true }
 sqlx = { version = "0.7", default-features = false, features = [], optional = true }
+sqlx-mysql = { version = "0.7", features = ["chrono", "bigdecimal"], optional = true }
+sqlx-postgres = { version = "0.7", features = ["chrono", "bigdecimal"], optional = true }
+chrono = { version = "0.4", optional = true }
+bigdecimal = { version = "0.3", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 base64 = "0.22"

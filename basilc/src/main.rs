@@ -461,6 +461,7 @@ fn cmd_run(path: Option<String>, force_rebuild: bool) {
     // IMPORTANT (Windows): Do not use canonicalized path for CWD, because it may contain the \\?\ prefix that cmd.exe rejects.
     let script_dir_for_cwd = Path::new(&input_path)
         .parent()
+        .filter(|p| !p.as_os_str().is_empty())
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     if let Err(e) = env::set_current_dir(&script_dir_for_cwd) {
