@@ -1,0 +1,4 @@
+FOR i = 1 TO 3
+  IF i = 2 THEN CONTINUE
+  PRINT i
+NEXT

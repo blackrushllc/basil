@@ -779,7 +779,7 @@ impl Parser {
                         else_had_term = true;
                         while self.match_k(TokenKind::Semicolon) {}
                     }
-                    if self.check(TokenKind::If) {
+                    if !else_had_term && self.check(TokenKind::If) {
                         let s = self.parse_stmt()?; // ELSE IF ...
                         Some(Box::new(s))
                     } else if self.match_k(TokenKind::Begin) {
@@ -1419,14 +1419,22 @@ impl Parser {
     }
 
     fn check_terminate(&self) -> bool {
-        self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof)
+        self.check(TokenKind::Semicolon) || self.check(TokenKind::Eof) ||
+        self.check(TokenKind::Else) || self.check(TokenKind::End) ||
+        self.check(TokenKind::Case) || self.check(TokenKind::RBrace) ||
+        self.check(TokenKind::Next) || self.check(TokenKind::Catch) ||
+        self.check(TokenKind::Finally)
     }
 
-    // Accept ';' OR EOF after a statement
+    // Accept ; or EOF after a statement, or a block-terminating keyword
     fn terminate_stmt(&mut self) -> Result<()> {
         if self.match_k(TokenKind::Semicolon) { return Ok(()); }
-        if self.check(TokenKind::Eof) { return Ok(()); }
-        Err(BasilError(format!("parse error at line {}: expected Semicolon or Colon", self.peek_line())))
+        if self.check_terminate() { return Ok(()); }
+        Err(BasilError(format!(
+            "parse error at line {}: expected Semicolon or Colon, found {:?}", 
+            self.peek_line(), 
+            self.peek_kind()
+        )))
     }
 
     // Pratt parser with postfix call and comparisons

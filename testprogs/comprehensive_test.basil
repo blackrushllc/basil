@@ -1,0 +1,162 @@
+PRINTLN "=== COMPREHENSIVE TEST: RETURN AND BREAK ==="
+
+// --- TEST 1: Early RETURN from SUB ---
+SUB TestEarlyReturnSub()
+    PRINTLN "  [1] Inside TestEarlyReturnSub"
+    RETURN
+    PRINTLN "  [1] FAILED: Should not reach here after RETURN"
+END SUB
+TestEarlyReturnSub()
+PRINTLN "  [1] PASSED: Returned from SUB"
+
+// --- TEST 2: RETURN from SUB inside WHILE ---
+SUB TestReturnInsideWhile()
+    PRINTLN "  [2] Inside TestReturnInsideWhile"
+    WHILE 1
+        PRINTLN "  [2] Inside loop"
+        RETURN
+    END WHILE
+    PRINTLN "  [2] FAILED: Should not reach here after RETURN"
+END SUB
+TestReturnInsideWhile()
+PRINTLN "  [2] PASSED: Returned from SUB inside WHILE"
+
+// --- TEST 3: RETURN from SUB inside FOR ---
+SUB TestReturnInsideFor()
+    PRINTLN "  [3] Inside TestReturnInsideFor"
+    FOR i = 1 TO 10
+        PRINTLN "  [3] Loop i="; i
+        IF i = 2 THEN RETURN
+    NEXT
+    PRINTLN "  [3] FAILED: Should not reach here after RETURN"
+END SUB
+TestReturnInsideFor()
+PRINTLN "  [3] PASSED: Returned from SUB inside FOR"
+
+// --- TEST 4: RETURN from FUNCTION ---
+FUNCTION TestReturnFunc()
+    PRINTLN "  [4] Inside TestReturnFunc"
+    RETURN 42
+    PRINTLN "  [4] FAILED: Should not reach here after RETURN"
+END FUNCTION
+res = TestReturnFunc()
+IF res = 42 THEN
+    PRINTLN "  [4] PASSED: Returned 42 from FUNCTION"
+ELSE
+    PRINTLN "  [4] FAILED: Expected 42, got "; res
+END IF
+
+// --- TEST 5: BREAK in top-level WHILE ---
+PRINTLN "  [5] Top-level WHILE BREAK"
+i = 0
+WHILE i < 10
+    i = i + 1
+    IF i = 3 THEN BREAK
+END WHILE
+IF i = 3 THEN
+    PRINTLN "  [5] PASSED: BREAK worked in WHILE"
+ELSE
+    PRINTLN "  [5] FAILED: i should be 3, got "; i
+END IF
+
+// --- TEST 6: BREAK in top-level FOR ---
+PRINTLN "  [6] Top-level FOR BREAK"
+FOR i = 1 TO 10
+    IF i = 5 THEN BREAK
+NEXT
+IF i = 5 THEN
+    PRINTLN "  [6] PASSED: BREAK worked in FOR"
+ELSE
+    PRINTLN "  [6] FAILED: i should be 5, got "; i
+END IF
+
+// --- TEST 7: BREAK in top-level FOR EACH ---
+PRINTLN "  [7] Top-level FOR EACH BREAK"
+arr = [10, 20, 30, 40, 50]
+count = 0
+FOR EACH x IN arr
+    count = count + 1
+    IF x = 30 THEN BREAK
+NEXT
+IF count = 3 THEN
+    PRINTLN "  [7] PASSED: BREAK worked in FOR EACH"
+ELSE
+    PRINTLN "  [7] FAILED: count should be 3, got "; count
+END IF
+
+// --- TEST 8: Nested BREAK ---
+PRINTLN "  [8] Nested loop BREAK"
+outer = 0
+inner_sum = 0
+WHILE outer < 3
+    outer = outer + 1
+    FOR j = 1 TO 5
+        IF j = 3 THEN BREAK
+        inner_sum = inner_sum + 1
+    NEXT
+END WHILE
+IF inner_sum = 6 THEN
+    PRINTLN "  [8] PASSED: Nested BREAK worked"
+ELSE
+    PRINTLN "  [8] FAILED: inner_sum should be 6, got "; inner_sum
+END IF
+
+// --- TEST 9: GOSUB inside SUB with RETURN ---
+SUB TestGosubInSub()
+    PRINTLN "  [9] Inside TestGosubInSub"
+    GOSUB MyGosub
+    PRINTLN "  [9] Back from GOSUB"
+    RETURN
+    
+    MyGosub:
+        PRINTLN "  [9] Inside MyGosub"
+        RETURN
+END SUB
+TestGosubInSub()
+PRINTLN "  [9] PASSED: GOSUB/RETURN worked inside SUB"
+
+// --- TEST 10: Early RETURN from TRY block ---
+SUB TestReturnInTry()
+    PRINTLN "  [10] Inside TestReturnInTry"
+    TRY
+        PRINTLN "  [10] Inside TRY"
+        RETURN
+    CATCH e$
+        PRINTLN "  [10] FAILED: Caught exception: "; e$
+    END TRY
+END SUB
+TestReturnInTry()
+PRINTLN "  [10] PASSED: Returned from SUB inside TRY"
+
+// --- TEST 11: CONTINUE in loops ---
+SUB TestContinue()
+    PRINTLN "  [11] Testing CONTINUE"
+    s$ = ""
+    FOR i = 1 TO 5
+        IF i = 3 THEN CONTINUE
+        s$ = s$ + i
+    NEXT
+    IF s$ == "1245" THEN
+        PRINTLN "  [11] PASSED: CONTINUE worked"
+    ELSE
+        PRINTLN "  [11] FAILED: expected '1245', got '"; s$; "'"
+    END IF
+END SUB
+TestContinue()
+
+// --- TEST 12: BREAK in SUB loops ---
+SUB TestBreakInSub()
+    PRINTLN "  [12] Testing BREAK in SUB loop"
+    FOR i = 1 TO 5
+        IF i = 3 THEN BREAK
+    NEXT
+    IF i = 3 THEN
+        PRINTLN "  [12] PASSED: BREAK worked in SUB loop"
+    ELSE
+        PRINTLN "  [12] FAILED: i should be 3, got "; i
+    END IF
+END SUB
+TestBreakInSub()
+
+PRINTLN "=== ALL TESTS COMPLETED ==="
+EXIT 0

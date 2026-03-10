@@ -1,5 +1,6 @@
 SUB MySub(x)
   PRINT x
+  RETURN
 END SUB
 
 SUB Test()

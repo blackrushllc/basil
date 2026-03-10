@@ -259,7 +259,7 @@ impl C {
             Stmt::Func { name, params, body, .. } => {
                 // remember function name for call vs array indexing disambiguation
                 self.fn_names.insert(name.to_ascii_uppercase());
-                let f = self.compile_function(name.clone(), params.clone(), body);
+                let f = self.compile_function(name.clone(), params.clone(), body)?;
                 self.chunk.push_op(Op::Const);
                 let idx = self.chunk.add_const(f);
                 self.chunk.push_u16(idx);
@@ -783,7 +783,7 @@ impl C {
                 chunk.push_op(Op::JumpIfFalse);
                 let j_exit = chunk.emit_u16_placeholder();
                 // push loop ctx
-                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new() });
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new(), continue_sites: Vec::new() });
                 // body
                 self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
                 // back to test
@@ -823,6 +823,7 @@ impl C {
                 let g = self.gslot(var);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 // body
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
                 // jump back to test
                 chunk.push_op(Op::JumpBack);
@@ -831,6 +832,9 @@ impl C {
                 // end label
                 let end_here = chunk.here();
                 let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                // patch BREAKs
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.break_sites { let off = (end_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
                 // dispose enumerator (pops handle)
                 chunk.push_op(Op::EnumDispose);
                 self.chunk = chunk;
@@ -892,8 +896,14 @@ impl C {
                 chunk.patch_u16_at(j_after_pos, off_after_pos);
 
                 // body
+                self.loop_stack.push(LoopCtx { test_here: usize::MAX, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_tl_in_chunk(&mut chunk, body)?;
+
                 // increment: var = var + step
+                let next_here = chunk.here();
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.continue_sites { let off = (next_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+
                 chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
                 match step {
                     Some(e) => { self.emit_expr_in(&mut chunk, e, None)?; }
@@ -916,6 +926,7 @@ impl C {
                 let exit_here = chunk.here();
                 let off_exit1 = (exit_here - (j_exit1 + 2)) as u16; chunk.patch_u16_at(j_exit1, off_exit1);
                 let off_exit2 = (exit_here - (j_exit2 + 2)) as u16; chunk.patch_u16_at(j_exit2, off_exit2);
+                for site in ctx.break_sites { let off = (exit_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
 
                 self.chunk = chunk;
             }
@@ -923,7 +934,7 @@ impl C {
         Ok(())
     }
 
-    fn compile_function(&mut self, name: String, params: Vec<String>, body: &Vec<Stmt>) -> Value {
+    fn compile_function(&mut self, name: String, params: Vec<String>, body: &Vec<Stmt>) -> Result<Value> {
         let mut fchunk = Chunk::default();
         let mut env = LocalEnv::new();
 
@@ -935,10 +946,11 @@ impl C {
         // reset function-scope labels/fixups
         self.fn_labels.clear();
         self.fn_goto_fixups.clear();
+        self.fn_gosub_fixups.clear();
 
         // body
         for s in body {
-            self.emit_stmt_func(&mut fchunk, s, &mut env).unwrap();
+            self.emit_stmt_func(&mut fchunk, s, &mut env)?;
         }
 
         // resolve function-level GOTOs now that all labels are known
@@ -953,7 +965,7 @@ impl C {
                     fchunk.patch_u16_at(u16_pos, off);
                 }
             } else {
-                panic!("Undefined label in function {}: {}", name, label);
+                return Err(BasilError(format!("Undefined label in function {}: {}", name, label)));
             }
         }
 
@@ -969,7 +981,7 @@ impl C {
                     fchunk.patch_u16_at(u16_pos, off);
                 }
             } else {
-                panic!("Undefined label in function {}: {}", name, label);
+                return Err(BasilError(format!("Undefined label in function {}: {}", name, label)));
             }
         }
 
@@ -979,11 +991,11 @@ impl C {
         fchunk.push_u16(cid);
         fchunk.push_op(Op::Ret);
 
-        Value::Func(Rc::new(Function {
+        Ok(Value::Func(Rc::new(Function {
             arity: params.len() as u8,
             name: Some(name),
             chunk: Rc::new(fchunk),
-        }))
+        })))
     }
 
     fn emit_stmt_func(&mut self, chunk: &mut Chunk, s: &Stmt, env: &mut LocalEnv) -> Result<()> {
@@ -1466,7 +1478,7 @@ impl C {
                 self.emit_expr_in(chunk, cond, Some(env))?;
                 chunk.push_op(Op::JumpIfFalse);
                 let j_exit = chunk.emit_u16_placeholder();
-                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new() });
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_func(chunk, body, env)?;
                 chunk.push_op(Op::JumpBack);
                 let j_back = chunk.emit_u16_placeholder();
@@ -1484,10 +1496,19 @@ impl C {
             }
             Stmt::Continue => {
                 if self.loop_stack.is_empty() { return Err(BasilError("CONTINUE used outside of loop".into())); }
-                let test_here = self.loop_stack.last().unwrap().test_here;
-                chunk.push_op(Op::JumpBack);
-                let jb = chunk.emit_u16_placeholder();
-                let off = (jb + 2 - test_here) as u16; chunk.patch_u16_at(jb, off);
+                let (test_here, is_for_loop) = {
+                    let ctx = self.loop_stack.last().unwrap();
+                    (ctx.test_here, ctx.test_here == usize::MAX)
+                };
+                if is_for_loop {
+                    chunk.push_op(Op::Jump);
+                    let site = chunk.emit_u16_placeholder();
+                    self.loop_stack.last_mut().unwrap().continue_sites.push(site);
+                } else {
+                    chunk.push_op(Op::JumpBack);
+                    let jb = chunk.emit_u16_placeholder();
+                    let off = (jb + 2 - test_here) as u16; chunk.patch_u16_at(jb, off);
+                }
             }
             Stmt::Block(stmts) => {
                 for s2 in stmts { self.emit_stmt_func(chunk, s2, env)?; }
@@ -1521,6 +1542,7 @@ impl C {
                     chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
                 }
                 // body
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_func(chunk, body, env)?;
                 // back to test
                 chunk.push_op(Op::JumpBack);
@@ -1529,6 +1551,9 @@ impl C {
                 // end
                 let end_here = chunk.here();
                 let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                // patch BREAKs
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.break_sites { let off = (end_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
                 // dispose enumerator
                 chunk.push_op(Op::LoadLocal); chunk.push_u8(tmp_slot);
                 chunk.push_op(Op::EnumDispose);
@@ -1601,9 +1626,14 @@ impl C {
                 chunk.patch_u16_at(j_after_pos, off_after_pos);
 
                 // body
+                self.loop_stack.push(LoopCtx { test_here: usize::MAX, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_func(chunk, body, env)?;
 
                 // increment: var = var + step
+                let next_here = chunk.here();
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.continue_sites { let off = (next_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+
                 if let Some(slot) = env.lookup(var) {
                     chunk.push_op(Op::LoadLocal); chunk.push_u8(slot);
                 } else {
@@ -1636,6 +1666,7 @@ impl C {
                 let exit_here = chunk.here();
                 let off_exit1 = (exit_here - (j_exit1 + 2)) as u16; chunk.patch_u16_at(j_exit1, off_exit1);
                 let off_exit2 = (exit_here - (j_exit2 + 2)) as u16; chunk.patch_u16_at(j_exit2, off_exit2);
+                for site in ctx.break_sites { let off = (exit_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
             }
         }
         Ok(())
@@ -2744,7 +2775,7 @@ impl C {
                 self.emit_expr_in(chunk, cond, None)?;
                 chunk.push_op(Op::JumpIfFalse);
                 let j_exit = chunk.emit_u16_placeholder();
-                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new() });
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_tl_in_chunk(chunk, body)?;
                 chunk.push_op(Op::JumpBack);
                 let j_back = chunk.emit_u16_placeholder();
@@ -2762,16 +2793,25 @@ impl C {
             }
             Stmt::Continue => {
                 if self.loop_stack.is_empty() { return Err(BasilError("CONTINUE used outside of loop".into())); }
-                let test_here = self.loop_stack.last().unwrap().test_here;
-                chunk.push_op(Op::JumpBack);
-                let jb = chunk.emit_u16_placeholder();
-                let off = (jb + 2 - test_here) as u16; chunk.patch_u16_at(jb, off);
+                let (test_here, is_for_loop) = {
+                    let ctx = self.loop_stack.last().unwrap();
+                    (ctx.test_here, ctx.test_here == usize::MAX)
+                };
+                if is_for_loop {
+                    chunk.push_op(Op::Jump);
+                    let site = chunk.emit_u16_placeholder();
+                    self.loop_stack.last_mut().unwrap().continue_sites.push(site);
+                } else {
+                    chunk.push_op(Op::JumpBack);
+                    let jb = chunk.emit_u16_placeholder();
+                    let off = (jb + 2 - test_here) as u16; chunk.patch_u16_at(jb, off);
+                }
             }
             Stmt::Block(stmts) => {
                 for s2 in stmts { self.emit_stmt_tl_in_chunk(chunk, s2)?; }
             }
             Stmt::Func { name, params, body, .. } => {
-                let f = self.compile_function(name.clone(), params.clone(), body);
+                let f = self.compile_function(name.clone(), params.clone(), body)?;
                 chunk.push_op(Op::Const);
                 let idx = chunk.add_const(f);
                 chunk.push_u16(idx);
@@ -2790,12 +2830,15 @@ impl C {
                 if var.ends_with('%') { chunk.push_op(Op::ToInt); }
                 let g = self.gslot(var);
                 chunk.push_op(Op::StoreGlobal); chunk.push_u8(g);
+                self.loop_stack.push(LoopCtx { test_here, break_sites: Vec::new(), continue_sites: Vec::new() });
                 self.emit_stmt_tl_in_chunk(chunk, body)?;
                 chunk.push_op(Op::JumpBack);
                 let j_back = chunk.emit_u16_placeholder();
                 let off_back = (j_back + 2 - test_here) as u16; chunk.patch_u16_at(j_back, off_back);
                 let end_here = chunk.here();
                 let off_end = (end_here - (j_end + 2)) as u16; chunk.patch_u16_at(j_end, off_end);
+                let ctx = self.loop_stack.pop().unwrap();
+                for site in ctx.break_sites { let off = (end_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
                 chunk.push_op(Op::EnumDispose);
             }
             Stmt::With { target, body } => {
@@ -2863,9 +2906,14 @@ impl C {
         let off_after_pos = (after_cmp - (j_after_pos + 2)) as u16; chunk.patch_u16_at(j_after_pos, off_after_pos);
 
         // body
+        self.loop_stack.push(LoopCtx { test_here: usize::MAX, break_sites: Vec::new(), continue_sites: Vec::new() });
         self.emit_stmt_tl_in_chunk(chunk, body)?;
 
         // increment
+        let next_here = chunk.here();
+        let ctx = self.loop_stack.pop().unwrap();
+        for site in ctx.continue_sites { let off = (next_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
+
         chunk.push_op(Op::LoadGlobal); chunk.push_u8(g);
         match step { Some(e) => { self.emit_expr_in(chunk, e, None)?; }, None => { let idx1 = chunk.add_const(Value::Num(1.0)); chunk.push_op(Op::Const); chunk.push_u16(idx1); } }
         chunk.push_op(Op::Add);
@@ -2880,14 +2928,18 @@ impl C {
         let exit_here = chunk.here();
         let off_exit1 = (exit_here - (j_exit1 + 2)) as u16; chunk.patch_u16_at(j_exit1, off_exit1);
         let off_exit2 = (exit_here - (j_exit2 + 2)) as u16; chunk.patch_u16_at(j_exit2, off_exit2);
-
+        for site in ctx.break_sites { let off = (exit_here - (site + 2)) as u16; chunk.patch_u16_at(site, off); }
         Ok(())
     }
 }
 
 
 // loop context for BREAK/CONTINUE within WHILE loops
-struct LoopCtx { test_here: usize, break_sites: Vec<usize> }
+struct LoopCtx {
+    test_here: usize,
+    break_sites: Vec<usize>,
+    continue_sites: Vec<usize>,
+}
 
 
 // --- Helpers for struct/fixed-string lowering ---

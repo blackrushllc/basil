@@ -1,0 +1,9 @@
+SUB Test()
+  i = 1
+  WHILE i <= 10
+    PRINT i
+    IF i = 5 THEN BREAK
+    i = i + 1
+  END WHILE
+END SUB
+Test()

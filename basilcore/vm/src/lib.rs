@@ -269,6 +269,8 @@ struct Frame {
     chunk: Rc<Chunk>,
     ip: usize,
     base: usize,
+    gosub_base: usize,
+    handler_base: usize,
 }
 
 struct ArrEnum {
@@ -424,7 +426,7 @@ impl basil_bytecode::BasicObject for ClassInstance {
         // Prepare stack: place arguments starting at base 0
         for a in args { vm.stack.push(a.clone()); }
         // Push frame directly
-        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0 };
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0, gosub_base: 0, handler_base: 0 };
         vm.frames.push(frame);
         vm.run()?;
         // Capture back persistent file handles into this instance
@@ -541,7 +543,7 @@ impl VM {
             }
         }
         let top_chunk = Rc::new(p.chunk);
-        let frame = Frame { chunk: top_chunk, ip: 0, base: 0 };
+        let frame = Frame { chunk: top_chunk, ip: 0, base: 0, gosub_base: 0, handler_base: 0 };
         let mut registry = Registry::new();
         register_objects(&mut registry);
         #[allow(unused_mut)]
@@ -1269,13 +1271,30 @@ impl VM {
             self.stack.push(arg.clone());
         }
 
-        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base };
+        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base, gosub_base: self.gosub_stack.len(), handler_base: self._handlers.len() };
         self.frames.push(frame);
 
         let initial_depth = self.frames.len();
         self.run_internal(Some(initial_depth))?;
 
         Ok(self.pop().unwrap_or(Value::Null))
+    }
+
+    fn perform_ret(&mut self, retv: Value, until_depth: Option<usize>) -> Result<bool> {
+        let depth = self.frames.len();
+        let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
+        self.stack.truncate(frame.base);
+        self.stack.push(retv);
+        self.gosub_stack.truncate(frame.gosub_base);
+        self._handlers.truncate(frame.handler_base);
+        if self.close_handles_on_ret {
+            self.fh_close_owner_depth(depth);
+        }
+        if self.frames.is_empty() { return Ok(true); }
+        if let Some(target) = until_depth {
+            if self.frames.len() < target { return Ok(true); }
+        }
+        Ok(false)
     }
 
     fn run_internal(&mut self, until_depth: Option<usize>) -> Result<()> {
@@ -1424,8 +1443,15 @@ impl VM {
                     self.cur().ip -= off;
                 }
                 Op::GosubRet => {
-                    let ret_ip = match self.gosub_stack.pop() { Some(ip) => ip, None => return Err(BasilError("RETURN without GOSUB".into())) };
-                    self.cur().ip = ret_ip;
+                    if let Some(ret_ip) = self.gosub_stack.pop() {
+                        self.cur().ip = ret_ip;
+                    } else {
+                        if self.frames.len() > 1 {
+                            if self.perform_ret(Value::Null, until_depth)? { return Ok(true); }
+                        } else {
+                            return Err(BasilError("RETURN without GOSUB".into()));
+                        }
+                    }
                 }
                 Op::GosubPop => {
                     if self.gosub_stack.pop().is_none() { return Err(BasilError("RETURN without GOSUB".into())); }
@@ -1492,7 +1518,7 @@ impl VM {
                             if f.arity as usize != argc {
                                 return Err(BasilError(format!("arity mismatch: expected {}, got {}", f.arity, argc)));
                             }
-                            let frame = Frame { chunk: f.chunk.clone(), ip: 0, base };
+                            let frame = Frame { chunk: f.chunk.clone(), ip: 0, base, gosub_base: self.gosub_stack.len(), handler_base: self._handlers.len() };
                             self.frames.push(frame);
                         }
                         _ => return Err(BasilError("CALL target is not a function".into())),
@@ -1524,18 +1550,7 @@ impl VM {
 
                 Op::Ret => {
                     let retv = self.pop().unwrap_or(Value::Null);
-                    let depth = self.frames.len();
-                    let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
-                    self.stack.truncate(frame.base);
-                    self.stack.push(retv);
-                    // auto-close any file handles opened in this frame (unless suppressed for class methods)
-                    if self.close_handles_on_ret {
-                        self.fh_close_owner_depth(depth);
-                    }
-                    if self.frames.is_empty() { return Ok(true); }
-                    if let Some(target) = until_depth {
-                        if self.frames.len() < target { return Ok(true); }
-                    }
+                    if self.perform_ret(retv, until_depth)? { return Ok(true); }
                 }
 
                 Op::Print => {

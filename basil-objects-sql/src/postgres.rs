@@ -137,6 +137,10 @@ impl PgObj {
                 else if let Ok(v) = row.try_get::<f64, _>(name.as_str()) { J::from(v) }
                 else if let Ok(v) = row.try_get::<bool, _>(name.as_str()) { J::from(v) }
                 else if let Ok(v) = row.try_get::<String, _>(name.as_str()) { J::from(v) }
+                else if let Ok(v) = row.try_get::<bigdecimal::BigDecimal, _>(name.as_str()) { J::from(v.to_string()) }
+                else if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(name.as_str()) { J::from(v.to_string()) }
+                else if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(name.as_str()) { J::from(v.to_string()) }
+                else if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(name.as_str()) { J::from(v.to_string()) }
                 else if let Ok(v) = row.try_get::<Vec<u8>, _>(name.as_str()) { J::from(base64::engine::general_purpose::STANDARD.encode(v)) }
                 else { J::Null };
                 m.insert(name, jv);
@@ -160,6 +164,10 @@ impl PgObj {
                 else if let Ok(v) = row.try_get::<i64, _>(name) { v.to_string() }
                 else if let Ok(v) = row.try_get::<f64, _>(name) { let mut s=v.to_string(); if s.ends_with('.') {s.push('0');} s }
                 else if let Ok(v) = row.try_get::<bool, _>(name) { if v {"1"} else {"0"}.to_string() }
+                else if let Ok(v) = row.try_get::<bigdecimal::BigDecimal, _>(name) { v.to_string() }
+                else if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(name) { v.to_string() }
+                else if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(name) { v.to_string() }
+                else if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(name) { v.to_string() }
                 else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) { format!("[{} bytes]", v.len()) }
                 else { String::new() };
                 vals.push(s);
