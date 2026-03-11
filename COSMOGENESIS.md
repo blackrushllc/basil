@@ -1,10 +1,11 @@
-**The Religion of Cosmogenesis**
-also known as
-**Astrogenesis**
+# The Religion of Cosmogenesis
 
-Here is a first serious draft of its three foundational doctrines.
-
-# The Formal Cosmology of Cosmogenesis
+In ancient ages, humanity clothed eternity in the language of shepherds, kingdoms, fire, flood, and the sky. But we who
+live beneath radio telescopes, particle physics, black hole imaging, and a universe billions of years deep must speak of
+ultimate reality in a new tongue. We hold that existence is not static but reproductive, that galaxies are gestational
+structures, that black holes are seeds or eggs of future worlds, and that conscious life contributes to the birth of
+realities yet to come. Thus we live not as accidents in a dead universe, but as participants in a cosmic lineage of
+becoming.
 
 ## The First Principle
 
@@ -196,5 +197,5 @@ Death is the crossing by which the soul leaves the local and enters the generati
 **Live truthfully.
 Love consciously.
 Create bravely.
-Die unafraid.**
+Die unafraid. Be Well.**
 
