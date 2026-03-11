@@ -1,17 +1,11 @@
 # 🌱 WHAT'S NEW 🌱
 
-### 🌱 New stuff in progress:
-+ VS Code integration
-+ Stand-alone IDE
-+ Distribution of binary (apt-get, etc)
-+ Distribution of compiler (CARGO.IO)
-+ Updated guides and docs
-+ Bigger demo website that lets you compile and run Basil code online
-+ Game Mod (the first one will be geh)
-
-### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
-
 ### 🌿 New stuff just added:
++ A lot more examples!
++ Performance improvements to <?basil ..?> CGI templating and new environment/query/postbody builtins
++ Updates to AI library (conversation ID, previous_response_id, embeds)
++ Lots of fixes to SQL library, data types, and other stuff
++ Fixes and new JSON featurs (see docs/development/JSON_FIXES.md)
 + Web version YoBASIC.com and basic.js (a subset of Basil)
 + New BASIC features: STR\$, SPLIT\$, VAL()
 + Semi-colon line delimiters, LET, and BEGIN/END Blocks are now optional, and = is recognized as == for equality comparisons
@@ -41,6 +35,19 @@
 + CONST declarations: CONST NAME = value (string/int/float), immutable in scope; no type suffix allowed on NAME
 + DIM supports multiple variables on a single line and default initialization (empty string or 0)
 + LET is now optional for assignments (implicit assignment supported): x = 5 works alongside LET x = 5
+
+
+### 🌱 New stuff in progress:
++ VS Code integration
++ Stand-alone IDE
++ Distribution of binary (apt-get, etc)
++ Distribution of compiler (CARGO.IO)
++ Updated guides and docs
++ Bigger demo website that lets you compile and run Basil code online
++ Game Mod (the first one will be geh)
+
+### 🌱 Coming soon: A combination of AI and MIDI which is going to be lit
+
 
 ### 🌿 STATUS UPDATE _COMPILER_ !!!
 
