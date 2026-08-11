@@ -922,17 +922,11 @@ fn extract_comments_map(src: &str) -> HashMap<u32, Vec<String>> {
         let mut found: Option<(usize, String)> = None;
         while idx < chars.len() {
             let c = chars[idx];
-            if c == '"' { in_str = !in_str; idx += 1; continue; }
+            if c == '"' || c == '\'' { in_str = !in_str; idx += 1; continue; }
             if !in_str {
                 // C++-style comment
                 if c == '/' && idx + 1 < chars.len() && chars[idx+1] == '/' {
                     let text: String = chars[idx+2..].iter().collect();
-                    found = Some((idx, text.trim_start().to_string()));
-                    break;
-                }
-                // BASIC single-quote comment
-                if c == '\'' {
-                    let text: String = chars[idx+1..].iter().collect();
                     found = Some((idx, text.trim_start().to_string()));
                     break;
                 }
@@ -954,7 +948,6 @@ fn extract_comments_map(src: &str) -> HashMap<u32, Vec<String>> {
 
         let trimmed = line.trim_start();
         let is_code_line = !trimmed.is_empty()
-            && !trimmed.starts_with('\'')
             && !trimmed.starts_with('#')
             && !trimmed.to_ascii_uppercase().starts_with("REM")
             && !trimmed.starts_with("//");

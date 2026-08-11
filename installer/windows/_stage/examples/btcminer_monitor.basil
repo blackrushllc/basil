@@ -7,7 +7,7 @@ DIM alerts@ AS BTC_ALERTS()
 
 // Configure alerts
 alerts@.RULE_TEMP_MAX%(85.0)
-alerts@.RULE_HASHRATE_MIN%(100000.0) ' 100 TH/s
+alerts@.RULE_HASHRATE_MIN%(100000.0) // 100 TH/s
 
 // Initialize log
 PRINT "Initializing log database..."
@@ -27,7 +27,7 @@ DO
     DIM snap@
     LET snap@ = mgr@.SNAPSHOT@()
     
-    ' Check for alerts
+    // Check for alerts
     DIM new_alerts@
     LET new_alerts@ = alerts@.EVALUATE@(snap@)
     
@@ -38,10 +38,10 @@ DO
         NEXT i%
     END IF
     
-    ' Log to database
+    // Log to database
     IF log@.WRITE_SNAPSHOT%(snap@) = 0 THEN
         PRINT "Log error: "; log@.LAST_ERR$()
     END IF
     
-    SLEEP 60000 ' Wait 1 minute
+    SLEEP 60000 // Wait 1 minute
 LOOP

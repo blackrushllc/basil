@@ -154,7 +154,7 @@ END FUNCTION
 
 FUNCTION DefaultTargetDir$(os$)
     DIM p$
-    ' Try to use the path of the current executable if available.
+    // Try to use the path of the current executable if available.
     p$ = EXEPATH$()
 
     IF Trim$(p$) <> "" THEN BEGIN
@@ -228,7 +228,7 @@ FUNCTION UpgradeComponent%(os$, component$, targetDir$)
         RETURN
     END IF
 
-    ' Mark as executable on Unix-like systems.
+    // Mark as executable on Unix-like systems.
     IF os$ = OS_LINUX OR os$ = OS_MAC THEN BEGIN
         MakeExecutable(destPath$)
     END IF
@@ -266,11 +266,11 @@ END FUNCTION
 
 
 FUNCTION ComponentURL$(os$, component$, filename$)
-    ' TODO: Replace this base URL with your actual download endpoint.
+    // TODO: Replace this base URL with your actual download endpoint.
     DIM base$
 
-    ' Example layout:
-    '   https://blackrushbasic.com/downloads/<os>/<filename>
+    // Example layout:
+    //   https://blackrushbasic.com/downloads/<os>/<filename>
     SELECT CASE os$
         CASE OS_WINDOWS
             base$ = "http://blackrushbasic.com/downloads/windows/"
@@ -291,16 +291,16 @@ END FUNCTION
 
 
 SUB MakeExecutable(path$)
-    ' Optional: make the binary executable on Unix-like systems.
-    ' This assumes a SHELL built-in or similar capability exists.
+    // Optional: make the binary executable on Unix-like systems.
+    // This assumes a SHELL built-in or similar capability exists.
     DIM cmd$
     cmd$ = "chmod +x " + QuotePath$(path$)
-    ' If your BASIC has SHELL, you can enable this:
-    ' SHELL cmd$
+    // If your BASIC has SHELL, you can enable this:
+    // SHELL cmd$
 END SUB
 
 FUNCTION QuotePath$(s$)
-    ' Very simple quoting; you may want to improve this for Windows.
+    // Very simple quoting; you may want to improve this for Windows.
    RETURN "'" + s$ + "'"
 END FUNCTION
 
@@ -311,7 +311,7 @@ FUNCTION JoinPath$(dir$, file$)
         IF RIGHT$(dir$, 1) = "/" OR RIGHT$(dir$, 1) = "\\" THEN BEGIN
         RETURN dir$ + file$
         ELSE BEGIN
-        ' Simple heuristic: use "/" here; OS can normalize if needed.
+        // Simple heuristic: use "/" here; OS can normalize if needed.
         RETURN dir$ + "/" + file$
         END IF
     END IF

@@ -1,7 +1,5 @@
 use std::env;
 use std::fs;
-use std::io::Read;
-use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
@@ -25,7 +23,7 @@ fn basilc_test_mode_basic() {
     let mut p = env::temp_dir();
     p.push(format!("testmode_{}.basil", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     let src_path = p;
-    let program = r#"' Ask for confirmation
+    let program = r#"// Ask for confirmation
 PRINT "Are you sure? (Y/N)";
 LET A$ = INPUT$("> ");
 PRINT A$;

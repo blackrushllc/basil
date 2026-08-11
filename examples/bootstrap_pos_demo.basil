@@ -1,4 +1,4 @@
-' Example: seed a tiny “POS” menu set
+// Example: seed a tiny “POS” menu set
 BASILICA.MENU.CLEAR%()
 
 BASILICA.MENU.ADD_GUI%("POS - Cashier", "run", "file", "examples/pos_cashier.basil", "")

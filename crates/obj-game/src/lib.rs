@@ -79,7 +79,9 @@ struct Texture {
     #[allow(dead_code)]
     sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
+    #[allow(dead_code)]
     width: u32,
+    #[allow(dead_code)]
     height: u32,
 }
 
@@ -228,7 +230,9 @@ impl Renderer {
 
 struct QueuedSprite {
     key: String,
+    #[allow(dead_code)]
     x: f32,
+    #[allow(dead_code)]
     y: f32,
 }
 

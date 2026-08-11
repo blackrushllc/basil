@@ -18,4 +18,5 @@ obj-crypto = ["obj-crypto-pgp"]
 [dependencies]
 basil-common = { workspace = true }
 basil-bytecode = { workspace = true }
-sequoia-openpgp = { version = "1.21", default-features = true }
+sequoia-openpgp = { version = "1.22", default-features = false, features = ["crypto-rust", "compression", "allow-experimental-crypto", "allow-variable-time-crypto"] }
+anyhow = "1"

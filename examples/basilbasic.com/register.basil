@@ -100,7 +100,7 @@
             EXIT 0;
         END
 
-        ' Validation without ELSE: set err$ on first failure
+        // Validation without ELSE: set err$ on first failure
         IF LEN(u$) == 0 OR LEN(p$) == 0 THEN BEGIN
             LET err$ = "Please fill in all fields";
         END
@@ -123,15 +123,15 @@
             IF id% == 0 THEN
                 LET err$ = "Could not create user (duplicate username or DB error)."
 
-            ' ... after you’ve validated input and created the user:
+            // ... after you’ve validated input and created the user:
             IF _id% > 0 THEN BEGIN
-              ' set the session cookie
+              // set the session cookie
               LET __d% = set_cookie("user", u$)
 
-              ' close DB if it’s open
+              // close DB if it’s open
               SQLITE_CLOSE(db%)
 
-              ' IMPORTANT: send an explicit redirect status before Location
+              // IMPORTANT: send an explicit redirect status before Location
               PRINT "Status: 302 Found\r\n"
               PRINT "Location: user_home.basil\r\n\r\n"
               EXIT 0

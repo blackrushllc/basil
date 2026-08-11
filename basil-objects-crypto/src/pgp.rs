@@ -6,12 +6,14 @@ use std::cell::RefCell;
 use basil_common::{Result, BasilError};
 use basil_bytecode::{Value, ObjectDescriptor, MethodDesc, BasicObject, ObjectRef};
 
+use anyhow::{Result as AnyhowResult, Context};
 use sequoia_openpgp as openpgp;
 use openpgp::policy::StandardPolicy;
 use openpgp::Cert;
 use openpgp::armor;
-use openpgp::serialize::stream::{Message, Armorer, Encryptor, LiteralWriter, DetachedSigner};
+use openpgp::serialize::stream::{Message, Armorer, Encryptor2 as Encryptor, LiteralWriter, Signer};
 use openpgp::parse::stream::{DecryptorBuilder, DecryptionHelper, MessageStructure, VerificationHelper, DetachedVerifierBuilder};
+use openpgp::parse::Parse;
 use openpgp::packet::{SKESK, PKESK};
 use openpgp::types::{SymmetricAlgorithm};
 use openpgp::crypto::SessionKey;
@@ -160,7 +162,7 @@ fn bad_arity(name: &str, want: usize, got: usize) -> BasilError { BasilError(for
 fn str_arg(v: &Value) -> String { match v { Value::Str(s)=>s.clone(), other=>format!("{}", other) } }
 fn empty_to_none(s: &str) -> Option<String> { if s.is_empty() { None } else { Some(s.to_string()) } }
 
-fn parse_cert_armored(s: &str) -> std::result::Result<Cert, openpgp::Error> {
+fn parse_cert_armored(s: &str) -> AnyhowResult<Cert> {
     // Parse armored cert or secret key
     let mut rdr = s.as_bytes();
     Cert::from_reader(&mut rdr)
@@ -203,9 +205,9 @@ impl DecryptionHelper for HelperDec {
     fn decrypt<D>(&mut self,
                   pkesks: &[PKESK],
                   _skesks: &[SKESK],
-                  _sym_algo: Option<SymmetricAlgorithm>,
-                  mut decrypt: D) -> std::result::Result<Option<openpgp::Fingerprint>, openpgp::Error>
-        where D: FnMut(SymmetricAlgorithm, &SessionKey) -> openpgp::Result<Option<openpgp::Fingerprint>>
+                  sym_algo: Option<SymmetricAlgorithm>,
+                  mut decrypt: D) -> AnyhowResult<Option<openpgp::Fingerprint>>
+        where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
     {
         let policy = &StandardPolicy::new();
         for pkesk in pkesks {
@@ -215,25 +217,32 @@ impl DecryptionHelper for HelperDec {
                 .alive()
                 .revoked(false)
                 .for_transport_encryption()
-                .keyid(pkesk.recipient())
+                .key_handle(pkesk.recipient())
                 .next()
             {
                 // Unlock private key (if needed)
-                let unlocked = if let Some(pw) = &self.pass {
-                    ka.key().clone().unlock(|| pw.clone().into())
-                } else {
-                    ka.key().clone().unlock(|| "".to_string().into())
-                };
-                let keypair = match unlocked {
-                    Ok(k) => k,
-                    Err(_e) => continue, // wrong passphrase? try next
-                }.into_keypair()?;
-                let sk = keypair.decrypt_session_key(pkesk)?;
-                if let Some(fp) = decrypt(pkesk.symmetric_algo(), &sk)? { return Ok(Some(fp)); }
+                let mut key = ka.key().clone();
+                if key.has_secret() && key.secret().is_encrypted() {
+                    let pw = self.pass.clone().unwrap_or_default();
+                    key = key.decrypt_secret(&pw.into()).context("Decryption error")?;
+                }
+                let mut keypair = key.into_keypair().context("Keypair error")?;
+                if let Some((algo, sk)) = pkesk.decrypt(&mut keypair, sym_algo) {
+                    if decrypt(algo, &sk) {
+                        return Ok(Some(self.cert.fingerprint()));
+                    }
+                }
             }
         }
         Ok(None)
     }
+}
+
+impl VerificationHelper for HelperDec {
+    fn get_certs(&mut self, _ids: &[openpgp::KeyHandle]) -> AnyhowResult<Vec<Cert>> {
+        Ok(vec![self.cert.clone()])
+    }
+    fn check(&mut self, _structure: MessageStructure<'_>) -> AnyhowResult<()> { Ok(()) }
 }
 
 fn decrypt_armored(secret_key_armored: &str, pass: Option<String>, cipher_armored_bytes: &[u8]) -> Result<Vec<u8>> {
@@ -245,7 +254,6 @@ fn decrypt_armored(secret_key_armored: &str, pass: Option<String>, cipher_armore
     let mut dec = DecryptorBuilder::from_bytes(cipher_armored_bytes)
         .map_err(|e| BasilError(format!("PGP.Decrypt: {}", e)))?
         .with_policy(policy, None, helper)
-        .build()
         .map_err(|e| BasilError(format!("PGP.Decrypt: {}", e)))?;
     let mut out = Vec::new();
     std::io::copy(&mut dec, &mut out).map_err(|e| BasilError(format!("PGP.Decrypt: {}", e)))?;
@@ -256,10 +264,10 @@ struct HelperVerify {
     cert: Cert,
 }
 impl VerificationHelper for HelperVerify {
-    fn get_certs(&mut self, _ids: &[openpgp::KeyID]) -> openpgp::Result<Vec<Cert>> {
+    fn get_certs(&mut self, _ids: &[openpgp::KeyHandle]) -> openpgp::Result<Vec<Cert>> {
         Ok(vec![self.cert.clone()])
     }
-    fn check(&mut self, _structure: &MessageStructure) -> openpgp::Result<()> { Ok(()) }
+    fn check(&mut self, _structure: MessageStructure<'_>) -> openpgp::Result<()> { Ok(()) }
 }
 
 fn sign_detached_armored(secret_key_armored: &str, pass: Option<String>, data: &[u8]) -> Result<String> {
@@ -270,19 +278,26 @@ fn sign_detached_armored(secret_key_armored: &str, pass: Option<String>, data: &
     // Find signing key and unlock
     let mut maybe_keypair = None;
     for ka in cert.keys().with_policy(policy, None).secret().alive().revoked(false).for_signing() {
-        let res = if let Some(pw) = &pass {
-            ka.key().clone().unlock(|| pw.clone().into())
-        } else {
-            ka.key().clone().unlock(|| "".to_string().into())
-        };
-        if let Ok(unlocked) = res { maybe_keypair = Some(unlocked.into_keypair().map_err(|e| BasilError(format!("PGP.Sign: {}", e)))?); break; }
+        let mut key = ka.key().clone();
+        if key.has_secret() && key.secret().is_encrypted() {
+            let pw = pass.clone().unwrap_or_default();
+            if let Ok(decrypted) = key.decrypt_secret(&pw.into()) {
+                key = decrypted;
+            } else {
+                continue;
+            }
+        }
+        if let Ok(kp) = key.into_keypair() {
+            maybe_keypair = Some(kp);
+            break;
+        }
     }
     let keypair = maybe_keypair.ok_or_else(|| BasilError("PGP.Sign: No usable signing key".into()))?;
 
     let mut out = Vec::<u8>::new();
     let msg = Message::new(&mut out);
     let msg = Armorer::new(msg).kind(armor::Kind::Signature).build().map_err(|e| BasilError(format!("PGP.Sign: {}", e)))?;
-    let mut ds = DetachedSigner::new(msg, keypair).build().map_err(|e| BasilError(format!("PGP.Sign: {}", e)))?;
+    let mut ds = Signer::new(msg, keypair).detached().build().map_err(|e| BasilError(format!("PGP.Sign: {}", e)))?;
     ds.write_all(data).map_err(|e| BasilError(format!("PGP.Sign: {}", e)))?;
     ds.finalize().map_err(|e| BasilError(format!("PGP.Sign: {}", e)))?;
     let sig = String::from_utf8(out).map_err(|_| BasilError("PGP.Sign: Output not UTF-8".into()))?;
@@ -298,11 +313,11 @@ fn verify_detached(public_key_armored: &str, data: &[u8], signature_armored: &[u
     let mut v = DetachedVerifierBuilder::from_bytes(signature_armored)
         .map_err(|e| BasilError(format!("PGP.Verify: {}", e)))?
         .with_policy(policy, None, helper)
-        .detached_reader(data)
         .map_err(|e| BasilError(format!("PGP.Verify: {}", e)))?;
-
-    let mut sink = std::io::sink();
-    std::io::copy(&mut v, &mut sink).map_err(|e| BasilError(format!("PGP.Verify: {}", e)))?;
-    // If verification fails, builder/read should error. If we got here, consider it OK.
+    
+    v.verify_reader(data)
+        .map_err(|e| BasilError(format!("PGP.Verify: {}", e)))?;
+    
+    // If verification succeeds, it returns Ok(())
     Ok(true)
 }

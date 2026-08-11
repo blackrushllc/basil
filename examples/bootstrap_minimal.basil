@@ -1,4 +1,4 @@
-' Clear and add two quick items, then save
+// Clear and add two quick items, then save
 BASILICA.MENU.CLEAR%()
 
 BASILICA.MENU.ADD_CLI%("Basil Prompt", "cli", "bare", "", "")
