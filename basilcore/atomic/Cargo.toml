@@ -1,0 +1,13 @@
+[package]
+name = "basil-atomic"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+name = "basil_atomic"
+path = "src/lib.rs"
+
+[dependencies]
+basil-common = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"

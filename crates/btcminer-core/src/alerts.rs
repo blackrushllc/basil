@@ -37,17 +37,26 @@ impl AlertEvaluator {
             if let Some(stats) = &asic.stats {
                 if let Some(limit) = self.rules.temp_max {
                     if stats.temp_max_c > limit {
-                        alerts.push(format!("ASIC {} temperature high: {:.1}C (limit {:.1}C)", asic.name, stats.temp_max_c, limit));
+                        alerts.push(format!(
+                            "ASIC {} temperature high: {:.1}C (limit {:.1}C)",
+                            asic.name, stats.temp_max_c, limit
+                        ));
                     }
                 }
                 if let Some(limit) = self.rules.hashrate_min {
                     if stats.hashrate_ghs < limit {
-                        alerts.push(format!("ASIC {} hashrate low: {:.1} GH/s (limit {:.1} GH/s)", asic.name, stats.hashrate_ghs, limit));
+                        alerts.push(format!(
+                            "ASIC {} hashrate low: {:.1} GH/s (limit {:.1} GH/s)",
+                            asic.name, stats.hashrate_ghs, limit
+                        ));
                     }
                 }
                 if let Some(limit) = self.rules.reject_rate_max {
                     if stats.reject_rate_pct > limit {
-                        alerts.push(format!("ASIC {} reject rate high: {:.2}% (limit {:.2}%)", asic.name, stats.reject_rate_pct, limit));
+                        alerts.push(format!(
+                            "ASIC {} reject rate high: {:.2}% (limit {:.2}%)",
+                            asic.name, stats.reject_rate_pct, limit
+                        ));
                     }
                 }
             }
@@ -72,7 +81,7 @@ mod tests {
             firmware: "1.0".into(),
             uptime_s: 100,
             hashrate_ghs: 90.0, // Low
-            temp_max_c: 85.0, // High
+            temp_max_c: 85.0,   // High
             fan_rpm_avg: 3000,
             accepted: 100,
             rejected: 1,
@@ -101,7 +110,7 @@ mod tests {
                     online: false,
                     stats: None,
                     last_err: None,
-                }
+                },
             ],
             alerts: vec![],
             db_ok: true,

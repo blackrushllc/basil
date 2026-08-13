@@ -7,16 +7,26 @@ use std::fmt;
 pub struct Str(String);
 
 impl Str {
-    pub fn from_static(s: &'static str) -> Str { Str(s.to_string()) }
-    pub fn from_string(s: String) -> Str { Str(s) }
+    pub fn from_static(s: &'static str) -> Str {
+        Str(s.to_string())
+    }
+    pub fn from_string(s: String) -> Str {
+        Str(s)
+    }
 }
 
 impl fmt::Display for Str {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 #[derive(Clone)]
-pub enum Val { Int(i64), Bool(bool), Str(Str) /* , Obj(ObjHandle) */ }
+pub enum Val {
+    Int(i64),
+    Bool(bool),
+    Str(Str), /* , Obj(ObjHandle) */
+}
 
 impl fmt::Display for Val {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -32,15 +42,23 @@ impl fmt::Display for Val {
 pub struct RtError(String);
 
 impl fmt::Display for RtError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl std::error::Error for RtError {}
 
 pub type RtResult<T> = Result<T, RtError>;
 
-pub fn print(v: &Val) -> RtResult<()> { print!("{}", v); Ok(()) }
-pub fn println(v: &Val) -> RtResult<()> { println!("{}", v); Ok(()) }
+pub fn print(v: &Val) -> RtResult<()> {
+    print!("{}", v);
+    Ok(())
+}
+pub fn println(v: &Val) -> RtResult<()> {
+    println!("{}", v);
+    Ok(())
+}
 
 pub fn input_line(prompt: &Str) -> Str {
     use std::io::{self, Write};
@@ -48,14 +66,33 @@ pub fn input_line(prompt: &Str) -> Str {
     let _ = io::stdout().flush();
     let mut s = String::new();
     let _ = io::stdin().read_line(&mut s);
-    if s.ends_with('\n') { s.pop(); if s.ends_with('\r') { s.pop(); } }
+    if s.ends_with('\n') {
+        s.pop();
+        if s.ends_with('\r') {
+            s.pop();
+        }
+    }
     Str::from_string(s)
 }
 
 pub mod features {
     // Re-export thin, monomorphic APIs from basil-objects when enabled.
-    #[cfg(feature = "audio")] pub mod audio { pub use basil_objects::audio::*; }
-    #[cfg(feature = "midi")]  pub mod midi  { pub use basil_objects::midi::*; }
-    #[cfg(feature = "daw")]   pub mod daw   { pub use basil_objects::daw::{audio_play, audio_record, synth_live, stop, stop_clear, should_stop, get_err, reset}; }
-    #[cfg(feature = "term")]  pub mod term  { pub use basil_objects::term::*; }
+    #[cfg(feature = "audio")]
+    pub mod audio {
+        pub use basil_objects::audio::*;
+    }
+    #[cfg(feature = "midi")]
+    pub mod midi {
+        pub use basil_objects::midi::*;
+    }
+    #[cfg(feature = "daw")]
+    pub mod daw {
+        pub use basil_objects::daw::{
+            audio_play, audio_record, get_err, reset, should_stop, stop, stop_clear, synth_live,
+        };
+    }
+    #[cfg(feature = "term")]
+    pub mod term {
+        pub use basil_objects::term::*;
+    }
 }

@@ -50,30 +50,32 @@ pub struct ExtractConfig {
 pub fn resolve_path<'a>(data: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
     let mut current = data;
     let parts: Vec<&str> = path.split('.').collect();
-    
+
     for part in parts {
-        if part.is_empty() { continue; }
-        
+        if part.is_empty() {
+            continue;
+        }
+
         // Handle array access like "boards[0]"
         if let Some(bracket_pos) = part.find('[') {
             let name = &part[..bracket_pos];
             if !name.is_empty() {
                 current = current.get(name)?;
             }
-            
+
             let mut remaining = &part[bracket_pos..];
             while let Some(start) = remaining.find('[') {
                 let end = remaining.find(']')?;
-                let idx_str = &remaining[start+1..end];
+                let idx_str = &remaining[start + 1..end];
                 let idx = idx_str.parse::<usize>().ok()?;
                 current = current.get(idx)?;
-                remaining = &remaining[end+1..];
+                remaining = &remaining[end + 1..];
             }
         } else {
             current = current.get(part)?;
         }
     }
-    
+
     Some(current)
 }
 
@@ -94,9 +96,18 @@ mod tests {
             "system": { "model": "S19" }
         });
 
-        assert_eq!(resolve_path(&data, "stats.uptime").unwrap().as_i64(), Some(3600));
-        assert_eq!(resolve_path(&data, "stats.pools[0].url").unwrap().as_str(), Some("stratum+tcp://pool.com"));
-        assert_eq!(resolve_path(&data, "system.model").unwrap().as_str(), Some("S19"));
+        assert_eq!(
+            resolve_path(&data, "stats.uptime").unwrap().as_i64(),
+            Some(3600)
+        );
+        assert_eq!(
+            resolve_path(&data, "stats.pools[0].url").unwrap().as_str(),
+            Some("stratum+tcp://pool.com")
+        );
+        assert_eq!(
+            resolve_path(&data, "system.model").unwrap().as_str(),
+            Some("S19")
+        );
         assert!(resolve_path(&data, "nonexistent").is_none());
     }
 }

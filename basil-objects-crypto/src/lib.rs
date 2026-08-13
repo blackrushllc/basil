@@ -1,5 +1,5 @@
+use basil_bytecode::{ObjectDescriptor, ObjectRef, Value};
 use basil_common::Result;
-use basil_bytecode::{ObjectDescriptor, Value, ObjectRef};
 
 #[cfg(feature = "obj-crypto-pgp")]
 pub mod pgp;
@@ -16,7 +16,9 @@ pub struct RegistryShim<'a> {
 }
 
 impl<'a> RegistryShim<'a> {
-    pub fn new<F: FnMut(&str, TypeInfo) + 'a>(f: &'a mut F) -> Self { Self { inner: f } }
+    pub fn new<F: FnMut(&str, TypeInfo) + 'a>(f: &'a mut F) -> Self {
+        Self { inner: f }
+    }
     pub fn register(&mut self, type_name: &str, info: TypeInfo) {
         (self.inner)(type_name, info);
     }

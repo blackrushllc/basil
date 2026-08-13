@@ -1,19 +1,24 @@
 //! Rust backend emitter for bcc: turns a tiny IR into a Cargo project.
 
-use std::{fs, path::{Path, PathBuf}};
+use basil_ir::{Expr, Instr, Module};
 use sha2::{Digest, Sha256};
-use basil_ir::{Module, Instr, Expr};
 use std::collections::{HashMap, HashSet};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone)]
 pub enum DepSource {
-    CratesIo,                 // use crates.io with pinned versions
-    LocalPath(PathBuf),       // use local repo path to runtime crates
-    Vendor(PathBuf),          // use crates.io names but provide vendor dir copied into project
+    CratesIo,           // use crates.io with pinned versions
+    LocalPath(PathBuf), // use local repo path to runtime crates
+    Vendor(PathBuf),    // use crates.io names but provide vendor dir copied into project
 }
 
 impl Default for DepSource {
-    fn default() -> Self { DepSource::CratesIo }
+    fn default() -> Self {
+        DepSource::CratesIo
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -21,7 +26,7 @@ pub struct BuildOptions {
     pub name: Option<String>,
     pub target: Option<String>,
     pub opt_level: Option<u8>,
-    pub lto: Option<String>, // off|thin|fat
+    pub lto: Option<String>,               // off|thin|fat
     pub features: Vec<String>, // effective feature names like "audio","midi" (rt features)
     pub obj_crates: Vec<String>, // e.g. "basil-obj-audio"
     pub emit_project_dir: Option<PathBuf>, // if Some, emit here and don't build
@@ -37,9 +42,15 @@ pub fn compute_hash_key(src: &str, opts: &BuildOptions) -> String {
     let mut hasher = Sha256::new();
     hasher.update(src.as_bytes());
     hasher.update("|features:".as_bytes());
-    for f in &opts.features { hasher.update(f.as_bytes()); hasher.update(b","); }
+    for f in &opts.features {
+        hasher.update(f.as_bytes());
+        hasher.update(b",");
+    }
     hasher.update("|objs:".as_bytes());
-    for c in &opts.obj_crates { hasher.update(c.as_bytes()); hasher.update(b","); }
+    for c in &opts.obj_crates {
+        hasher.update(c.as_bytes());
+        hasher.update(b",");
+    }
     hasher.update("|opt:".as_bytes());
     hasher.update(opts.opt_level.unwrap_or(3).to_le_bytes());
     hasher.update("|lto:".as_bytes());
@@ -47,8 +58,14 @@ pub fn compute_hash_key(src: &str, opts: &BuildOptions) -> String {
     hasher.update("|deps:".as_bytes());
     match &opts.dep_source {
         DepSource::CratesIo => hasher.update("crates-io".as_bytes()),
-        DepSource::LocalPath(p) => { hasher.update("local".as_bytes()); hasher.update(p.to_string_lossy().as_bytes()); }
-        DepSource::Vendor(p) => { hasher.update("vendor".as_bytes()); hasher.update(p.to_string_lossy().as_bytes()); }
+        DepSource::LocalPath(p) => {
+            hasher.update("local".as_bytes());
+            hasher.update(p.to_string_lossy().as_bytes());
+        }
+        DepSource::Vendor(p) => {
+            hasher.update("vendor".as_bytes());
+            hasher.update(p.to_string_lossy().as_bytes());
+        }
     }
     hasher.update("|ver:".as_bytes());
     hasher.update(opts.pinned_version.as_bytes());
@@ -56,11 +73,24 @@ pub fn compute_hash_key(src: &str, opts: &BuildOptions) -> String {
     hex::encode(sum)[..16].to_string()
 }
 
-pub struct EmittedProject { pub root: PathBuf, pub main_rs: PathBuf, pub cargo_toml: PathBuf }
+pub struct EmittedProject {
+    pub root: PathBuf,
+    pub main_rs: PathBuf,
+    pub cargo_toml: PathBuf,
+}
 
-pub fn emit_project(base_dir: &Path, src_path: &Path, module: &Module, opts: &BuildOptions) -> std::io::Result<EmittedProject> {
+pub fn emit_project(
+    base_dir: &Path,
+    src_path: &Path,
+    module: &Module,
+    opts: &BuildOptions,
+) -> std::io::Result<EmittedProject> {
     let hash = compute_hash_key(&format!("{}\n{:?}", src_path.display(), module), opts);
-    let root = if let Some(ref dir) = opts.emit_project_dir { dir.clone() } else { base_dir.join(".basil").join("targets").join(&hash) };
+    let root = if let Some(ref dir) = opts.emit_project_dir {
+        dir.clone()
+    } else {
+        base_dir.join(".basil").join("targets").join(&hash)
+    };
 
     let src_dir = root.join("src");
     fs::create_dir_all(&src_dir)?;
@@ -85,7 +115,11 @@ pub fn emit_project(base_dir: &Path, src_path: &Path, module: &Module, opts: &Bu
         fs::write(cargo_cfg_dir.join("config.toml"), cfg)?;
     }
 
-    Ok(EmittedProject { root, main_rs, cargo_toml })
+    Ok(EmittedProject {
+        root,
+        main_rs,
+        cargo_toml,
+    })
 }
 
 fn render_cargo_toml(opts: &BuildOptions) -> String {
@@ -95,8 +129,12 @@ fn render_cargo_toml(opts: &BuildOptions) -> String {
 
     let mut features_list = String::new();
     for (i, f) in opts.features.iter().enumerate() {
-        if i > 0 { features_list.push_str(", "); }
-        features_list.push('"'); features_list.push_str(f); features_list.push('"');
+        if i > 0 {
+            features_list.push_str(", ");
+        }
+        features_list.push('"');
+        features_list.push_str(f);
+        features_list.push('"');
     }
 
     let mut obj_lines = String::new();
@@ -106,24 +144,39 @@ fn render_cargo_toml(opts: &BuildOptions) -> String {
 
     let lib_dep = match &opts.dep_source {
         DepSource::CratesIo | DepSource::Vendor(_) => {
-            format!("libbasilrt = {{ version = \"={}\", features = [ {} ] }}", opts.pinned_version, features_list)
+            format!(
+                "libbasilrt = {{ version = \"={}\", features = [ {} ] }}",
+                opts.pinned_version, features_list
+            )
         }
         DepSource::LocalPath(root) => {
             // Use absolute, sanitized path for Cargo on Windows and Unix
             let abs_root = root.canonicalize().unwrap_or(root.clone());
-            let mut p = abs_root.join("crates").join("libbasilrt").to_string_lossy().to_string();
+            let mut p = abs_root
+                .join("crates")
+                .join("libbasilrt")
+                .to_string_lossy()
+                .to_string();
             if cfg!(windows) {
-                if let Some(stripped) = p.strip_prefix("\\\\?\\") { p = stripped.to_string(); }
-                if let Some(stripped) = p.strip_prefix("//?/") { p = stripped.to_string(); }
+                if let Some(stripped) = p.strip_prefix("\\\\?\\") {
+                    p = stripped.to_string();
+                }
+                if let Some(stripped) = p.strip_prefix("//?/") {
+                    p = stripped.to_string();
+                }
                 p = p.replace('\\', "/");
             } else {
                 p = p.replace('\\', "/");
             }
-            format!("libbasilrt = {{ path = \"{}\", features = [ {} ] }}", p, features_list)
+            format!(
+                "libbasilrt = {{ path = \"{}\", features = [ {} ] }}",
+                p, features_list
+            )
         }
     };
 
-    format!(r#"
+    format!(
+        r#"
 [package]
 name = "{name}"
 version = "0.1.0"
@@ -142,11 +195,14 @@ panic = "abort"
 # Make this a workspace root to avoid inheriting an ancestor workspace
 [workspace]
 members = []
-"#)
+"#
+    )
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if !dst.exists() { fs::create_dir_all(dst)?; }
+    if !dst.exists() {
+        fs::create_dir_all(dst)?;
+    }
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let ty = entry.file_type()?;
@@ -156,7 +212,9 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
             copy_dir_all(&from, &to)?;
         } else if ty.is_file() {
             // Overwrite if exists
-            if let Some(parent) = to.parent() { fs::create_dir_all(parent)?; }
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent)?;
+            }
             fs::copy(&from, &to)?;
         }
     }
@@ -171,10 +229,22 @@ fn render_main_rs(src_path: &Path, module: &Module) -> String {
     // Pre-scan assignments to decide which variables require mut
     let mut counts: HashMap<String, usize> = HashMap::new();
     collect_assign_counts(&module.main.body, &mut counts);
-    let mutated: HashSet<String> = counts.into_iter().filter(|(_, c)| *c > 1).map(|(v, _)| v).collect();
-    render_instrs(&module.main.body, &mutated, &mut vars, &mut declared, &mut body, 0);
+    let mutated: HashSet<String> = counts
+        .into_iter()
+        .filter(|(_, c)| *c > 1)
+        .map(|(v, _)| v)
+        .collect();
+    render_instrs(
+        &module.main.body,
+        &mutated,
+        &mut vars,
+        &mut declared,
+        &mut body,
+        0,
+    );
 
-    format!(r#"#![allow(unused_variables, unused_assignments)]
+    format!(
+        r#"#![allow(unused_variables, unused_assignments)]
 
 // AUTOGENERATED by bcc — DO NOT EDIT
 // Source: {src}
@@ -196,7 +266,10 @@ fn main() {{
         std::process::exit(1);
     }}
 }}
-"#, src = src_path.display(), body = body)
+"#,
+        src = src_path.display(),
+        body = body
+    )
 }
 
 fn collect_assign_counts(instrs: &Vec<Instr>, counts: &mut HashMap<String, usize>) {
@@ -210,7 +283,11 @@ fn collect_assign_counts(instrs: &Vec<Instr>, counts: &mut HashMap<String, usize
                 let e = counts.entry(key).or_insert(0);
                 *e += 1;
             }
-            Instr::If { then_body, else_body, .. } => {
+            Instr::If {
+                then_body,
+                else_body,
+                ..
+            } => {
                 collect_assign_counts(then_body, counts);
                 collect_assign_counts(else_body, counts);
             }
@@ -222,7 +299,14 @@ fn collect_assign_counts(instrs: &Vec<Instr>, counts: &mut HashMap<String, usize
     }
 }
 
-fn render_instrs(instrs: &Vec<Instr>, mutated: &HashSet<String>, vars: &mut HashMap<String, String>, declared: &mut HashSet<String>, out: &mut String, mut indent: usize) {
+fn render_instrs(
+    instrs: &Vec<Instr>,
+    mutated: &HashSet<String>,
+    vars: &mut HashMap<String, String>,
+    declared: &mut HashSet<String>,
+    out: &mut String,
+    mut indent: usize,
+) {
     // vars: maps canonical (lowercased) Basil var name -> sanitized Rust ident
     let ind = |n: usize| -> String { " ".repeat(n * 4) };
     let canon = |s: &str| -> String { s.to_ascii_lowercase() };
@@ -230,27 +314,59 @@ fn render_instrs(instrs: &Vec<Instr>, mutated: &HashSet<String>, vars: &mut Hash
         match ins {
             Instr::Print(e) => {
                 let s_code = render_expr_as_string(e, vars);
-                out.push_str(&format!("{}rt::print(&make_val_str({}))?;\n", ind(indent), s_code));
+                out.push_str(&format!(
+                    "{}rt::print(&make_val_str({}))?;\n",
+                    ind(indent),
+                    s_code
+                ));
             }
-            Instr::For { var, start, end, step, body } => {
+            Instr::For {
+                var,
+                start,
+                end,
+                step,
+                body,
+            } => {
                 let rust_var = sanitize_var(var);
                 let start_c = render_expr_as_i64(start, vars);
                 let end_c = render_expr_as_i64(end, vars);
-                let step_c = step.as_ref().map(|e| render_expr_as_i64(e, vars)).unwrap_or_else(|| "1".to_string());
+                let step_c = step
+                    .as_ref()
+                    .map(|e| render_expr_as_i64(e, vars))
+                    .unwrap_or_else(|| "1".to_string());
                 out.push_str(&format!("{}{{\n", ind(indent)));
                 indent += 1;
-                out.push_str(&format!("{}let mut {}: i64 = {};\n", ind(indent), rust_var, start_c));
+                out.push_str(&format!(
+                    "{}let mut {}: i64 = {};\n",
+                    ind(indent),
+                    rust_var,
+                    start_c
+                ));
                 out.push_str(&format!("{}let end_: i64 = {};\n", ind(indent), end_c));
                 out.push_str(&format!("{}let step_: i64 = {};\n", ind(indent), step_c));
-                out.push_str(&format!("{}while if step_ >= 0 {{ {} <= end_ }} else {{ {} >= end_ }} {{\n", ind(indent), rust_var, rust_var));
+                out.push_str(&format!(
+                    "{}while if step_ >= 0 {{ {} <= end_ }} else {{ {} >= end_ }} {{\n",
+                    ind(indent),
+                    rust_var,
+                    rust_var
+                ));
                 indent += 1;
                 // extend var map with canonical key for the loop var (do not add to declared set)
                 let key = canon(var);
                 let prev = vars.insert(key.clone(), rust_var.clone());
                 render_instrs(body, mutated, vars, declared, out, indent);
                 // restore
-                if let Some(prev_name) = prev { vars.insert(key, prev_name); } else { vars.remove(&canon(var)); }
-                out.push_str(&format!("{}{} = {}.saturating_add(step_);\n", ind(indent), rust_var, rust_var));
+                if let Some(prev_name) = prev {
+                    vars.insert(key, prev_name);
+                } else {
+                    vars.remove(&canon(var));
+                }
+                out.push_str(&format!(
+                    "{}{} = {}.saturating_add(step_);\n",
+                    ind(indent),
+                    rust_var,
+                    rust_var
+                ));
                 indent -= 1;
                 out.push_str(&format!("{}}}\n", ind(indent)));
                 indent -= 1;
@@ -266,10 +382,20 @@ fn render_instrs(instrs: &Vec<Instr>, mutated: &HashSet<String>, vars: &mut Hash
                     vars.insert(key.clone(), rust_var.clone());
                     declared.insert(rust_var.clone());
                     let mut_kw = if mutated.contains(&key) { "mut " } else { "" };
-                    out.push_str(&format!("{}let {}{}: i64 = {};\n", ind(indent), mut_kw, rust_var, val));
+                    out.push_str(&format!(
+                        "{}let {}{}: i64 = {};\n",
+                        ind(indent),
+                        mut_kw,
+                        rust_var,
+                        val
+                    ));
                 }
             }
-            Instr::If { cond, then_body, else_body } => {
+            Instr::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 let c = render_expr_as_bool(cond, vars);
                 out.push_str(&format!("{}if {} {{\n", ind(indent), c));
                 indent += 1;
@@ -289,7 +415,12 @@ fn render_instrs(instrs: &Vec<Instr>, mutated: &HashSet<String>, vars: &mut Hash
                     if name.as_str() == "AUDIO_PLAY%" {
                         let a0 = render_expr_as_string(&args[0], vars);
                         let a1 = render_expr_as_string(&args[1], vars);
-                        out.push_str(&format!("{}let _ = rt::features::daw::audio_play(&{}, &{});\n", ind(indent), a0, a1));
+                        out.push_str(&format!(
+                            "{}let _ = rt::features::daw::audio_play(&{}, &{});\n",
+                            ind(indent),
+                            a0,
+                            a1
+                        ));
                     } else if name.as_str() == "DAW_STOP" {
                         out.push_str(&format!("{}rt::features::daw::stop();\n", ind(indent)));
                     } else if name.as_str() == "DAW_RESET" {
@@ -304,12 +435,20 @@ fn render_instrs(instrs: &Vec<Instr>, mutated: &HashSet<String>, vars: &mut Hash
 fn sanitize_var(name: &str) -> String {
     let mut s = String::new();
     for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' { s.push(ch.to_ascii_lowercase()); }
-        else if ch == '%' || ch == '$' { s.push_str("_v"); }
-        else { s.push('_'); }
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            s.push(ch.to_ascii_lowercase());
+        } else if ch == '%' || ch == '$' {
+            s.push_str("_v");
+        } else {
+            s.push('_');
+        }
     }
-    if s.is_empty() { s.push_str("v"); }
-    if s.chars().next().unwrap().is_ascii_digit() { s.insert(0, '_'); }
+    if s.is_empty() {
+        s.push_str("v");
+    }
+    if s.chars().next().unwrap().is_ascii_digit() {
+        s.insert(0, '_');
+    }
     s
 }
 
@@ -320,7 +459,10 @@ fn render_expr_as_string(e: &Expr, vars: &HashMap<String, String>) -> String {
         Expr::Int(i) => format!("{}.to_string()", i),
         Expr::Bool(b) => format!("{}.to_string()", b),
         Expr::Var(name) => {
-            let v = vars.get(&canon(name)).cloned().unwrap_or_else(|| sanitize_var(name));
+            let v = vars
+                .get(&canon(name))
+                .cloned()
+                .unwrap_or_else(|| sanitize_var(name));
             format!("{}.to_string()", v)
         }
         Expr::Add(a, b) => {
@@ -350,7 +492,10 @@ fn render_expr_as_i64(e: &Expr, vars: &HashMap<String, String>) -> String {
     let canon = |s: &str| -> String { s.to_ascii_lowercase() };
     match e {
         Expr::Int(i) => format!("{}", i),
-        Expr::Var(name) => vars.get(&canon(name)).cloned().unwrap_or_else(|| sanitize_var(name)),
+        Expr::Var(name) => vars
+            .get(&canon(name))
+            .cloned()
+            .unwrap_or_else(|| sanitize_var(name)),
         Expr::Call(name, args) if name.as_str() == "AUDIO_PLAY%" => {
             let a0 = render_expr_as_string(&args[0], vars);
             let a1 = render_expr_as_string(&args[1], vars);
@@ -367,4 +512,8 @@ fn render_expr_as_i64(e: &Expr, vars: &HashMap<String, String>) -> String {
     }
 }
 
-fn escape_str(s: &str) -> String { s.replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r") }
+fn escape_str(s: &str) -> String {
+    s.replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}

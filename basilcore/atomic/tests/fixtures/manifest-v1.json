@@ -1,0 +1,10 @@
+{
+  "format": "atomicflix-game",
+  "formatVersion": 1,
+  "runtimeVersion": 1,
+  "gameId": "haunted-door",
+  "revision": 1,
+  "title": "Haunted Door",
+  "programUrl": "/api/atomic-games/program-v1.json",
+  "posterUrl": "/api/atomic-games/assets/haunted-door.jpg"
+}

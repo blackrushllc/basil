@@ -4,14 +4,32 @@
 use basil_frontend::ast;
 
 #[derive(Debug, Clone)]
-pub enum Ty { Int, Bool, Str, ObjHandle }
+pub enum Ty {
+    Int,
+    Bool,
+    Str,
+    ObjHandle,
+}
 
 #[derive(Debug, Clone)]
 pub enum Instr {
     Print(Box<Expr>),
-    For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Vec<Instr> },
-    Assign { var: String, expr: Expr },
-    If { cond: Expr, then_body: Vec<Instr>, else_body: Vec<Instr> },
+    For {
+        var: String,
+        start: Expr,
+        end: Expr,
+        step: Option<Expr>,
+        body: Vec<Instr>,
+    },
+    Assign {
+        var: String,
+        expr: Expr,
+    },
+    If {
+        cond: Expr,
+        then_body: Vec<Instr>,
+        else_body: Vec<Instr>,
+    },
     ExprStmt(Expr),
 }
 
@@ -32,7 +50,9 @@ pub struct Function {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Module { pub main: Function }
+pub struct Module {
+    pub main: Function,
+}
 
 fn lower_expr(e: &ast::Expr) -> Expr {
     match e {
@@ -44,7 +64,7 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             use ast::BinOp::*;
             match op {
                 Add => Expr::Add(Box::new(lower_expr(lhs)), Box::new(lower_expr(rhs))),
-                Ne  => Expr::Ne(Box::new(lower_expr(lhs)), Box::new(lower_expr(rhs))),
+                Ne => Expr::Ne(Box::new(lower_expr(lhs)), Box::new(lower_expr(rhs))),
                 _ => Expr::Str(format!("{:?}", e)),
             }
         }
@@ -65,36 +85,71 @@ fn lower_stmt(stmt: &ast::Stmt, out: &mut Vec<Instr>) {
         ast::Stmt::Print { expr } => {
             out.push(Instr::Print(Box::new(lower_expr(expr))));
         }
-        ast::Stmt::Let { name, indices, init } => {
+        ast::Stmt::Let {
+            name,
+            indices,
+            init,
+        } => {
             if indices.is_none() {
-                out.push(Instr::Assign { var: name.clone(), expr: lower_expr(init) });
+                out.push(Instr::Assign {
+                    var: name.clone(),
+                    expr: lower_expr(init),
+                });
             }
         }
-        ast::Stmt::If { cond, then_branch, else_branch } => {
+        ast::Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             // Lower then branch
             let mut then_vec = Vec::new();
             match &**then_branch {
-                ast::Stmt::Block(stmts) => { for s in stmts { lower_stmt(s, &mut then_vec); } }
-                other => { lower_stmt(other, &mut then_vec); }
+                ast::Stmt::Block(stmts) => {
+                    for s in stmts {
+                        lower_stmt(s, &mut then_vec);
+                    }
+                }
+                other => {
+                    lower_stmt(other, &mut then_vec);
+                }
             }
             // Lower else branch (optional)
             let mut else_vec = Vec::new();
             if let Some(eb) = else_branch {
                 match &**eb {
-                    ast::Stmt::Block(stmts) => { for s in stmts { lower_stmt(s, &mut else_vec); } }
-                    other => { lower_stmt(other, &mut else_vec); }
+                    ast::Stmt::Block(stmts) => {
+                        for s in stmts {
+                            lower_stmt(s, &mut else_vec);
+                        }
+                    }
+                    other => {
+                        lower_stmt(other, &mut else_vec);
+                    }
                 }
             }
-            out.push(Instr::If { cond: lower_expr(cond), then_body: then_vec, else_body: else_vec });
+            out.push(Instr::If {
+                cond: lower_expr(cond),
+                then_body: then_vec,
+                else_body: else_vec,
+            });
         }
         ast::Stmt::ExprStmt(e) => {
             out.push(Instr::ExprStmt(lower_expr(e)));
         }
-        ast::Stmt::For { var, start, end, step, body } => {
+        ast::Stmt::For {
+            var,
+            start,
+            end,
+            step,
+            body,
+        } => {
             // Lower body
             let mut inner = Vec::new();
             if let ast::Stmt::Block(stmts) = &**body {
-                for s in stmts { lower_stmt(s, &mut inner); }
+                for s in stmts {
+                    lower_stmt(s, &mut inner);
+                }
             } else {
                 lower_stmt(body, &mut inner);
             }
@@ -107,7 +162,9 @@ fn lower_stmt(stmt: &ast::Stmt, out: &mut Vec<Instr>) {
             });
         }
         ast::Stmt::Block(stmts) => {
-            for s in stmts { lower_stmt(s, out); }
+            for s in stmts {
+                lower_stmt(s, out);
+            }
         }
         _ => {
             // Ignore unsupported statements for now
@@ -118,6 +175,8 @@ fn lower_stmt(stmt: &ast::Stmt, out: &mut Vec<Instr>) {
 /// Lower from AST to our IR with basic support for Print and For/Next and string concatenation.
 pub fn lower_to_ir(prog: &ast::Program) -> Module {
     let mut m = Module::default();
-    for stmt in prog { lower_stmt(stmt, &mut m.main.body); }
+    for stmt in prog {
+        lower_stmt(stmt, &mut m.main.body);
+    }
     m
 }

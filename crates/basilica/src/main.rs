@@ -1,10 +1,12 @@
-mod config;
 mod app;
+mod config;
 mod instance;
 
 use eframe::{App as EApp, NativeOptions};
 
-struct EgWrapper { inner: app::BasilicaApp }
+struct EgWrapper {
+    inner: app::BasilicaApp,
+}
 impl EApp for EgWrapper {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.inner.ui(ctx);
@@ -23,24 +25,45 @@ fn main() {
         // Load existing or seed config, convert to host pending
         let existing = match config::load_or_seed() {
             Ok(c) => c,
-            Err(e) => { eprintln!("Failed to load basilica.json: {}", e); std::process::exit(1); }
+            Err(e) => {
+                eprintln!("Failed to load basilica.json: {}", e);
+                std::process::exit(1);
+            }
         };
         let pending_host = config::to_host_pending(&existing);
         let shared = std::sync::Arc::new(parking_lot::Mutex::new(pending_host));
 
         // Start a headless Basil runner with BASILICA.MENU enabled
-        let opts = basil_embed::RunnerOptions { with_app: false, with_web: false, basilica_menu: Some(shared.clone()), host_tx: None };
+        let opts = basil_embed::RunnerOptions {
+            with_app: false,
+            with_web: false,
+            basilica_menu: Some(shared.clone()),
+            host_tx: None,
+        };
         let runner = basil_embed::BasilRunner::spawn(false, opts);
-        let _ = runner.tx.send(basil_embed::RunnerCmd::RunFile { mode: basil_embed::RunMode::Run, path: script.clone(), args: None });
+        let _ = runner.tx.send(basil_embed::RunnerCmd::RunFile {
+            mode: basil_embed::RunMode::Run,
+            path: script.clone(),
+            args: None,
+        });
         // Drain events until exit
         let mut exit_code: i32 = 0;
         loop {
             match runner.rx.recv() {
-                Ok(basil_embed::RunnerEvent::Output(s)) => { print!("{}", s); let _ = std::io::Write::flush(&mut std::io::stdout()); }
-                Ok(basil_embed::RunnerEvent::Error(e)) => { eprintln!("{}", e); exit_code = 1; }
+                Ok(basil_embed::RunnerEvent::Output(s)) => {
+                    print!("{}", s);
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                }
+                Ok(basil_embed::RunnerEvent::Error(e)) => {
+                    eprintln!("{}", e);
+                    exit_code = 1;
+                }
                 Ok(basil_embed::RunnerEvent::Suspended) => { /* ignore in bootstrap */ }
                 Ok(basil_embed::RunnerEvent::Exited) => break,
-                Err(_) => { exit_code = 1; break; }
+                Err(_) => {
+                    exit_code = 1;
+                    break;
+                }
             }
         }
         // If script requested save, write config
@@ -53,8 +76,15 @@ fn main() {
         }
         if saved {
             let new_cfg = config::from_host_pending(&snapshot);
-            if let Err(e) = config::save_atomic(&new_cfg) { eprintln!("Failed to save basilica.json: {}", e); std::process::exit(1); }
-            println!("Saved {} CLI items, {} GUI items.", new_cfg.cli_scripts.len(), new_cfg.gui_scripts.len());
+            if let Err(e) = config::save_atomic(&new_cfg) {
+                eprintln!("Failed to save basilica.json: {}", e);
+                std::process::exit(1);
+            }
+            println!(
+                "Saved {} CLI items, {} GUI items.",
+                new_cfg.cli_scripts.len(),
+                new_cfg.gui_scripts.len()
+            );
             std::process::exit(0);
         } else {
             std::process::exit(exit_code.max(1));
@@ -63,14 +93,21 @@ fn main() {
 
     let cfg = match config::load_or_seed() {
         Ok(cfg) => cfg,
-        Err(e) => { eprintln!("Failed to load or seed basilica.json: {}", e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Failed to load or seed basilica.json: {}", e);
+            std::process::exit(1);
+        }
     };
 
     let native_options = NativeOptions::default();
     let _ = eframe::run_native(
         "Basilica",
         native_options,
-        Box::new(|_cc| Ok(Box::new(EgWrapper { inner: app::BasilicaApp::new(cfg) }))),
+        Box::new(|_cc| {
+            Ok(Box::new(EgWrapper {
+                inner: app::BasilicaApp::new(cfg),
+            }))
+        }),
     );
 }
 
@@ -89,8 +126,11 @@ fn run_webview_helper() {
         let stdin = io::stdin();
         let lock = stdin.lock();
         for line in lock.lines() {
-            if let Ok(l) = line { let _ = tx_cmd.send(l); }
-            else { break; }
+            if let Ok(l) = line {
+                let _ = tx_cmd.send(l);
+            } else {
+                break;
+            }
         }
     });
 
@@ -124,9 +164,16 @@ fn run_webview_helper() {
             Event::MainEventsCleared => {
                 // Create window/webview on first tick
                 if window_opt.is_none() {
-                    let window = match WindowBuilder::new().with_title("Basilica Webview").build(target) {
+                    let window = match WindowBuilder::new()
+                        .with_title("Basilica Webview")
+                        .build(target)
+                    {
                         Ok(w) => w,
-                        Err(e) => { eprintln!("[helper] failed to create window: {}", e); *control_flow = ControlFlow::Exit; return; }
+                        Err(e) => {
+                            eprintln!("[helper] failed to create window: {}", e);
+                            *control_flow = ControlFlow::Exit;
+                            return;
+                        }
                     };
                     let wv = match WebViewBuilder::new(&window)
                         .with_initialization_script(bootstrap_js)
@@ -134,8 +181,16 @@ fn run_webview_helper() {
                         .with_ipc_handler(move |req: wry::http::Request<String>| {
                             let s = req.body().clone();
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                                let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                let event = v
+                                    .get("event")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let id = v
+                                    .get("id")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
                                 if !event.is_empty() && !id.is_empty() {
                                     // Emit event JSON line to stdout for the parent
                                     let payload = serde_json::json!({"event": event, "id": id});
@@ -143,9 +198,14 @@ fn run_webview_helper() {
                                 }
                             }
                         })
-                        .build() {
+                        .build()
+                    {
                         Ok(wv) => wv,
-                        Err(e) => { eprintln!("[helper] failed to build webview: {}", e); *control_flow = ControlFlow::Exit; return; }
+                        Err(e) => {
+                            eprintln!("[helper] failed to build webview: {}", e);
+                            *control_flow = ControlFlow::Exit;
+                            return;
+                        }
                     };
                     webview_opt = Some(wv);
                     window_opt = Some(window);
@@ -158,11 +218,16 @@ fn run_webview_helper() {
                             match cmd {
                                 "set_html" => {
                                     let html = v.get("html").and_then(|x| x.as_str()).unwrap_or("");
-                                    let js = format!("document.open();document.write({});document.close();", serde_json::to_string(html).unwrap_or("\"\"".into()));
+                                    let js = format!(
+                                        "document.open();document.write({});document.close();",
+                                        serde_json::to_string(html).unwrap_or("\"\"".into())
+                                    );
                                     let _ = wv.evaluate_script(&js);
                                 }
                                 "eval" => {
-                                    if let Some(js) = v.get("js").and_then(|x| x.as_str()) { let _ = wv.evaluate_script(js); }
+                                    if let Some(js) = v.get("js").and_then(|x| x.as_str()) {
+                                        let _ = wv.evaluate_script(js);
+                                    }
                                 }
                                 _ => { /* ignore */ }
                             }
@@ -170,7 +235,10 @@ fn run_webview_helper() {
                     }
                 }
             }
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}

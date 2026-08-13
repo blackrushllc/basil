@@ -1,17 +1,19 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::cell::RefCell;
-use std::time::{Instant};
+use std::time::Instant;
 
-use basil_common::{Result, BasilError};
-use basil_bytecode::{Value, ObjectDescriptor, MethodDesc, BasicObject, PropDesc, call_back_to_vm, ObjectRef};
+use basil_bytecode::{
+    call_back_to_vm, BasicObject, MethodDesc, ObjectDescriptor, ObjectRef, PropDesc, Value,
+};
+use basil_common::{BasilError, Result};
 
 use winit::{
-    event::{Event, WindowEvent, KeyEvent, ElementState},
+    event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{WindowBuilder, Window},
     keyboard::{KeyCode, PhysicalKey},
+    window::{Window, WindowBuilder},
 };
 
 pub struct TypeInfo {
@@ -65,10 +67,22 @@ impl Vertex {
 }
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.0], tex_coords: [0.0, 0.0] },
-    Vertex { position: [0.0, 1.0], tex_coords: [0.0, 1.0] },
-    Vertex { position: [1.0, 1.0], tex_coords: [1.0, 1.0] },
-    Vertex { position: [1.0, 0.0], tex_coords: [1.0, 0.0] },
+    Vertex {
+        position: [0.0, 0.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [0.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [1.0, 0.0],
+        tex_coords: [1.0, 0.0],
+    },
 ];
 
 struct Texture {
@@ -92,31 +106,40 @@ impl Renderer {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        
-        let surface = instance.create_surface(window.clone())
-            .map_err(|e| BasilError(format!("Failed to create surface: {}", e)))?;
-            
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }).await.ok_or_else(|| BasilError("Failed to find an appropriate adapter".into()))?;
 
-        let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-            },
-            None,
-        ).await.map_err(|e| BasilError(format!("Failed to create device: {}", e)))?;
+        let surface = instance
+            .create_surface(window.clone())
+            .map_err(|e| BasilError(format!("Failed to create surface: {}", e)))?;
+
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .ok_or_else(|| BasilError("Failed to find an appropriate adapter".into()))?;
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                },
+                None,
+            )
+            .await
+            .map_err(|e| BasilError(format!("Failed to create device: {}", e)))?;
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats.iter()
+        let surface_format = surface_caps
+            .formats
+            .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
-            
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -156,11 +179,12 @@ impl Renderer {
             label: Some("texture_bind_group_layout"),
         });
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -256,14 +280,22 @@ impl EngineInner {
             assets: HashMap::new(),
             input: HashMap::new(),
             last_frame: Instant::now(),
-            clear_color: wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 },
+            clear_color: wgpu::Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 1.0,
+            },
             draw_queue: Vec::new(),
         }
     }
 
     fn load_texture(&mut self, key: &str, path: &str) -> Result<()> {
-        let renderer = self.renderer.as_mut().ok_or_else(|| BasilError("Renderer not initialized".into()))?;
-        
+        let renderer = self
+            .renderer
+            .as_mut()
+            .ok_or_else(|| BasilError("Renderer not initialized".into()))?;
+
         let img = image::open(path)
             .map_err(|e| BasilError(format!("Failed to load image '{}': {}", path, e)))?;
         let rgba = img.to_rgba8();
@@ -313,29 +345,34 @@ impl EngineInner {
             ..Default::default()
         });
 
-        let bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &renderer.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("texture_bind_group"),
-        });
+        let bind_group = renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &renderer.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+                label: Some("texture_bind_group"),
+            });
 
-        self.assets.insert(key.to_string(), Texture {
-            texture,
-            view,
-            sampler,
-            bind_group,
-            width,
-            height,
-        });
+        self.assets.insert(
+            key.to_string(),
+            Texture {
+                texture,
+                view,
+                sampler,
+                bind_group,
+                width,
+                height,
+            },
+        );
 
         Ok(())
     }
@@ -349,18 +386,28 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        Self { inner: Rc::new(RefCell::new(EngineInner::new())) }
+        Self {
+            inner: Rc::new(RefCell::new(EngineInner::new())),
+        }
     }
 }
 
 impl BasicObject for Engine {
-    fn type_name(&self) -> &str { "GAME" }
-    
+    fn type_name(&self) -> &str {
+        "GAME"
+    }
+
     fn get_prop(&self, name: &str) -> Result<Value> {
         match name.to_ascii_uppercase().as_str() {
-            "ASSETS" => Ok(Value::Object(Rc::new(RefCell::new(AssetsProxy { inner: self.inner.clone() })))),
-            "INPUT" => Ok(Value::Object(Rc::new(RefCell::new(InputProxy { inner: self.inner.clone() })))),
-            "DRAW" => Ok(Value::Object(Rc::new(RefCell::new(DrawProxy { inner: self.inner.clone() })))),
+            "ASSETS" => Ok(Value::Object(Rc::new(RefCell::new(AssetsProxy {
+                inner: self.inner.clone(),
+            })))),
+            "INPUT" => Ok(Value::Object(Rc::new(RefCell::new(InputProxy {
+                inner: self.inner.clone(),
+            })))),
+            "DRAW" => Ok(Value::Object(Rc::new(RefCell::new(DrawProxy {
+                inner: self.inner.clone(),
+            })))),
             _ => Err(BasilError(format!("Unknown property '{}' on GAME", name))),
         }
     }
@@ -374,79 +421,116 @@ impl BasicObject for Engine {
             "WINDOW" => {
                 let w = args.get(0).and_then(|v| v.as_int()).unwrap_or(800) as u32;
                 let h = args.get(1).and_then(|v| v.as_int()).unwrap_or(600) as u32;
-                let title = args.get(2).map(|v| v.to_string()).unwrap_or_else(|| "Basil Game".to_string());
-                
+                let title = args
+                    .get(2)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "Basil Game".to_string());
+
                 let mut inner = self.inner.borrow_mut();
-                let event_loop = inner.event_loop.as_ref().ok_or_else(|| BasilError("Event loop not available".into()))?;
-                
+                let event_loop = inner
+                    .event_loop
+                    .as_ref()
+                    .ok_or_else(|| BasilError("Event loop not available".into()))?;
+
                 let window = WindowBuilder::new()
                     .with_title(title)
                     .with_inner_size(winit::dpi::PhysicalSize::new(w, h))
                     .build(event_loop)
                     .map_err(|e| BasilError(format!("Failed to create window: {}", e)))?;
-                
+
                 let window_rc = Arc::new(window);
                 let renderer = pollster::block_on(Renderer::new(window_rc.clone()))?;
-                
+
                 inner.window = Some(window_rc);
                 inner.renderer = Some(renderer);
-                
+
                 Ok(Value::Null)
             }
             "RUN" => {
                 let init_fn = args.get(0).cloned().unwrap_or(Value::Null);
                 let update_fn = args.get(1).cloned().unwrap_or(Value::Null);
                 let draw_fn = args.get(2).cloned().unwrap_or(Value::Null);
-                
-                let el = self.inner.borrow_mut().event_loop.take()
+
+                let el = self
+                    .inner
+                    .borrow_mut()
+                    .event_loop
+                    .take()
                     .ok_or_else(|| BasilError("GAME.Run can only be called once".into()))?;
-                
+
                 let inner_rc = self.inner.clone();
-                
+
                 println!("Starting game loop...");
-                
+
                 // Call init if provided
                 if init_fn != Value::Null {
                     call_back_to_vm(init_fn, &[])?;
                 }
-                
+
                 inner_rc.borrow_mut().last_frame = Instant::now();
-                
+
                 let _ = el.run(move |event, window_target| {
                     window_target.set_control_flow(ControlFlow::Poll);
                     match event {
-                        Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                        Event::WindowEvent {
+                            event: WindowEvent::CloseRequested,
+                            ..
+                        } => {
                             window_target.exit();
                         }
-                        Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
+                        Event::WindowEvent {
+                            event: WindowEvent::Resized(size),
+                            ..
+                        } => {
                             if let Ok(mut inner) = inner_rc.try_borrow_mut() {
                                 if let Some(renderer) = &mut inner.renderer {
                                     renderer.resize(size);
                                 }
                             }
                         }
-                        Event::WindowEvent { event: WindowEvent::KeyboardInput { event: KeyEvent { state, physical_key: PhysicalKey::Code(key), .. }, .. }, .. } => {
+                        Event::WindowEvent {
+                            event:
+                                WindowEvent::KeyboardInput {
+                                    event:
+                                        KeyEvent {
+                                            state,
+                                            physical_key: PhysicalKey::Code(key),
+                                            ..
+                                        },
+                                    ..
+                                },
+                            ..
+                        } => {
                             if let Ok(mut inner) = inner_rc.try_borrow_mut() {
                                 match state {
-                                    ElementState::Pressed => { inner.input.insert(key, true); }
-                                    ElementState::Released => { inner.input.insert(key, false); }
+                                    ElementState::Pressed => {
+                                        inner.input.insert(key, true);
+                                    }
+                                    ElementState::Released => {
+                                        inner.input.insert(key, false);
+                                    }
                                 }
                             }
                         }
-                        Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+                        Event::WindowEvent {
+                            event: WindowEvent::RedrawRequested,
+                            ..
+                        } => {
                             let dt = inner_rc.borrow().last_frame.elapsed().as_secs_f64();
                             inner_rc.borrow_mut().last_frame = Instant::now();
                             inner_rc.borrow_mut().draw_queue.clear();
-                            
+
                             // Update
                             if update_fn != Value::Null {
-                                if let Err(e) = call_back_to_vm(update_fn.clone(), &[Value::Num(dt)]) {
+                                if let Err(e) =
+                                    call_back_to_vm(update_fn.clone(), &[Value::Num(dt)])
+                                {
                                     eprintln!("Error in update callback: {}", e);
                                     window_target.exit();
                                     return;
                                 }
                             }
-                            
+
                             // Draw callback
                             if draw_fn != Value::Null {
                                 if let Err(e) = call_back_to_vm(draw_fn.clone(), &[]) {
@@ -455,7 +539,7 @@ impl BasicObject for Engine {
                                     return;
                                 }
                             }
-                            
+
                             // Actual rendering
                             let mut inner = inner_rc.borrow_mut();
                             let clear_color = inner.clear_color;
@@ -467,28 +551,38 @@ impl BasicObject for Engine {
                                         return;
                                     }
                                 };
-                                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                                let mut encoder = renderer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
-                                
+                                let view = output
+                                    .texture
+                                    .create_view(&wgpu::TextureViewDescriptor::default());
+                                let mut encoder = renderer.device.create_command_encoder(
+                                    &wgpu::CommandEncoderDescriptor {
+                                        label: Some("Render Encoder"),
+                                    },
+                                );
+
                                 {
-                                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                        label: Some("Render Pass"),
-                                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                            view: &view,
-                                            resolve_target: None,
-                                            ops: wgpu::Operations {
-                                                load: wgpu::LoadOp::Clear(clear_color),
-                                                store: wgpu::StoreOp::Store,
-                                            },
-                                        })],
-                                        depth_stencil_attachment: None,
-                                        occlusion_query_set: None,
-                                        timestamp_writes: None,
-                                    });
-                                    
+                                    let mut render_pass =
+                                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                            label: Some("Render Pass"),
+                                            color_attachments: &[Some(
+                                                wgpu::RenderPassColorAttachment {
+                                                    view: &view,
+                                                    resolve_target: None,
+                                                    ops: wgpu::Operations {
+                                                        load: wgpu::LoadOp::Clear(clear_color),
+                                                        store: wgpu::StoreOp::Store,
+                                                    },
+                                                },
+                                            )],
+                                            depth_stencil_attachment: None,
+                                            occlusion_query_set: None,
+                                            timestamp_writes: None,
+                                        });
+
                                     render_pass.set_pipeline(&renderer.pipeline);
-                                    render_pass.set_vertex_buffer(0, renderer.vertex_buffer.slice(..));
-                                    
+                                    render_pass
+                                        .set_vertex_buffer(0, renderer.vertex_buffer.slice(..));
+
                                     for queued in &inner.draw_queue {
                                         if let Some(tex) = inner.assets.get(&queued.key) {
                                             render_pass.set_bind_group(0, &tex.bind_group, &[]);
@@ -497,7 +591,7 @@ impl BasicObject for Engine {
                                         }
                                     }
                                 }
-                                
+
                                 renderer.queue.submit(std::iter::once(encoder.finish()));
                                 output.present();
                                 inner.renderer = Some(renderer);
@@ -528,14 +622,44 @@ impl BasicObject for Engine {
             version: "1.0".into(),
             summary: "Minimal 2D Game Engine".into(),
             properties: vec![
-                PropDesc { name: "Assets".into(), type_name: "ASSETS".into(), readable: true, writable: false },
-                PropDesc { name: "Input".into(), type_name: "INPUT".into(), readable: true, writable: false },
-                PropDesc { name: "Draw".into(), type_name: "DRAW".into(), readable: true, writable: false },
+                PropDesc {
+                    name: "Assets".into(),
+                    type_name: "ASSETS".into(),
+                    readable: true,
+                    writable: false,
+                },
+                PropDesc {
+                    name: "Input".into(),
+                    type_name: "INPUT".into(),
+                    readable: true,
+                    writable: false,
+                },
+                PropDesc {
+                    name: "Draw".into(),
+                    type_name: "DRAW".into(),
+                    readable: true,
+                    writable: false,
+                },
             ],
             methods: vec![
-                MethodDesc { name: "Window".into(), arity: 3, arg_names: vec!["w%".into(), "h%".into(), "title$".into()], return_type: "VOID".into() },
-                MethodDesc { name: "Run".into(), arity: 3, arg_names: vec!["initFn".into(), "updateFn".into(), "drawFn".into()], return_type: "VOID".into() },
-                MethodDesc { name: "Quit".into(), arity: 0, arg_names: vec![], return_type: "VOID".into() },
+                MethodDesc {
+                    name: "Window".into(),
+                    arity: 3,
+                    arg_names: vec!["w%".into(), "h%".into(), "title$".into()],
+                    return_type: "VOID".into(),
+                },
+                MethodDesc {
+                    name: "Run".into(),
+                    arity: 3,
+                    arg_names: vec!["initFn".into(), "updateFn".into(), "drawFn".into()],
+                    return_type: "VOID".into(),
+                },
+                MethodDesc {
+                    name: "Quit".into(),
+                    arity: 0,
+                    arg_names: vec![],
+                    return_type: "VOID".into(),
+                },
             ],
             examples: vec![],
         }
@@ -549,14 +673,26 @@ struct AssetsProxy {
 }
 
 impl BasicObject for AssetsProxy {
-    fn type_name(&self) -> &str { "ASSETS" }
-    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("No properties on ASSETS".into())) }
-    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("ASSETS properties are read-only".into())) }
+    fn type_name(&self) -> &str {
+        "ASSETS"
+    }
+    fn get_prop(&self, _name: &str) -> Result<Value> {
+        Err(BasilError("No properties on ASSETS".into()))
+    }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> {
+        Err(BasilError("ASSETS properties are read-only".into()))
+    }
     fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
         match method.to_ascii_uppercase().as_str() {
             "LOADTEXTURE" | "LOADTEXTURE%" => {
-                let key = args.get(0).map(|v| v.to_string()).ok_or_else(|| BasilError("LOADTEXTURE expects key$".into()))?;
-                let path = args.get(1).map(|v| v.to_string()).ok_or_else(|| BasilError("LOADTEXTURE expects path$".into()))?;
+                let key = args
+                    .get(0)
+                    .map(|v| v.to_string())
+                    .ok_or_else(|| BasilError("LOADTEXTURE expects key$".into()))?;
+                let path = args
+                    .get(1)
+                    .map(|v| v.to_string())
+                    .ok_or_else(|| BasilError("LOADTEXTURE expects path$".into()))?;
                 self.inner.borrow_mut().load_texture(&key, &path)?;
                 Ok(Value::Int(1))
             }
@@ -565,9 +701,16 @@ impl BasicObject for AssetsProxy {
     }
     fn descriptor(&self) -> ObjectDescriptor {
         ObjectDescriptor {
-            type_name: "ASSETS".into(), version: "1.0".into(), summary: "Asset manager".into(),
+            type_name: "ASSETS".into(),
+            version: "1.0".into(),
+            summary: "Asset manager".into(),
             properties: vec![],
-            methods: vec![MethodDesc { name: "LoadTexture".into(), arity: 2, arg_names: vec!["key$".into(), "path$".into()], return_type: "INT".into() }],
+            methods: vec![MethodDesc {
+                name: "LoadTexture".into(),
+                arity: 2,
+                arg_names: vec!["key$".into(), "path$".into()],
+                return_type: "INT".into(),
+            }],
             examples: vec![],
         }
     }
@@ -580,9 +723,15 @@ struct InputProxy {
 }
 
 impl BasicObject for InputProxy {
-    fn type_name(&self) -> &str { "INPUT" }
-    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("No properties on INPUT".into())) }
-    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("INPUT properties are read-only".into())) }
+    fn type_name(&self) -> &str {
+        "INPUT"
+    }
+    fn get_prop(&self, _name: &str) -> Result<Value> {
+        Err(BasilError("No properties on INPUT".into()))
+    }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> {
+        Err(BasilError("INPUT properties are read-only".into()))
+    }
     fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
         match method.to_ascii_uppercase().as_str() {
             "KEYDOWN" | "KEYDOWN%" => {
@@ -596,13 +745,32 @@ impl BasicObject for InputProxy {
                     s if s.len() == 1 => {
                         let c = s.chars().next().unwrap();
                         match c {
-                            'A' => KeyCode::KeyA, 'B' => KeyCode::KeyB, 'C' => KeyCode::KeyC, 'D' => KeyCode::KeyD,
-                            'E' => KeyCode::KeyE, 'F' => KeyCode::KeyF, 'G' => KeyCode::KeyG, 'H' => KeyCode::KeyH,
-                            'I' => KeyCode::KeyI, 'J' => KeyCode::KeyJ, 'K' => KeyCode::KeyK, 'L' => KeyCode::KeyL,
-                            'M' => KeyCode::KeyM, 'N' => KeyCode::KeyN, 'O' => KeyCode::KeyO, 'P' => KeyCode::KeyP,
-                            'Q' => KeyCode::KeyQ, 'R' => KeyCode::KeyR, 'S' => KeyCode::KeyS, 'T' => KeyCode::KeyT,
-                            'U' => KeyCode::KeyU, 'V' => KeyCode::KeyV, 'W' => KeyCode::KeyW, 'X' => KeyCode::KeyX,
-                            'Y' => KeyCode::KeyY, 'Z' => KeyCode::KeyZ,
+                            'A' => KeyCode::KeyA,
+                            'B' => KeyCode::KeyB,
+                            'C' => KeyCode::KeyC,
+                            'D' => KeyCode::KeyD,
+                            'E' => KeyCode::KeyE,
+                            'F' => KeyCode::KeyF,
+                            'G' => KeyCode::KeyG,
+                            'H' => KeyCode::KeyH,
+                            'I' => KeyCode::KeyI,
+                            'J' => KeyCode::KeyJ,
+                            'K' => KeyCode::KeyK,
+                            'L' => KeyCode::KeyL,
+                            'M' => KeyCode::KeyM,
+                            'N' => KeyCode::KeyN,
+                            'O' => KeyCode::KeyO,
+                            'P' => KeyCode::KeyP,
+                            'Q' => KeyCode::KeyQ,
+                            'R' => KeyCode::KeyR,
+                            'S' => KeyCode::KeyS,
+                            'T' => KeyCode::KeyT,
+                            'U' => KeyCode::KeyU,
+                            'V' => KeyCode::KeyV,
+                            'W' => KeyCode::KeyW,
+                            'X' => KeyCode::KeyX,
+                            'Y' => KeyCode::KeyY,
+                            'Z' => KeyCode::KeyZ,
                             _ => return Ok(Value::Int(0)),
                         }
                     }
@@ -616,9 +784,16 @@ impl BasicObject for InputProxy {
     }
     fn descriptor(&self) -> ObjectDescriptor {
         ObjectDescriptor {
-            type_name: "INPUT".into(), version: "1.0".into(), summary: "Input state".into(),
+            type_name: "INPUT".into(),
+            version: "1.0".into(),
+            summary: "Input state".into(),
             properties: vec![],
-            methods: vec![MethodDesc { name: "KeyDown".into(), arity: 1, arg_names: vec!["key$".into()], return_type: "INT".into() }],
+            methods: vec![MethodDesc {
+                name: "KeyDown".into(),
+                arity: 1,
+                arg_names: vec!["key$".into()],
+                return_type: "INT".into(),
+            }],
             examples: vec![],
         }
     }
@@ -631,9 +806,15 @@ struct DrawProxy {
 }
 
 impl BasicObject for DrawProxy {
-    fn type_name(&self) -> &str { "DRAW" }
-    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("No properties on DRAW".into())) }
-    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("DRAW properties are read-only".into())) }
+    fn type_name(&self) -> &str {
+        "DRAW"
+    }
+    fn get_prop(&self, _name: &str) -> Result<Value> {
+        Err(BasilError("No properties on DRAW".into()))
+    }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> {
+        Err(BasilError("DRAW properties are read-only".into()))
+    }
     fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
         match method.to_ascii_uppercase().as_str() {
             "CLEAR" => {
@@ -645,10 +826,16 @@ impl BasicObject for DrawProxy {
                 Ok(Value::Null)
             }
             "SPRITE" => {
-                let key = args.get(0).map(|v| v.to_string()).ok_or_else(|| BasilError("SPRITE expects key$".into()))?;
+                let key = args
+                    .get(0)
+                    .map(|v| v.to_string())
+                    .ok_or_else(|| BasilError("SPRITE expects key$".into()))?;
                 let x = args.get(1).and_then(|v| v.as_num()).unwrap_or(0.0) as f32;
                 let y = args.get(2).and_then(|v| v.as_num()).unwrap_or(0.0) as f32;
-                self.inner.borrow_mut().draw_queue.push(QueuedSprite { key, x, y });
+                self.inner
+                    .borrow_mut()
+                    .draw_queue
+                    .push(QueuedSprite { key, x, y });
                 Ok(Value::Null)
             }
             _ => Err(BasilError(format!("Unknown method '{}' on DRAW", method))),
@@ -656,11 +843,23 @@ impl BasicObject for DrawProxy {
     }
     fn descriptor(&self) -> ObjectDescriptor {
         ObjectDescriptor {
-            type_name: "DRAW".into(), version: "1.0".into(), summary: "Drawing commands".into(),
+            type_name: "DRAW".into(),
+            version: "1.0".into(),
+            summary: "Drawing commands".into(),
             properties: vec![],
             methods: vec![
-                MethodDesc { name: "Clear".into(), arity: 4, arg_names: vec!["r#".into(), "g#".into(), "b#".into(), "a#".into()], return_type: "VOID".into() },
-                MethodDesc { name: "Sprite".into(), arity: 3, arg_names: vec!["key$".into(), "x#".into(), "y#".into()], return_type: "VOID".into() },
+                MethodDesc {
+                    name: "Clear".into(),
+                    arity: 4,
+                    arg_names: vec!["r#".into(), "g#".into(), "b#".into(), "a#".into()],
+                    return_type: "VOID".into(),
+                },
+                MethodDesc {
+                    name: "Sprite".into(),
+                    arity: 3,
+                    arg_names: vec!["key$".into(), "x#".into(), "y#".into()],
+                    return_type: "VOID".into(),
+                },
             ],
             examples: vec![],
         }
@@ -668,9 +867,12 @@ impl BasicObject for DrawProxy {
 }
 
 pub fn register(add: &mut dyn FnMut(&str, TypeInfo)) {
-    add("GAME", TypeInfo {
-        factory: |_args| Ok(Rc::new(RefCell::new(Engine::new()))),
-        descriptor: || Engine::new().descriptor(),
-        constants: || vec![],
-    });
+    add(
+        "GAME",
+        TypeInfo {
+            factory: |_args| Ok(Rc::new(RefCell::new(Engine::new()))),
+            descriptor: || Engine::new().descriptor(),
+            constants: || vec![],
+        },
+    );
 }

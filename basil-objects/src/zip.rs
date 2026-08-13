@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use basil_common::{Result, BasilError};
+use basil_common::{BasilError, Result};
 
 #[cfg(feature = "obj-zip")]
 use walkdir::WalkDir;
@@ -36,16 +36,21 @@ pub fn zip_extract_all(zip_path: &str, dest_dir: &str) -> Result<()> {
     std::fs::create_dir_all(dest_dir).map_err(|e| to_err("ZIP_EXTRACT_ALL mkdir", e))?;
 
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| to_err("ZIP_EXTRACT_ALL entry", e))?;
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| to_err("ZIP_EXTRACT_ALL entry", e))?;
         let outpath = Path::new(dest_dir).join(entry.mangled_name());
 
         if entry.is_dir() {
-            std::fs::create_dir_all(&outpath).map_err(|e| to_err("ZIP_EXTRACT_ALL mkdir entry", e))?;
+            std::fs::create_dir_all(&outpath)
+                .map_err(|e| to_err("ZIP_EXTRACT_ALL mkdir entry", e))?;
         } else {
             if let Some(parent) = outpath.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| to_err("ZIP_EXTRACT_ALL mkparent", e))?;
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| to_err("ZIP_EXTRACT_ALL mkparent", e))?;
             }
-            let mut outfile = File::create(&outpath).map_err(|e| to_err("ZIP_EXTRACT_ALL create", e))?;
+            let mut outfile =
+                File::create(&outpath).map_err(|e| to_err("ZIP_EXTRACT_ALL create", e))?;
             io::copy(&mut entry, &mut outfile).map_err(|e| to_err("ZIP_EXTRACT_ALL copy", e))?;
         }
     }
@@ -72,12 +77,16 @@ pub fn zip_compress_file(src_path: &str, zip_path: &str, entry_name: Option<&str
     let mut zip = zip::ZipWriter::new(file);
     let opts = FileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    zip.start_file(entry_name, opts).map_err(|e| to_err("ZIP_COMPRESS_FILE start", e))?;
+    zip.start_file(entry_name, opts)
+        .map_err(|e| to_err("ZIP_COMPRESS_FILE start", e))?;
     let mut src = File::open(src_path).map_err(|e| to_err("ZIP_COMPRESS_FILE open src", e))?;
     let mut buf = Vec::new();
-    src.read_to_end(&mut buf).map_err(|e| to_err("ZIP_COMPRESS_FILE read", e))?;
-    zip.write_all(&buf).map_err(|e| to_err("ZIP_COMPRESS_FILE write", e))?;
-    zip.finish().map_err(|e| to_err("ZIP_COMPRESS_FILE finish", e))?;
+    src.read_to_end(&mut buf)
+        .map_err(|e| to_err("ZIP_COMPRESS_FILE read", e))?;
+    zip.write_all(&buf)
+        .map_err(|e| to_err("ZIP_COMPRESS_FILE write", e))?;
+    zip.finish()
+        .map_err(|e| to_err("ZIP_COMPRESS_FILE finish", e))?;
 
     Ok(())
 }
@@ -94,17 +103,22 @@ pub fn zip_compress_dir(src_dir: &str, zip_path: &str) -> Result<()> {
         let name = norm_entry_name(&base, path);
 
         if path.is_dir() {
-            zip.add_directory(format!("{name}/"), opts).map_err(|e| to_err("ZIP_COMPRESS_DIR add dir", e))?;
+            zip.add_directory(format!("{name}/"), opts)
+                .map_err(|e| to_err("ZIP_COMPRESS_DIR add dir", e))?;
         } else {
-            zip.start_file(name, opts).map_err(|e| to_err("ZIP_COMPRESS_DIR start file", e))?;
+            zip.start_file(name, opts)
+                .map_err(|e| to_err("ZIP_COMPRESS_DIR start file", e))?;
             let mut f = File::open(path).map_err(|e| to_err("ZIP_COMPRESS_DIR open file", e))?;
             let mut buf = Vec::new();
-            f.read_to_end(&mut buf).map_err(|e| to_err("ZIP_COMPRESS_DIR read file", e))?;
-            zip.write_all(&buf).map_err(|e| to_err("ZIP_COMPRESS_DIR write file", e))?;
+            f.read_to_end(&mut buf)
+                .map_err(|e| to_err("ZIP_COMPRESS_DIR read file", e))?;
+            zip.write_all(&buf)
+                .map_err(|e| to_err("ZIP_COMPRESS_DIR write file", e))?;
         }
     }
 
-    zip.finish().map_err(|e| to_err("ZIP_COMPRESS_DIR finish", e))?;
+    zip.finish()
+        .map_err(|e| to_err("ZIP_COMPRESS_DIR finish", e))?;
     Ok(())
 }
 
@@ -115,8 +129,12 @@ pub fn zip_list(zip_path: &str) -> Result<String> {
     let mut out = String::new();
 
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| to_err("ZIP_LIST entry", e))?;
-        if i > 0 { out.push('\n'); }
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| to_err("ZIP_LIST entry", e))?;
+        if i > 0 {
+            out.push('\n');
+        }
         out.push_str(entry.name());
     }
     Ok(out)
@@ -128,7 +146,9 @@ pub fn zip_list_array(zip_path: &str) -> Result<Vec<String>> {
     let mut archive = zip::ZipArchive::new(file).map_err(|e| to_err("ZIP_ARRAY parse", e))?;
     let mut out: Vec<String> = Vec::with_capacity(archive.len() as usize);
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| to_err("ZIP_ARRAY entry", e))?;
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| to_err("ZIP_ARRAY entry", e))?;
         out.push(entry.name().to_string());
     }
     Ok(out)

@@ -12,7 +12,8 @@ fn main() {
     if std::path::Path::new(icon_path).exists() {
         res.set_icon(icon_path);
     }
-    res.compile().expect("Failed to embed Windows resources for bcc");
+    res.compile()
+        .expect("Failed to embed Windows resources for bcc");
 }
 
 #[cfg(not(windows))]

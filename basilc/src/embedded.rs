@@ -67,16 +67,25 @@ pub fn extract_dir(dir: &str, dest_root: &Path) -> std::io::Result<()> {
             fs::write(&out, f.contents)?;
         }
     }
-    if !found_any { return Err(not_found(dir)); }
+    if !found_any {
+        return Err(not_found(dir));
+    }
     Ok(())
 }
 
 fn not_found(name: &str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::NotFound, format!("No embedded entry {name:?}"))
+    std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!("No embedded entry {name:?}"),
+    )
 }
 
 fn ensure_trailing_slash(s: &str) -> String {
-    if s.ends_with('/') { s.to_string() } else { format!("{s}/") }
+    if s.ends_with('/') {
+        s.to_string()
+    } else {
+        format!("{s}/")
+    }
 }
 
 fn resolved_output_path_for_file(logical: &str, dest_root: &Path) -> PathBuf {
@@ -92,7 +101,9 @@ fn resolved_output_path_for_file(logical: &str, dest_root: &Path) -> PathBuf {
 fn join_normalized(root: &Path, logical: &str) -> PathBuf {
     let mut out = PathBuf::from(root);
     for seg in logical.split('/') {
-        if seg.is_empty() { continue; }
+        if seg.is_empty() {
+            continue;
+        }
         out.push(seg);
     }
     out

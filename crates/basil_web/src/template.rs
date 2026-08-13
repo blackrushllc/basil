@@ -11,7 +11,11 @@ pub async fn file_contains_basil(path: &Path) -> Result<bool> {
     Ok(content.windows(8).any(|w| w == b"<?basil "))
 }
 
-pub async fn render_html_with_basil(app: &AppState, _req: Request<Body>, path: PathBuf) -> Result<Response> {
+pub async fn render_html_with_basil(
+    app: &AppState,
+    _req: Request<Body>,
+    path: PathBuf,
+) -> Result<Response> {
     // Read entire file for now; TODO: incremental streaming
     let bytes = tokio::fs::read(&path).await?;
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len() + 1024);
@@ -25,14 +29,24 @@ pub async fn render_html_with_basil(app: &AppState, _req: Request<Body>, path: P
     loop {
         let next = find_subslice(&bytes, open, pos);
         match next {
-            None => { out.extend_from_slice(&bytes[pos..]); break; }
+            None => {
+                out.extend_from_slice(&bytes[pos..]);
+                break;
+            }
             Some(start) => {
                 // Copy literal prefix
                 out.extend_from_slice(&bytes[pos..start]);
                 let code_start = start + open.len();
                 // Skip whitespace
                 let mut cs = code_start;
-                while cs < bytes.len() && (bytes[cs] == b' ' || bytes[cs] == b'\t' || bytes[cs] == b'\r' || bytes[cs] == b'\n') { cs += 1; }
+                while cs < bytes.len()
+                    && (bytes[cs] == b' '
+                        || bytes[cs] == b'\t'
+                        || bytes[cs] == b'\r'
+                        || bytes[cs] == b'\n')
+                {
+                    cs += 1;
+                }
                 if let Some(end) = find_subslice(&bytes, close, cs) {
                     let code_bytes = &bytes[cs..end];
                     let rendered = match eval_inline_basil(app, path.as_path(), code_bytes).await {
@@ -57,8 +71,13 @@ pub async fn render_html_with_basil(app: &AppState, _req: Request<Body>, path: P
 }
 
 fn find_subslice(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if needle.is_empty() { return Some(from); }
-    hay[from..].windows(needle.len()).position(|w| w == needle).map(|i| i + from)
+    if needle.is_empty() {
+        return Some(from);
+    }
+    hay[from..]
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .map(|i| i + from)
 }
 
 async fn eval_inline_basil(app: &AppState, _parent: &Path, code: &[u8]) -> Result<String> {
@@ -73,19 +92,28 @@ async fn eval_inline_basil(app: &AppState, _parent: &Path, code: &[u8]) -> Resul
     let mut hasher = Sha256::new();
     hasher.update(code);
     let hash = hasher.finalize();
-    let name = format!("__inline_{:x}.basil", hash[0..8].iter().fold(0u64, |acc, b| (acc << 8) | (*b as u64)));
+    let name = format!(
+        "__inline_{:x}.basil",
+        hash[0..8]
+            .iter()
+            .fold(0u64, |acc, b| (acc << 8) | (*b as u64))
+    );
     let src_path = cache_dir.join(name);
 
     // Write source file (if not exists or changed)
     tokio::fs::write(&src_path, code).await?;
 
     // Run via basilc run; capture stdout
-    let output = Command::new(if cfg!(target_os = "windows") { "basilc.exe" } else { "basilc" })
-        .arg("run")
-        .arg(&src_path)
-        .output()
-        .await
-        .context("run inline basil")?;
+    let output = Command::new(if cfg!(target_os = "windows") {
+        "basilc.exe"
+    } else {
+        "basilc"
+    })
+    .arg("run")
+    .arg(&src_path)
+    .output()
+    .await
+    .context("run inline basil")?;
 
     if !output.status.success() {
         let tail = util::stderr_tail(&output.stderr, 2000);
@@ -100,8 +128,8 @@ async fn eval_inline_basil(app: &AppState, _parent: &Path, code: &[u8]) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write as _;
+    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn detects_basil_tag() {

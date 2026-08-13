@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
@@ -8,11 +8,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum MenuMode { Run, Test, Cli }
+pub enum MenuMode {
+    Run,
+    Test,
+    Cli,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum MenuKind { Bare, File }
+pub enum MenuKind {
+    Bare,
+    File,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MenuItem {
@@ -39,7 +46,10 @@ pub fn config_dir() -> PathBuf {
         p
     } else {
         // Fallback: executable directory
-        std::env::current_exe().ok().and_then(|p| p.parent().map(|q| q.to_path_buf())).unwrap_or_else(|| PathBuf::from("."))
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|q| q.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 }
 
@@ -53,7 +63,8 @@ pub fn load_or_seed() -> Result<BasilicaConfig> {
     let path = config_path();
     if path.exists() {
         let s = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        let cfg: BasilicaConfig = serde_json::from_str(&s).with_context(|| "parse basilica.json")?;
+        let cfg: BasilicaConfig =
+            serde_json::from_str(&s).with_context(|| "parse basilica.json")?;
         Ok(cfg)
     } else {
         let cfg = seed_config();
@@ -69,21 +80,51 @@ pub fn save_atomic(cfg: &BasilicaConfig) -> Result<()> {
     let mut f = fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
     f.write_all(body.as_bytes())?;
     f.sync_all()?;
-    fs::rename(&tmp, &path).with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    fs::rename(&tmp, &path)
+        .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())
 }
 
 pub fn seed_config() -> BasilicaConfig {
-    use MenuKind as K; use MenuMode as M;
+    use MenuKind as K;
+    use MenuMode as M;
     BasilicaConfig {
         version: 1,
         cli_scripts: vec![
-            MenuItem{ id: "basil-prompt".into(), name: "Basil Prompt".into(), mode: M::Cli, kind: K::Bare, path: None, args: None },
-            MenuItem{ id: "run-hello".into(), name: "Run Hello".into(), mode: M::Run, kind: K::File, path: Some("examples/hello.basil".into()), args: None },
+            MenuItem {
+                id: "basil-prompt".into(),
+                name: "Basil Prompt".into(),
+                mode: M::Cli,
+                kind: K::Bare,
+                path: None,
+                args: None,
+            },
+            MenuItem {
+                id: "run-hello".into(),
+                name: "Run Hello".into(),
+                mode: M::Run,
+                kind: K::File,
+                path: Some("examples/hello.basil".into()),
+                args: None,
+            },
         ],
         gui_scripts: vec![
-            MenuItem{ id: "blank-gui-prompt".into(), name: "Blank GUI Prompt".into(), mode: M::Cli, kind: K::Bare, path: None, args: None },
-            MenuItem{ id: "gui-hello".into(), name: "GUI Hello".into(), mode: M::Run, kind: K::File, path: Some("examples/gui_hello.basil".into()), args: None },
+            MenuItem {
+                id: "blank-gui-prompt".into(),
+                name: "Blank GUI Prompt".into(),
+                mode: M::Cli,
+                kind: K::Bare,
+                path: None,
+                args: None,
+            },
+            MenuItem {
+                id: "gui-hello".into(),
+                name: "GUI Hello".into(),
+                mode: M::Run,
+                kind: K::File,
+                path: Some("examples/gui_hello.basil".into()),
+                args: None,
+            },
         ],
     }
 }
@@ -91,20 +132,88 @@ pub fn seed_config() -> BasilicaConfig {
 #[allow(dead_code)]
 pub fn to_host_pending(cfg: &BasilicaConfig) -> basil_host::PendingConfig {
     basil_host::PendingConfig {
-        cli_scripts: cfg.cli_scripts.iter().map(|m| basil_host::MenuItem{ id: m.id.clone(), name: m.name.clone(), mode: to_mode_str(&m.mode), kind: to_kind_str(&m.kind), path: m.path.clone(), args: m.args.clone() }).collect(),
-        gui_scripts: cfg.gui_scripts.iter().map(|m| basil_host::MenuItem{ id: m.id.clone(), name: m.name.clone(), mode: to_mode_str(&m.mode), kind: to_kind_str(&m.kind), path: m.path.clone(), args: m.args.clone() }).collect(),
+        cli_scripts: cfg
+            .cli_scripts
+            .iter()
+            .map(|m| basil_host::MenuItem {
+                id: m.id.clone(),
+                name: m.name.clone(),
+                mode: to_mode_str(&m.mode),
+                kind: to_kind_str(&m.kind),
+                path: m.path.clone(),
+                args: m.args.clone(),
+            })
+            .collect(),
+        gui_scripts: cfg
+            .gui_scripts
+            .iter()
+            .map(|m| basil_host::MenuItem {
+                id: m.id.clone(),
+                name: m.name.clone(),
+                mode: to_mode_str(&m.mode),
+                kind: to_kind_str(&m.kind),
+                path: m.path.clone(),
+                args: m.args.clone(),
+            })
+            .collect(),
         saved: false,
     }
 }
 
 #[allow(dead_code)]
 pub fn from_host_pending(p: &basil_host::PendingConfig) -> BasilicaConfig {
-    BasilicaConfig { version: 1,
-        cli_scripts: p.cli_scripts.iter().map(|m| MenuItem{ id: m.id.clone(), name: m.name.clone(), mode: from_mode_str(&m.mode), kind: from_kind_str(&m.kind), path: m.path.clone(), args: m.args.clone() }).collect(),
-        gui_scripts: p.gui_scripts.iter().map(|m| MenuItem{ id: m.id.clone(), name: m.name.clone(), mode: from_mode_str(&m.mode), kind: from_kind_str(&m.kind), path: m.path.clone(), args: m.args.clone() }).collect() }
+    BasilicaConfig {
+        version: 1,
+        cli_scripts: p
+            .cli_scripts
+            .iter()
+            .map(|m| MenuItem {
+                id: m.id.clone(),
+                name: m.name.clone(),
+                mode: from_mode_str(&m.mode),
+                kind: from_kind_str(&m.kind),
+                path: m.path.clone(),
+                args: m.args.clone(),
+            })
+            .collect(),
+        gui_scripts: p
+            .gui_scripts
+            .iter()
+            .map(|m| MenuItem {
+                id: m.id.clone(),
+                name: m.name.clone(),
+                mode: from_mode_str(&m.mode),
+                kind: from_kind_str(&m.kind),
+                path: m.path.clone(),
+                args: m.args.clone(),
+            })
+            .collect(),
+    }
 }
 
-fn to_mode_str(m: &MenuMode) -> String { match m { MenuMode::Run=>"run".into(), MenuMode::Test=>"test".into(), MenuMode::Cli=>"cli".into() } }
-fn to_kind_str(k: &MenuKind) -> String { match k { MenuKind::Bare=>"bare".into(), MenuKind::File=>"file".into() } }
-fn from_mode_str(s: &str) -> MenuMode { match s { s if s.eq_ignore_ascii_case("run")=>MenuMode::Run, s if s.eq_ignore_ascii_case("test")=>MenuMode::Test, _=>MenuMode::Cli } }
-fn from_kind_str(s: &str) -> MenuKind { match s { s if s.eq_ignore_ascii_case("file")=>MenuKind::File, _=>MenuKind::Bare } }
+fn to_mode_str(m: &MenuMode) -> String {
+    match m {
+        MenuMode::Run => "run".into(),
+        MenuMode::Test => "test".into(),
+        MenuMode::Cli => "cli".into(),
+    }
+}
+fn to_kind_str(k: &MenuKind) -> String {
+    match k {
+        MenuKind::Bare => "bare".into(),
+        MenuKind::File => "file".into(),
+    }
+}
+fn from_mode_str(s: &str) -> MenuMode {
+    match s {
+        s if s.eq_ignore_ascii_case("run") => MenuMode::Run,
+        s if s.eq_ignore_ascii_case("test") => MenuMode::Test,
+        _ => MenuMode::Cli,
+    }
+}
+fn from_kind_str(s: &str) -> MenuKind {
+    match s {
+        s if s.eq_ignore_ascii_case("file") => MenuKind::File,
+        _ => MenuKind::Bare,
+    }
+}

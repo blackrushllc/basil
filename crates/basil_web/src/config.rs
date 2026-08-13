@@ -1,7 +1,7 @@
-use std::time::Duration;
 use anyhow::{anyhow, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
+use std::time::Duration;
 use tracing::Level;
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ pub struct Config {
 }
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "basil-serve")] 
+#[command(name = "basil-serve")]
 #[command(about = "Dev web server for Basil projects (static + CGI + templates)")]
 struct Args {
     #[arg(short = 'v', long, action = clap::ArgAction::SetTrue, help = "Show version information")]
@@ -67,7 +67,9 @@ impl Config {
         let argv: Vec<String> = if args_vec.is_empty() {
             std::env::args().collect()
         } else {
-            std::iter::once("basil-serve".to_string()).chain(args_vec.into_iter()).collect()
+            std::iter::once("basil-serve".to_string())
+                .chain(args_vec.into_iter())
+                .collect()
         };
         let a = Args::try_parse_from(argv)?;
 

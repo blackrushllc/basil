@@ -4,14 +4,16 @@ use std::thread;
 use crossbeam_channel as chan;
 
 use crate::config::{MenuKind, MenuMode};
-use basil_embed::{BasilRunner, RunnerCmd, RunnerEvent, RunMode, RunnerOptions};
-use basil_host::HostRequest;
 use anyhow::Result;
+use basil_embed::{BasilRunner, RunMode, RunnerCmd, RunnerEvent, RunnerOptions};
+use basil_host::HostRequest;
 
 // Minimal event payload from webview IPC
 #[derive(Debug, Clone)]
-pub struct WebEvent { pub event: String, pub id: String }
-
+pub struct WebEvent {
+    pub event: String,
+    pub id: String,
+}
 
 pub struct ConsoleInstance {
     pub title: String,
@@ -20,33 +22,67 @@ pub struct ConsoleInstance {
     pub runner: BasilRunner,
     pub rx_evt: chan::Receiver<RunnerEvent>,
     host_rx: chan::Receiver<HostRequest>,
-    web_tx: Option<chan::Sender<String>>, // JS eval
-    web_evt_rx: Option<chan::Receiver<WebEvent>>, // events from webview
-    web_routes: HashMap<(String,String), String>, // (event,id) -> label
+    web_tx: Option<chan::Sender<String>>,          // JS eval
+    web_evt_rx: Option<chan::Receiver<WebEvent>>,  // events from webview
+    web_routes: HashMap<(String, String), String>, // (event,id) -> label
 }
 
 impl ConsoleInstance {
-    pub fn new(title: String, with_web: bool, initial: Option<(MenuKind, MenuMode, Option<String>)>) -> Self {
+    pub fn new(
+        title: String,
+        with_web: bool,
+        initial: Option<(MenuKind, MenuMode, Option<String>)>,
+    ) -> Self {
         let (tx_host, rx_host) = chan::unbounded::<HostRequest>();
-        let opts = RunnerOptions { with_app: true, with_web, basilica_menu: None, host_tx: Some(tx_host.clone()) };
+        let opts = RunnerOptions {
+            with_app: true,
+            with_web,
+            basilica_menu: None,
+            host_tx: Some(tx_host.clone()),
+        };
         let start_cli = matches!(initial, Some((MenuKind::Bare, MenuMode::Cli, _)));
         let runner = BasilRunner::spawn(start_cli, opts);
         let rx_evt = runner.rx.clone();
-        let mut inst = Self { title, output: String::new(), input: String::new(), runner, rx_evt, host_rx: rx_host, web_tx: None, web_evt_rx: None, web_routes: HashMap::new() };
+        let mut inst = Self {
+            title,
+            output: String::new(),
+            input: String::new(),
+            runner,
+            rx_evt,
+            host_rx: rx_host,
+            web_tx: None,
+            web_evt_rx: None,
+            web_routes: HashMap::new(),
+        };
         if with_web {
             let (tx_js, rx_js) = chan::unbounded::<String>();
             let (tx_ev, rx_ev) = chan::unbounded::<WebEvent>();
             inst.web_tx = Some(tx_js.clone());
             inst.web_evt_rx = Some(rx_ev);
-            spawn_webview(format!("<html><body><h3>{}</h3><div id='root'></div></body></html>", inst.title), rx_js, tx_ev);
+            spawn_webview(
+                format!(
+                    "<html><body><h3>{}</h3><div id='root'></div></body></html>",
+                    inst.title
+                ),
+                rx_js,
+                tx_ev,
+            );
         }
         if let Some((kind, mode, path)) = initial {
             match kind {
                 MenuKind::Bare => { /* already CLI */ }
                 MenuKind::File => {
                     if let Some(p) = path {
-                        let rm = match mode { MenuMode::Run=>RunMode::Run, MenuMode::Test=>RunMode::Test, MenuMode::Cli=>RunMode::Cli };
-                        let _ = inst.runner.tx.send(RunnerCmd::RunFile { mode: rm, path: p, args: None });
+                        let rm = match mode {
+                            MenuMode::Run => RunMode::Run,
+                            MenuMode::Test => RunMode::Test,
+                            MenuMode::Cli => RunMode::Cli,
+                        };
+                        let _ = inst.runner.tx.send(RunnerCmd::RunFile {
+                            mode: rm,
+                            path: p,
+                            args: None,
+                        });
                     }
                 }
             }
@@ -63,25 +99,47 @@ impl ConsoleInstance {
         while let Ok(evt) = self.rx_evt.try_recv() {
             match evt {
                 RunnerEvent::Output(s) => self.output.push_str(&s),
-                RunnerEvent::Error(e) => { self.output.push_str(&format!("[error] {}\n", e)); },
-                RunnerEvent::Suspended => { self.output.push_str("[suspended]\n"); },
-                RunnerEvent::Exited => { self.output.push_str("[exited]\n"); },
+                RunnerEvent::Error(e) => {
+                    self.output.push_str(&format!("[error] {}\n", e));
+                }
+                RunnerEvent::Suspended => {
+                    self.output.push_str("[suspended]\n");
+                }
+                RunnerEvent::Exited => {
+                    self.output.push_str("[exited]\n");
+                }
             }
         }
         // Drain host requests (APP/WEB)
         while let Ok(req) = self.host_rx.try_recv() {
             match req {
-                HostRequest::AppAlert(msg) => { self.output.push_str(&format!("[ALERT] {}\n", msg)); }
-                HostRequest::AppStartAnim => { self.output.push_str("[ANIM START]\n"); }
-                HostRequest::AppStopAnim => { self.output.push_str("[ANIM STOP]\n"); }
-                HostRequest::WebSetHtml(html) => {
-                    if let Some(tx) = &self.web_tx { let _ = tx.send(format!("__SET_HTML__\n{}", html)); }
+                HostRequest::AppAlert(msg) => {
+                    self.output.push_str(&format!("[ALERT] {}\n", msg));
                 }
-                HostRequest::WebEval(js) => { if let Some(tx) = &self.web_tx { let _ = tx.send(js); } }
+                HostRequest::AppStartAnim => {
+                    self.output.push_str("[ANIM START]\n");
+                }
+                HostRequest::AppStopAnim => {
+                    self.output.push_str("[ANIM STOP]\n");
+                }
+                HostRequest::WebSetHtml(html) => {
+                    if let Some(tx) = &self.web_tx {
+                        let _ = tx.send(format!("__SET_HTML__\n{}", html));
+                    }
+                }
+                HostRequest::WebEval(js) => {
+                    if let Some(tx) = &self.web_tx {
+                        let _ = tx.send(js);
+                    }
+                }
                 HostRequest::WebOn { event, id, label } => {
                     // Register mapping for future dispatch
-                    self.web_routes.insert((event.clone(), id.clone()), label.clone());
-                    self.output.push_str(&format!("[WEB.ON] event={} id={} label={}\n", event, id, label));
+                    self.web_routes
+                        .insert((event.clone(), id.clone()), label.clone());
+                    self.output.push_str(&format!(
+                        "[WEB.ON] event={} id={} label={}\n",
+                        event, id, label
+                    ));
                 }
             }
         }
@@ -90,10 +148,16 @@ impl ConsoleInstance {
             while let Ok(ev) = rx.try_recv() {
                 let key = (ev.event.clone(), ev.id.clone());
                 if let Some(label) = self.web_routes.get(&key) {
-                    self.output.push_str(&format!("[WEB.EVENT] {}:{} -> {}\n", ev.event, ev.id, label));
+                    self.output.push_str(&format!(
+                        "[WEB.EVENT] {}:{} -> {}\n",
+                        ev.event, ev.id, label
+                    ));
                     // Future: self.runner.tx.send(RunnerCmd::_DispatchWeb { event: ev.event, id: ev.id }).ok();
                 } else {
-                    self.output.push_str(&format!("[WEB.EVENT] {}:{} (no handler)\n", ev.event, ev.id));
+                    self.output.push_str(&format!(
+                        "[WEB.EVENT] {}:{} (no handler)\n",
+                        ev.event, ev.id
+                    ));
                 }
             }
         }
@@ -101,7 +165,11 @@ impl ConsoleInstance {
 }
 
 #[cfg_attr(windows, allow(unreachable_code))]
-fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: chan::Sender<WebEvent>) {
+fn spawn_webview(
+    initial_html: String,
+    rx_js: chan::Receiver<String>,
+    tx_event: chan::Sender<WebEvent>,
+) {
     // On Windows, offload the WebView to a helper process whose main thread owns Tao/Wry
     #[cfg(windows)]
     {
@@ -153,9 +221,16 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
                     // Create window/webview on first tick
                     if window_opt.is_none() {
                         eprintln!("[webview] creating window...");
-                        let window = match WindowBuilder::new().with_title("Basilica Webview").build(target) {
+                        let window = match WindowBuilder::new()
+                            .with_title("Basilica Webview")
+                            .build(target)
+                        {
                             Ok(w) => w,
-                            Err(e) => { eprintln!("[webview] failed to create window: {}", e); *control_flow = ControlFlow::Exit; return; }
+                            Err(e) => {
+                                eprintln!("[webview] failed to create window: {}", e);
+                                *control_flow = ControlFlow::Exit;
+                                return;
+                            }
                         };
                         eprintln!("[webview] window created");
                         eprintln!("[webview] building webview...");
@@ -167,15 +242,32 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
                                 let s = req.body().clone();
                                 let mut ev = None;
                                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                                    let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    if !event.is_empty() && !id.is_empty() { ev = Some(WebEvent { event, id }); }
+                                    let event = v
+                                        .get("event")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let id = v
+                                        .get("id")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    if !event.is_empty() && !id.is_empty() {
+                                        ev = Some(WebEvent { event, id });
+                                    }
                                 }
-                                if let Some(e) = ev { let _ = tx_event2.send(e); }
+                                if let Some(e) = ev {
+                                    let _ = tx_event2.send(e);
+                                }
                             })
-                            .build() {
+                            .build()
+                        {
                             Ok(wv) => wv,
-                            Err(e) => { eprintln!("[webview] failed to build webview: {}", e); *control_flow = ControlFlow::Exit; return; }
+                            Err(e) => {
+                                eprintln!("[webview] failed to build webview: {}", e);
+                                *control_flow = ControlFlow::Exit;
+                                return;
+                            }
                         };
                         eprintln!("[webview] webview created; entering run loop");
                         webview_opt = Some(wv);
@@ -185,7 +277,10 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
                     if let Some(wv) = webview_opt.as_ref() {
                         while let Ok(code) = rx_js.try_recv() {
                             if let Some(rest) = code.strip_prefix("__SET_HTML__\n") {
-                                let js = format!("document.open();document.write({});document.close();", serde_json::to_string(rest).unwrap_or("\"\"".into()));
+                                let js = format!(
+                                    "document.open();document.write({});document.close();",
+                                    serde_json::to_string(rest).unwrap_or("\"\"".into())
+                                );
                                 let _ = wv.evaluate_script(&js);
                             } else {
                                 let _ = wv.evaluate_script(&code);
@@ -193,7 +288,10 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
                         }
                     }
                 }
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {
                     *control_flow = ControlFlow::Exit;
                 }
                 _ => {}
@@ -202,15 +300,20 @@ fn spawn_webview(initial_html: String, rx_js: chan::Receiver<String>, tx_event: 
     });
 }
 
-
 #[cfg(windows)]
-fn spawn_webview_helper_process(initial_html: String, rx_js: chan::Receiver<String>, tx_event: chan::Sender<WebEvent>) -> Result<()> {
+fn spawn_webview_helper_process(
+    initial_html: String,
+    rx_js: chan::Receiver<String>,
+    tx_event: chan::Sender<WebEvent>,
+) -> Result<()> {
     use std::io::{BufRead, BufReader, Write};
     use std::process::{Command, Stdio};
 
     // Locate helper executable next to basilica.exe
     let exe = std::env::current_exe()?;
-    let dir = exe.parent().ok_or_else(|| anyhow::anyhow!("no parent dir for current_exe"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("no parent dir for current_exe"))?;
     let helper_path = dir.join("basilica-webview-helper.exe");
 
     let mut cmd = if helper_path.exists() {
@@ -228,8 +331,14 @@ fn spawn_webview_helper_process(initial_html: String, rx_js: chan::Receiver<Stri
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin for helper"))?;
-    let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout for helper"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("no stdin for helper"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("no stdout for helper"))?;
     let stderr = child.stderr.take();
 
     // Send initial HTML
@@ -263,10 +372,20 @@ fn spawn_webview_helper_process(initial_html: String, rx_js: chan::Receiver<Stri
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
-            let Ok(line) = line else { break; };
+            let Ok(line) = line else {
+                break;
+            };
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
-                let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let event = v
+                    .get("event")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = v
+                    .get("id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if !event.is_empty() && !id.is_empty() {
                     let _ = tx2.send(WebEvent { event, id });
                 }
@@ -279,7 +398,9 @@ fn spawn_webview_helper_process(initial_html: String, rx_js: chan::Receiver<Stri
         thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
-                if let Ok(l) = line { eprintln!("[webview-helper] {}", l); }
+                if let Ok(l) = line {
+                    eprintln!("[webview-helper] {}", l);
+                }
             }
         });
     }

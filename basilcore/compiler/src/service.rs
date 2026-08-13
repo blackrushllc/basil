@@ -1,10 +1,14 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use basil_parser::parse;
 use basil_ast::{Program, Stmt};
+use basil_parser::parse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DiagnosticSeverity { Error, Warning, Information }
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Information,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
@@ -15,7 +19,11 @@ pub struct Diagnostic {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SymbolKind { Function, Variable, Label }
+pub enum SymbolKind {
+    Function,
+    Variable,
+    Label,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolInfo {
@@ -55,13 +63,28 @@ fn collect_symbols(ast: &Program, syms: &mut Vec<SymbolInfo>) {
     for s in ast {
         match s {
             Stmt::Func { name, .. } => {
-                syms.push(SymbolInfo { name: name.clone(), kind: SymbolKind::Function, line: 0, col: 0 });
+                syms.push(SymbolInfo {
+                    name: name.clone(),
+                    kind: SymbolKind::Function,
+                    line: 0,
+                    col: 0,
+                });
             }
             Stmt::Let { name, .. } => {
-                syms.push(SymbolInfo { name: name.clone(), kind: SymbolKind::Variable, line: 0, col: 0 });
+                syms.push(SymbolInfo {
+                    name: name.clone(),
+                    kind: SymbolKind::Variable,
+                    line: 0,
+                    col: 0,
+                });
             }
             Stmt::Label(lbl) => {
-                syms.push(SymbolInfo { name: lbl.clone(), kind: SymbolKind::Label, line: 0, col: 0 });
+                syms.push(SymbolInfo {
+                    name: lbl.clone(),
+                    kind: SymbolKind::Label,
+                    line: 0,
+                    col: 0,
+                });
             }
             _ => {}
         }

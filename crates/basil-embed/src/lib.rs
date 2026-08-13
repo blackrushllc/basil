@@ -9,9 +9,9 @@ use crossbeam_channel::{Receiver, Sender};
 use gag::BufferRedirect;
 use parking_lot::Mutex;
 
-use basil_parser::parse;
+use basil_bytecode::{Program as BCProgram, SourceMapMini, Value};
 use basil_compiler::compile;
-use basil_bytecode::{Program as BCProgram, Value, SourceMapMini};
+use basil_parser::parse;
 use basil_preprocessor as pre;
 use basil_vm::VM;
 
@@ -33,15 +33,26 @@ pub struct RunnerOptions {
 }
 
 #[derive(Debug, Clone)]
-pub enum RunMode { Run, Test, Cli }
+pub enum RunMode {
+    Run,
+    Test,
+    Cli,
+}
 
 #[derive(Debug, Clone)]
 pub enum RunnerCmd {
     EvalLine(String),
-    RunFile { mode: RunMode, path: String, args: Option<String> },
+    RunFile {
+        mode: RunMode,
+        path: String,
+        args: Option<String>,
+    },
     Exit,
     // Future: Dispatch web event back into Basil by label
-    _DispatchWeb { event: String, id: String },
+    _DispatchWeb {
+        event: String,
+        id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -68,11 +79,17 @@ impl BasilRunner {
             }
             while let Ok(cmd) = rx_cmd.recv() {
                 match cmd {
-                    RunnerCmd::Exit => { let _ = tx_evt.send(RunnerEvent::Exited); break; }
+                    RunnerCmd::Exit => {
+                        let _ = tx_evt.send(RunnerEvent::Exited);
+                        break;
+                    }
                     RunnerCmd::EvalLine(line) => {
                         // Normalize and handle built-ins
                         let norm = line.trim().to_ascii_lowercase();
-                        if norm == "exit" || norm == "quit" { let _ = tx_evt.send(RunnerEvent::Exited); break; }
+                        if norm == "exit" || norm == "quit" {
+                            let _ = tx_evt.send(RunnerEvent::Exited);
+                            break;
+                        }
                         if norm.starts_with("run ") {
                             // Extract quoted or raw path after RUN
                             let p = line[4..].trim().trim_matches('"').to_string();
@@ -82,13 +99,11 @@ impl BasilRunner {
                         // Evaluate as a snippet/program
                         eval_snippet_simple(&opts, &mut sess, &line, &tx_evt);
                     }
-                    RunnerCmd::RunFile { mode, path, .. } => {
-                        match mode {
-                            RunMode::Run | RunMode::Cli | RunMode::Test => {
-                                run_file_simple(&opts, &mut sess, &path, &tx_evt);
-                            }
+                    RunnerCmd::RunFile { mode, path, .. } => match mode {
+                        RunMode::Run | RunMode::Cli | RunMode::Test => {
+                            run_file_simple(&opts, &mut sess, &path, &tx_evt);
                         }
-                    }
+                    },
                     RunnerCmd::_DispatchWeb { .. } => {
                         // Not implemented in this iteration
                     }
@@ -96,7 +111,10 @@ impl BasilRunner {
             }
         });
 
-        Self { tx: tx_cmd, rx: rx_evt }
+        Self {
+            tx: tx_cmd,
+            rx: rx_evt,
+        }
     }
 }
 
@@ -108,13 +126,22 @@ struct Session {
 }
 
 impl Session {
-    fn new() -> Self { Self { globals: HashMap::new(), order: Vec::new(), suspended_vm: None, script_path: None } }
+    fn new() -> Self {
+        Self {
+            globals: HashMap::new(),
+            order: Vec::new(),
+            suspended_vm: None,
+            script_path: None,
+        }
+    }
 }
 
 fn merge_globals(sess: &mut Session, vm: &VM, origin: Option<&str>) {
     let (names, values) = vm.globals_snapshot();
     for (i, name) in names.iter().enumerate() {
-        if !sess.globals.contains_key(name) { sess.order.push(name.clone()); }
+        if !sess.globals.contains_key(name) {
+            sess.order.push(name.clone());
+        }
         let val = values.get(i).cloned().unwrap_or(Value::Null);
         sess.globals.insert(name.clone(), val);
         // origin currently unused in this embedder
@@ -142,24 +169,66 @@ fn build_pre_opts(root_path: PathBuf, env_paths: Vec<PathBuf>) -> pre::Preproces
     }
 }
 
-fn run_file_simple(opts: &RunnerOptions, sess: &mut Session, path: &str, tx_evt: &Sender<RunnerEvent>) {
+fn run_file_simple(
+    opts: &RunnerOptions,
+    sess: &mut Session,
+    path: &str,
+    tx_evt: &Sender<RunnerEvent>,
+) {
     let pbuf = PathBuf::from(path);
-    let script_path = match std::fs::canonicalize(&pbuf) { Ok(p)=>p, Err(_)=>pbuf.clone() };
+    let script_path = match std::fs::canonicalize(&pbuf) {
+        Ok(p) => p,
+        Err(_) => pbuf.clone(),
+    };
     let src = match std::fs::read_to_string(&script_path) {
         Ok(s) => s,
-        Err(e) => { let _ = tx_evt.send(RunnerEvent::Error(format!("read {}: {}", script_path.display(), e))); return; }
+        Err(e) => {
+            let _ = tx_evt.send(RunnerEvent::Error(format!(
+                "read {}: {}",
+                script_path.display(),
+                e
+            )));
+            return;
+        }
     };
     // Phase A: preprocess to build source map
     let env_paths: Vec<PathBuf> = match std::env::var("BASIL_PATH") {
-        Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+        Ok(val) => {
+            let sep = if cfg!(windows) { ';' } else { ':' };
+            val.split(sep)
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| PathBuf::from(s))
+                .collect()
+        }
         Err(_) => Vec::new(),
     };
     let pp_opts = build_pre_opts(script_path.clone(), env_paths);
-    let preprocessed = match pre::preprocess(&src, &pp_opts) { Ok(p)=>p, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("preprocess error: {}", e))); return; } };
-    let ast = match parse(&preprocessed.text) { Ok(a)=>a, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("parse error: {}", e))); return; } };
-    let mut prog: BCProgram = match compile(&ast) { Ok(p)=>p, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("compile error: {}", e))); return; } };
+    let preprocessed = match pre::preprocess(&src, &pp_opts) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = tx_evt.send(RunnerEvent::Error(format!("preprocess error: {}", e)));
+            return;
+        }
+    };
+    let ast = match parse(&preprocessed.text) {
+        Ok(a) => a,
+        Err(e) => {
+            let _ = tx_evt.send(RunnerEvent::Error(format!("parse error: {}", e)));
+            return;
+        }
+    };
+    let mut prog: BCProgram = match compile(&ast) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = tx_evt.send(RunnerEvent::Error(format!("compile error: {}", e)));
+            return;
+        }
+    };
     // Phase B: embed map
-    let local_smap = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+    let local_smap = SourceMapMini {
+        files: preprocessed.source_map.files.clone(),
+        lines: preprocessed.source_map.lines.clone(),
+    };
     prog.source_map = Some(local_smap.clone());
     let mut vm = VM::new(prog);
     // Register host surfaces so APP.*, WEB.*, BASILICA.MENU.* are available when enabled via thread context
@@ -175,28 +244,68 @@ fn run_file_simple(opts: &RunnerOptions, sess: &mut Session, path: &str, tx_evt:
     // read captured stdout
     let mut handle = _stdout;
     let _ = handle.read_to_string(&mut out);
-    if !out.is_empty() { let _ = tx_evt.send(RunnerEvent::Output(out)); }
+    if !out.is_empty() {
+        let _ = tx_evt.send(RunnerEvent::Output(out));
+    }
     if let Err(e) = result {
         let line = vm.current_line() as usize;
         if line > 0 && line < local_smap.lines.len() {
             let (fi, ln) = local_smap.lines[line];
-            let fname = local_smap.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
-            let _ = tx_evt.send(RunnerEvent::Error(format!("runtime error at line {} in {}: {}", ln, fname, e)));
+            let fname = local_smap
+                .files
+                .get(fi as usize)
+                .map(|s| {
+                    std::path::Path::new(s)
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(s)
+                })
+                .unwrap_or("<unknown>");
+            let _ = tx_evt.send(RunnerEvent::Error(format!(
+                "runtime error at line {} in {}: {}",
+                ln, fname, e
+            )));
         } else {
-            let _ = tx_evt.send(RunnerEvent::Error(if line>0 { format!("runtime error at line {}: {}", line, e) } else { format!("runtime error: {}", e) }));
+            let _ = tx_evt.send(RunnerEvent::Error(if line > 0 {
+                format!("runtime error at line {}: {}", line, e)
+            } else {
+                format!("runtime error: {}", e)
+            }));
         }
     }
     merge_globals(sess, &vm, Some(path));
-    if vm.is_suspended() { sess.suspended_vm = Some(vm); let _ = tx_evt.send(RunnerEvent::Suspended); }
+    if vm.is_suspended() {
+        sess.suspended_vm = Some(vm);
+        let _ = tx_evt.send(RunnerEvent::Suspended);
+    }
 }
 
-fn eval_snippet_simple(opts: &RunnerOptions, sess: &mut Session, src: &str, tx_evt: &Sender<RunnerEvent>) {
-    let ast = match parse(src) { Ok(a)=>a, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("parse error: {}", e))); return; } };
-    let prog: BCProgram = match compile(&ast) { Ok(p)=>p, Err(e)=>{ let _ = tx_evt.send(RunnerEvent::Error(format!("compile error: {}", e))); return; } };
+fn eval_snippet_simple(
+    opts: &RunnerOptions,
+    sess: &mut Session,
+    src: &str,
+    tx_evt: &Sender<RunnerEvent>,
+) {
+    let ast = match parse(src) {
+        Ok(a) => a,
+        Err(e) => {
+            let _ = tx_evt.send(RunnerEvent::Error(format!("parse error: {}", e)));
+            return;
+        }
+    };
+    let prog: BCProgram = match compile(&ast) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = tx_evt.send(RunnerEvent::Error(format!("compile error: {}", e)));
+            return;
+        }
+    };
     let mut vm = VM::new(prog);
     // Ensure host surfaces are present for snippet execution
     basil_host::register_hosts(vm.registry_mut());
-    if let Some(p) = &sess.script_path { vm.set_script_path(p.clone()); }
+    if let Some(p) = &sess.script_path {
+        vm.set_script_path(p.clone());
+    }
     seed_globals(&mut vm, sess);
     seed_host_globals(&mut vm, opts);
     let mut out = String::new();
@@ -204,11 +313,19 @@ fn eval_snippet_simple(opts: &RunnerOptions, sess: &mut Session, src: &str, tx_e
     let result = vm.run();
     let mut handle = _stdout;
     let _ = handle.read_to_string(&mut out);
-    if !out.is_empty() { let _ = tx_evt.send(RunnerEvent::Output(out)); }
-    if let Err(e) = result { let line = vm.current_line(); let _ = tx_evt.send(RunnerEvent::Error(if line>0 { format!("runtime error at line {}: {}", line, e) } else { format!("runtime error: {}", e) })); }
+    if !out.is_empty() {
+        let _ = tx_evt.send(RunnerEvent::Output(out));
+    }
+    if let Err(e) = result {
+        let line = vm.current_line();
+        let _ = tx_evt.send(RunnerEvent::Error(if line > 0 {
+            format!("runtime error at line {}: {}", line, e)
+        } else {
+            format!("runtime error: {}", e)
+        }));
+    }
     merge_globals(sess, &vm, Some("<repl>"));
 }
-
 
 // Seed host-provided global objects (APP, WEB, BASILICA.MENU) based on runner options
 fn seed_host_globals(vm: &mut VM, opts: &RunnerOptions) {

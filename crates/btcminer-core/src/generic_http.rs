@@ -1,6 +1,6 @@
 use crate::adapter::AsicAdapter;
 use crate::models::{MinerInfo, MinerStats, PoolConfig};
-use crate::profile::{ProfileConfig, resolve_path};
+use crate::profile::{resolve_path, ProfileConfig};
 use reqwest::blocking::Client;
 use std::collections::HashMap;
 
@@ -60,20 +60,29 @@ impl GenericHttpAdapter {
 
     fn extract_f64(&self, data: &serde_json::Value, path: &str) -> f64 {
         resolve_path(data, path)
-            .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(0.0)
     }
 
     fn extract_i64(&self, data: &serde_json::Value, path: &str) -> i64 {
         resolve_path(data, path)
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(0)
     }
 }
 
 impl AsicAdapter for GenericHttpAdapter {
     fn info(&self) -> Result<MinerInfo, String> {
-        let data = self.request(&self.profile.endpoints.info.method, &self.profile.endpoints.info.path)?;
+        let data = self.request(
+            &self.profile.endpoints.info.method,
+            &self.profile.endpoints.info.path,
+        )?;
         Ok(MinerInfo {
             model: self.extract_string(&data, &self.profile.extract.model),
             firmware: self.extract_string(&data, &self.profile.extract.firmware),
@@ -83,8 +92,11 @@ impl AsicAdapter for GenericHttpAdapter {
     }
 
     fn stats(&self) -> Result<MinerStats, String> {
-        let data = self.request(&self.profile.endpoints.stats.method, &self.profile.endpoints.stats.path)?;
-        
+        let data = self.request(
+            &self.profile.endpoints.stats.method,
+            &self.profile.endpoints.stats.path,
+        )?;
+
         let accepted = self.extract_i64(&data, &self.profile.extract.accepted);
         let rejected = self.extract_i64(&data, &self.profile.extract.rejected);
         let reject_rate_pct = if accepted + rejected > 0 {

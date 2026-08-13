@@ -1,4 +1,8 @@
-use std::{env, fs, io::Write, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 fn main() {
     // 1) Generate embedded includes table for all platforms
@@ -27,7 +31,8 @@ fn embed_win_resources() {
     if std::path::Path::new(icon_path).exists() {
         res.set_icon(icon_path);
     }
-    res.compile().expect("Failed to embed Windows resources for basilc");
+    res.compile()
+        .expect("Failed to embed Windows resources for basilc");
 }
 
 fn generate_embedded_includes() -> std::io::Result<()> {

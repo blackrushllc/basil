@@ -2,9 +2,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
-use tower_http::trace::TraceLayer;
 use tokio::net::TcpListener;
-use tracing_subscriber::{EnvFilter, fmt};
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::{config::Config, handlers, AppState};
 

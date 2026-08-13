@@ -24,7 +24,13 @@ pub struct PrecompileResult {
 pub enum TplError {
     Msg(String),
 }
-impl fmt::Display for TplError { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { match self { TplError::Msg(s) => write!(f, "{}", s) } } }
+impl fmt::Display for TplError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TplError::Msg(s) => write!(f, "{}", s),
+        }
+    }
+}
 impl std::error::Error for TplError {}
 
 pub fn parse_directives_and_bom(src: &str) -> (Directives, usize) {
@@ -36,28 +42,35 @@ pub fn parse_directives_and_bom(src: &str) -> (Directives, usize) {
     let mut dir = Directives::default();
     // Only directives at top-of-file prelude; stop at first non-directive line
     loop {
-        if i >= src.len() { break; }
+        if i >= src.len() {
+            break;
+        }
         let rest = &src[i..];
-        if !rest.starts_with('#') { break; }
+        if !rest.starts_with('#') {
+            break;
+        }
         // read this line
         let line_end = rest.find('\n').map(|n| i + n + 1).unwrap_or(src.len());
-        let line = &src[i..line_end].trim_end_matches(['\r','\n']);
+        let line = &src[i..line_end].trim_end_matches(['\r', '\n']);
         // match directives
-        if line.starts_with("#CGI_NO_HEADER") { dir.cgi_no_header = true; }
-        else if let Some(rest) = line.strip_prefix("#CGI_DEFAULT_HEADER") {
+        if line.starts_with("#CGI_NO_HEADER") {
+            dir.cgi_no_header = true;
+        } else if let Some(rest) = line.strip_prefix("#CGI_DEFAULT_HEADER") {
             // Expect quoted string
             if let Some(qpos) = rest.find('"') {
-                let after = &rest[qpos+1..];
+                let after = &rest[qpos + 1..];
                 if let Some(endq) = after.rfind('"') {
                     let val = &after[..endq];
                     dir.cgi_default_header = Some(val.to_string());
                 }
             }
-        }
-        else if line.starts_with("#CGI_SHORT_TAGS_ON") { dir.short_tags_on = true; }
-        else if line.starts_with("#BASIL_DEV") { dir.reserved_basil_dev = true; }
-        else if line.starts_with("#BASIL_DEBUG") { dir.reserved_basil_debug = true; }
-        else {
+        } else if line.starts_with("#CGI_SHORT_TAGS_ON") {
+            dir.short_tags_on = true;
+        } else if line.starts_with("#BASIL_DEV") {
+            dir.reserved_basil_dev = true;
+        } else if line.starts_with("#BASIL_DEBUG") {
+            dir.reserved_basil_debug = true;
+        } else {
             // Unknown # line at prelude: treat it as a preprocessor directive to be forwarded
             // into the synthesized Basil source before running the preprocessor. This allows
             // `#include`, `#define`, and conditionals outside of template tags.
@@ -79,7 +92,9 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
         for (idx, line) in directives.preproc_prelude.iter().enumerate() {
             out.push_str(line);
             // Ensure each directive ends with a single newline
-            if !line.ends_with('\n') { out.push('\n'); }
+            if !line.ends_with('\n') {
+                out.push('\n');
+            }
             // Defensive: avoid double-blank lines between prelude and first emitted code
             if idx + 1 == directives.preproc_prelude.len() {
                 // leave exactly one newline separator; subsequent code emission will add its own newlines
@@ -87,11 +102,12 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
         }
     }
 
-
     // Helper to append PRINT of raw text
     let emit_text = |text: &str, out: &mut String| {
-        if text.is_empty() { return; }
-        let mut s = String::with_capacity(text.len()+2);
+        if text.is_empty() {
+            return;
+        }
+        let mut s = String::with_capacity(text.len() + 2);
         s.push('"');
         for ch in text.chars() {
             match ch {
@@ -116,30 +132,48 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
         let mut scan = i;
         let mut ltq_opt: Option<usize> = None;
         while scan + 1 < bytes.len() {
-            if bytes[scan] == b'<' && bytes[scan+1] == b'?' { ltq_opt = Some(scan); break; }
+            if bytes[scan] == b'<' && bytes[scan + 1] == b'?' {
+                ltq_opt = Some(scan);
+                break;
+            }
             scan += 1;
         }
-        let Some(ltq) = ltq_opt else { break; };
+        let Some(ltq) = ltq_opt else {
+            break;
+        };
         // Emit text up to ltq
         if ltq > text_start {
             let text = &src[text_start..ltq];
             emit_text(text, &mut out);
         }
         // Determine tag type
-        if ltq + 2 > bytes.len() { return Err(TplError::Msg("unterminated tag opener".into())); }
+        if ltq + 2 > bytes.len() {
+            return Err(TplError::Msg("unterminated tag opener".into()));
+        }
         let after = ltq + 2;
-        if after >= bytes.len() { return Err(TplError::Msg("unterminated tag".into())); }
+        if after >= bytes.len() {
+            return Err(TplError::Msg("unterminated tag".into()));
+        }
         // Echo shorthand
         if bytes.get(after) == Some(&b'=') {
             // Find closing '?>' honoring Basil string/comment syntax
-            let (end, _) = find_closing(src, after+1)?; // start after '='<
-            let expr = &src[after+1 .. end];
+            let (end, _) = find_closing(src, after + 1)?; // start after '='<
+            let expr = &src[after + 1..end];
             // Basic validation: no semicolons or block keywords
-            if expr.contains(';') || contains_kw(expr, &["BEGIN","END","WHILE","FOR","IF","ELSE","FUNC"]) {
-                return Err(TplError::Msg("Echo block accepts a single expression only".into()));
+            if expr.contains(';')
+                || contains_kw(
+                    expr,
+                    &["BEGIN", "END", "WHILE", "FOR", "IF", "ELSE", "FUNC"],
+                )
+            {
+                return Err(TplError::Msg(
+                    "Echo block accepts a single expression only".into(),
+                ));
             }
             let expr_trim = expr.trim();
-            out.push_str("PRINT ("); out.push_str(expr_trim); out.push_str(");\n");
+            out.push_str("PRINT (");
+            out.push_str(expr_trim);
+            out.push_str(");\n");
             i = end + 2; // skip '?>'
             text_start = i;
             continue;
@@ -148,32 +182,51 @@ pub fn precompile_template(src: &str) -> Result<PrecompileResult, TplError> {
         let rest = &src[after..];
         if rest.starts_with("basil") || (directives.short_tags_on && rest.starts_with("bas")) {
             // compute start of code content
-            let code_start = if rest.starts_with("basil") { after + 5 } else { after + 3 };
+            let code_start = if rest.starts_with("basil") {
+                after + 5
+            } else {
+                after + 3
+            };
             // skip optional whitespace
             let mut cs = code_start;
-            while cs < src.len() && src.as_bytes()[cs].is_ascii_whitespace() { cs += 1; }
+            while cs < src.len() && src.as_bytes()[cs].is_ascii_whitespace() {
+                cs += 1;
+            }
             // Find '?>' honoring strings/comments
             let (end, _) = find_closing(src, cs)?;
             let code = &src[cs..end];
             out.push_str(code);
             let code_trim = code.trim_end();
-            if !code_trim.ends_with(';') && !code_trim.is_empty() { out.push_str(";\n"); }
-            else { out.push('\n'); }
-            i = end + 2; text_start = i;
+            if !code_trim.ends_with(';') && !code_trim.is_empty() {
+                out.push_str(";\n");
+            } else {
+                out.push('\n');
+            }
+            i = end + 2;
+            text_start = i;
             continue;
         }
         // Illegal bare '<?...'
         return Err(TplError::Msg("Illegal bare '<? ... ?>'. Use <?basil ... ?>, <?bas ... ?> (with #CGI_SHORT_TAGS_ON), or <?= expr ?>.".into()));
     }
     // Tail text
-    if text_start < src.len() { emit_text(&src[text_start..], &mut out); }
+    if text_start < src.len() {
+        emit_text(&src[text_start..], &mut out);
+    }
 
-    Ok(PrecompileResult { basil_source: out, directives })
+    Ok(PrecompileResult {
+        basil_source: out,
+        directives,
+    })
 }
 
 fn contains_kw(s: &str, kws: &[&str]) -> bool {
     let up = s.to_ascii_uppercase();
-    for k in kws { if up.contains(k) { return true; } }
+    for k in kws {
+        if up.contains(k) {
+            return true;
+        }
+    }
     false
 }
 
@@ -185,33 +238,60 @@ fn find_closing(src: &str, start: usize) -> Result<(usize, ()), TplError> {
     let mut in_str = false;
     let mut in_slash_comment = false;
     let mut in_tick_comment = false;
-    while i+1 < bytes.len() {
+    while i + 1 < bytes.len() {
         let c = bytes[i];
-        let n = bytes[i+1];
+        let n = bytes[i + 1];
         if in_str {
-            if c == b'\\' { i += 2; continue; }
-            if c == b'"' { in_str = false; i+=1; continue; }
-            i+=1; continue;
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+                i += 1;
+                continue;
+            }
+            i += 1;
+            continue;
         }
         if in_slash_comment {
-            if c == b'\n' { in_slash_comment = false; }
-            i+=1; continue;
+            if c == b'\n' {
+                in_slash_comment = false;
+            }
+            i += 1;
+            continue;
         }
         if in_tick_comment {
-            if c == b'\n' { in_tick_comment = false; }
-            i+=1; continue;
+            if c == b'\n' {
+                in_tick_comment = false;
+            }
+            i += 1;
+            continue;
         }
         // Enter comment?
-        if c == b'/' && n == b'/' { in_slash_comment = true; i+=2; continue; }
-        if c == b'\'' { in_tick_comment = true; i+=1; continue; }
-        if c == b'"' { in_str = true; i+=1; continue; }
+        if c == b'/' && n == b'/' {
+            in_slash_comment = true;
+            i += 2;
+            continue;
+        }
+        if c == b'\'' {
+            in_tick_comment = true;
+            i += 1;
+            continue;
+        }
+        if c == b'"' {
+            in_str = true;
+            i += 1;
+            continue;
+        }
         // Check for '?>'
-        if c == b'?' && n == b'>' { return Ok((i, ())); }
-        i+=1;
+        if c == b'?' && n == b'>' {
+            return Ok((i, ()));
+        }
+        i += 1;
     }
     Err(TplError::Msg("Unterminated block: expected '?>'".into()))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -284,5 +364,4 @@ mod tests {
         assert!(pre.basil_source.contains("FOR EACH p$ IN REQUEST$()"));
         assert!(pre.basil_source.contains("NEXT"));
     }
-
 }

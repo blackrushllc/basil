@@ -9,6 +9,7 @@ members = [
     "basilcore/bytecode",
     "basilcore/compiler",
     "basilcore/vm",
+    "basilcore/atomic",
     "basil-objects",
     "basil-objects-aws",
     "basil-objects-net",
@@ -50,6 +51,7 @@ basil-objects-net = { path = "basil-objects-net" }
 basil-objects-crypto = { path = "basil-objects-crypto" }
 basil-objects-sql = { path = "basil-objects-sql" }
 basil-common    = { path = "basilcore/common" }
+basil-atomic    = { path = "basilcore/atomic" }
 basil-bytecode  = { path = "basilcore/bytecode" }
 basil-objects-orm = { path = "basil-objects-orm" }
 basil-preprocessor = { path = "crates/basil-preprocessor" }

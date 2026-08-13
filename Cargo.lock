@@ -1214,6 +1214,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "basil-atomic"
+version = "0.0.1"
+dependencies = [
+ "basil-common",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "basil-bytecode"
 version = "0.0.1"
 dependencies = [

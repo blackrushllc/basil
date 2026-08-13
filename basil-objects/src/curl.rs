@@ -1,4 +1,4 @@
-use basil_common::{Result, BasilError};
+use basil_common::{BasilError, Result};
 
 // For symmetry with other modules, provide a register() entry point even though this
 // module currently exposes only global helper functions (no OBJECT types).

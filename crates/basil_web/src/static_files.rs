@@ -1,7 +1,14 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
-use axum::{body::Body, http::{header, HeaderMap, HeaderValue, Request, StatusCode}, response::Response};
+use axum::{
+    body::Body,
+    http::{header, HeaderMap, HeaderValue, Request, StatusCode},
+    response::Response,
+};
 use httpdate::HttpDate;
 use mime_guess::from_path;
 use percent_encoding::percent_decode_str;
@@ -14,7 +21,11 @@ pub fn resolve_path(root: &Path, uri_path: &str) -> Result<PathBuf> {
     util::safe_join(root, path)
 }
 
-pub async fn serve_file(cfg: &crate::config::Config, parts: http::request::Parts, file: PathBuf) -> Result<Response> {
+pub async fn serve_file(
+    cfg: &crate::config::Config,
+    parts: http::request::Parts,
+    file: PathBuf,
+) -> Result<Response> {
     // HEAD vs GET handling
     let method = parts.method.clone();
 
@@ -25,7 +36,8 @@ pub async fn serve_file(cfg: &crate::config::Config, parts: http::request::Parts
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .body(Body::empty())
             .unwrap();
-        resp.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
+        resp.headers_mut()
+            .insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
         return Ok(resp);
     }
 
@@ -34,9 +46,19 @@ pub async fn serve_file(cfg: &crate::config::Config, parts: http::request::Parts
         tracing::warn!(path = %file.display(), "404 Not Found");
         let mut resp = Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(if method == http::Method::HEAD { Body::empty() } else { Body::from(format!("<h1>404 Not Found</h1><pre>{}</pre>", file.display())) })
+            .body(if method == http::Method::HEAD {
+                Body::empty()
+            } else {
+                Body::from(format!(
+                    "<h1>404 Not Found</h1><pre>{}</pre>",
+                    file.display()
+                ))
+            })
             .unwrap();
-        resp.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        resp.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
         return Ok(resp);
     }
 
@@ -44,24 +66,42 @@ pub async fn serve_file(cfg: &crate::config::Config, parts: http::request::Parts
 
     // MIME
     let mime = from_path(&file).first_or_octet_stream();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(mime.as_ref())
+            .unwrap_or(HeaderValue::from_static("application/octet-stream")),
+    );
 
     // ETag and Last-Modified
     if cfg.etag {
         if let Ok(etag) = util::etag_weak_for_meta(&file) {
-            headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap_or(HeaderValue::from_static("W/\"0\"")));
+            headers.insert(
+                header::ETAG,
+                HeaderValue::from_str(&etag).unwrap_or(HeaderValue::from_static("W/\"0\"")),
+            );
         }
     }
     if let Ok(md) = fs::metadata(&file) {
         if let Ok(modified) = md.modified() {
             let http_date = HttpDate::from(modified);
-            headers.insert(header::LAST_MODIFIED, HeaderValue::from_str(&http_date.to_string()).unwrap());
+            headers.insert(
+                header::LAST_MODIFIED,
+                HeaderValue::from_str(&http_date.to_string()).unwrap(),
+            );
         }
     }
 
     // Conditional requests
-    if let (Some(if_none), Some(etag)) = (parts.headers.get(header::IF_NONE_MATCH), headers.get(header::ETAG)) {
-        if if_none == etag { return Ok(Response::builder().status(StatusCode::NOT_MODIFIED).body(Body::empty()).unwrap()); }
+    if let (Some(if_none), Some(etag)) = (
+        parts.headers.get(header::IF_NONE_MATCH),
+        headers.get(header::ETAG),
+    ) {
+        if if_none == etag {
+            return Ok(Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .body(Body::empty())
+                .unwrap());
+        }
     }
 
     // Cache-Control: dev-friendly
@@ -94,9 +134,19 @@ pub async fn dispatch(app: &AppState, req: Request<Body>) -> Result<Response> {
         tracing::warn!(path = %path.display(), "404 Not Found");
         let mut resp = Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(if method == http::Method::HEAD { Body::empty() } else { Body::from(format!("<h1>404 Not Found</h1><pre>{}</pre>", path.display())) })
+            .body(if method == http::Method::HEAD {
+                Body::empty()
+            } else {
+                Body::from(format!(
+                    "<h1>404 Not Found</h1><pre>{}</pre>",
+                    path.display()
+                ))
+            })
             .unwrap();
-        resp.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        resp.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
         return Ok(resp);
     }
 
@@ -110,10 +160,16 @@ pub async fn dispatch(app: &AppState, req: Request<Body>) -> Result<Response> {
                     .status(StatusCode::METHOD_NOT_ALLOWED)
                     .body(Body::empty())
                     .unwrap();
-                resp.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, POST"));
+                resp.headers_mut()
+                    .insert(header::ALLOW, HeaderValue::from_static("GET, POST"));
                 return Ok(resp);
             }
-            return crate::script::run_script(app, Request::from_parts(parts, Body::from(body)), path).await;
+            return crate::script::run_script(
+                app,
+                Request::from_parts(parts, Body::from(body)),
+                path,
+            )
+            .await;
         }
         // For HTML/templates: allow GET/HEAD only; others → 405
         "html" => {
@@ -123,11 +179,17 @@ pub async fn dispatch(app: &AppState, req: Request<Body>) -> Result<Response> {
                     .status(StatusCode::METHOD_NOT_ALLOWED)
                     .body(Body::empty())
                     .unwrap();
-                resp.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
+                resp.headers_mut()
+                    .insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
                 return Ok(resp);
             }
             if crate::template::file_contains_basil(&path).await? {
-                return crate::template::render_html_with_basil(app, Request::from_parts(parts, Body::from(body)), path).await;
+                return crate::template::render_html_with_basil(
+                    app,
+                    Request::from_parts(parts, Body::from(body)),
+                    path,
+                )
+                .await;
             } else {
                 return serve_file(&app.cfg, parts, path).await;
             }

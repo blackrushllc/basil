@@ -1,15 +1,26 @@
-use std::{fs, io, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
-pub fn read_mtime(p: &Path) -> Result<SystemTime> { Ok(fs::metadata(p)?.modified()?) }
+pub fn read_mtime(p: &Path) -> Result<SystemTime> {
+    Ok(fs::metadata(p)?.modified()?)
+}
 
 pub fn etag_weak_for_meta(p: &Path) -> Result<String> {
     let md = fs::metadata(p)?;
-    let mtime = md.modified().unwrap_or(SystemTime::UNIX_EPOCH).duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let mtime = md
+        .modified()
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let size = md.len();
     let mut h = Sha256::new();
     h.update(size.to_le_bytes());
@@ -67,7 +78,9 @@ pub fn stderr_tail(bytes: &[u8], max: usize) -> String {
 }
 
 pub fn ensure_parent_dir(path: &Path) -> io::Result<()> {
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
     Ok(())
 }
 

@@ -1,17 +1,17 @@
-pub mod models;
 pub mod adapter;
-pub mod profile;
-pub mod generic_http;
 pub mod alerts;
+pub mod generic_http;
 pub mod logger;
+pub mod models;
+pub mod profile;
 
-use std::collections::HashMap;
 use crate::adapter::AsicAdapter;
-use crate::models::{MinerSnapshot, AsicSnapshot};
-use crate::profile::ProfileConfig;
-use crate::generic_http::GenericHttpAdapter;
 use crate::alerts::AlertEvaluator;
+use crate::generic_http::GenericHttpAdapter;
+use crate::models::{AsicSnapshot, MinerSnapshot};
+use crate::profile::ProfileConfig;
 use chrono::Utc;
+use std::collections::HashMap;
 
 pub struct MinerManager {
     asics: HashMap<String, Box<dyn AsicAdapter>>,
@@ -30,9 +30,18 @@ impl MinerManager {
         }
     }
 
-    pub fn add_asic(&mut self, name: String, kind: String, host: String, user: String, pass: String, profile: Option<ProfileConfig>) -> Result<(), String> {
+    pub fn add_asic(
+        &mut self,
+        name: String,
+        kind: String,
+        host: String,
+        user: String,
+        pass: String,
+        profile: Option<ProfileConfig>,
+    ) -> Result<(), String> {
         if kind == "generic-http-json" {
-            let prof = profile.ok_or_else(|| "Profile required for generic-http-json".to_string())?;
+            let prof =
+                profile.ok_or_else(|| "Profile required for generic-http-json".to_string())?;
             let adapter = GenericHttpAdapter::new(host, user, pass, prof);
             self.asics.insert(name, Box::new(adapter));
             Ok(())
@@ -47,7 +56,7 @@ impl MinerManager {
 
     pub fn take_snapshot(&mut self) -> MinerSnapshot {
         let mut asic_snapshots = Vec::new();
-        
+
         for (name, adapter) in &self.asics {
             let stats_res = adapter.stats();
             let asic_snap = match stats_res {
@@ -64,7 +73,7 @@ impl MinerManager {
                     online: false,
                     stats: None,
                     last_err: Some(e),
-                }
+                },
             };
             asic_snapshots.push(asic_snap);
         }
@@ -85,7 +94,7 @@ impl MinerManager {
     pub fn alerts_mut(&mut self) -> &mut AlertEvaluator {
         &mut self.alerts
     }
-    
+
     pub fn last_err(&self) -> Option<String> {
         self.last_err.clone()
     }

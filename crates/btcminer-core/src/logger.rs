@@ -1,6 +1,6 @@
+use crate::models::MinerSnapshot;
 #[cfg(feature = "db_sqlite")]
 use rusqlite::{params, Connection};
-use crate::models::MinerSnapshot;
 
 pub struct SqliteLogger {
     path: String,
@@ -22,8 +22,9 @@ impl SqliteLogger {
                 db_ok INTEGER
             )",
             [],
-        ).map_err(|e| e.to_string())?;
-        
+        )
+        .map_err(|e| e.to_string())?;
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY,
@@ -31,8 +32,9 @@ impl SqliteLogger {
                 message TEXT
             )",
             [],
-        ).map_err(|e| e.to_string())?;
-        
+        )
+        .map_err(|e| e.to_string())?;
+
         Ok(())
     }
 
@@ -40,22 +42,28 @@ impl SqliteLogger {
     pub fn write(&self, snapshot: &MinerSnapshot) -> Result<(), String> {
         let mut conn = Connection::open(&self.path).map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
-        
+
         let data_json = serde_json::to_string(snapshot).map_err(|e| e.to_string())?;
         tx.execute(
             "INSERT INTO snapshots (ts, data_json, db_ok) VALUES (?, ?, ?)",
-            params![snapshot.timestamp, data_json, if snapshot.db_ok { 1 } else { 0 }],
-        ).map_err(|e| e.to_string())?;
-        
+            params![
+                snapshot.timestamp,
+                data_json,
+                if snapshot.db_ok { 1 } else { 0 }
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
         let snapshot_id = tx.last_insert_rowid();
-        
+
         for alert in &snapshot.alerts {
             tx.execute(
                 "INSERT INTO alerts (snapshot_id, message) VALUES (?, ?)",
                 params![snapshot_id, alert],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
-        
+
         tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }

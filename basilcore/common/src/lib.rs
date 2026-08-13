@@ -38,21 +38,55 @@ SOFTWARE.
 
 */
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Span { pub start: u32, pub end: u32 }
-impl Span { pub fn new(start: usize, end: usize) -> Self { Self { start: start as u32, end: end as u32 } } }
-
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self {
+            start: start as u32,
+            end: end as u32,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct BasilError(pub String);
-impl std::fmt::Display for BasilError { fn fmt(&self, f:&mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) } }
+impl std::fmt::Display for BasilError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 impl std::error::Error for BasilError {}
 
 pub fn basil_error(line: u32, msg: &str) -> BasilError {
     BasilError(format!("[line {}] {}", line, msg))
 }
 
-
 pub type Result<T> = std::result::Result<T, BasilError>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompilationTarget {
+    Basil,
+    Atomic,
+}
+
+impl Default for CompilationTarget {
+    fn default() -> Self {
+        Self::Basil
+    }
+}
+
+impl std::str::FromStr for CompilationTarget {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "basil" => Ok(Self::Basil),
+            "atomic" | "atomicbasic" => Ok(Self::Atomic),
+            _ => Err(format!("Unknown compilation target: {}", s)),
+        }
+    }
+}
 
 use chrono::{DateTime, Local};
 use std::path::Path;
@@ -74,21 +108,41 @@ pub fn print_suite_version(current_tool: &str, version: &str) {
     println!("Builds in this suite:");
 
     // 1. current_tool (assumed to be the same version)
-    println!("  - {:<12} {} ({})", format!("{}:", current_tool), version, get_file_date(current_exe.as_deref()));
+    println!(
+        "  - {:<12} {} ({})",
+        format!("{}:", current_tool),
+        version,
+        get_file_date(current_exe.as_deref())
+    );
 
     // 2. Siblings
     if let Some(dir) = current_exe.as_ref().and_then(|p| p.parent()) {
         let tools = ["basilc", "bcc", "basil-serve"];
         for tool in tools {
-            if tool == current_tool { continue; }
-            
-            let tool_exe = if cfg!(windows) { format!("{}.exe", tool) } else { tool.to_string() };
-            let tool_path = dir.join(tool_exe);
-            
-            if tool_path.exists() {
-                println!("  - {:<12} {} ({})", format!("{}:", tool), version, get_file_date(Some(&tool_path)));
+            if tool == current_tool {
+                continue;
+            }
+
+            let tool_exe = if cfg!(windows) {
+                format!("{}.exe", tool)
             } else {
-                println!("  - {:<12} {} (not found in suite directory)", format!("{}:", tool), version);
+                tool.to_string()
+            };
+            let tool_path = dir.join(tool_exe);
+
+            if tool_path.exists() {
+                println!(
+                    "  - {:<12} {} ({})",
+                    format!("{}:", tool),
+                    version,
+                    get_file_date(Some(&tool_path))
+                );
+            } else {
+                println!(
+                    "  - {:<12} {} (not found in suite directory)",
+                    format!("{}:", tool),
+                    version
+                );
             }
         }
     }

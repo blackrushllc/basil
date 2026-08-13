@@ -49,62 +49,138 @@ pub enum Expr {
     Var(String),
     UnaryNeg(Box<Expr>),
     UnaryNot(Box<Expr>),
-    Binary { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr> },
+    Binary {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     // Postfix parentheses used for either function calls or array indexing (disambiguated in compiler)
-    Call { callee: Box<Expr>, args: Vec<Expr> },
+    Call {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
     // Object member access and method calls
-    MemberGet { target: Box<Expr>, name: String },
-    MemberCall { target: Box<Expr>, method: String, args: Vec<Expr> },
+    MemberGet {
+        target: Box<Expr>,
+        name: String,
+    },
+    MemberCall {
+        target: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
     // Implicit receiver inside WITH block
     ImplicitThis,
     // NEW TYPE(args) expression
-    NewObject { type_name: String, args: Vec<Expr> },
+    NewObject {
+        type_name: String,
+        args: Vec<Expr>,
+    },
     // CLASS("filename") expression
-    NewClass { filename: Box<Expr> },
+    NewClass {
+        filename: Box<Expr>,
+    },
     // EVAL("expr") expression: parse+compile at runtime and push result
     Eval(Box<Expr>),
     // New: list and dictionary literals, and square-bracket indexing
     List(Vec<Expr>),
     Dict(Vec<(String, Expr)>),
-    IndexSquare { target: Box<Expr>, index: Box<Expr> },
+    IndexSquare {
+        target: Box<Expr>,
+        index: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div, Mod,
-    Eq, Ne, Lt, Le, Gt, Ge,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
     // LET for variables or array elements (if indices present)
-    Let   { name: String, indices: Option<Vec<Expr>>, init: Expr },
+    Let {
+        name: String,
+        indices: Option<Vec<Expr>>,
+        init: Expr,
+    },
     // CONST declaration (immutable variable)
-    Const { name: String, init: Expr },
+    Const {
+        name: String,
+        init: Expr,
+    },
     // DIM statement to create arrays (1–4 dimensions)
-    Dim   { name: String, dims: Vec<Expr> },
+    Dim {
+        name: String,
+        dims: Vec<Expr>,
+    },
     // DIM x@ AS TYPE(args?) (scalar object)
-    DimObject { name: String, type_name: String, args: Vec<Expr> },
+    DimObject {
+        name: String,
+        type_name: String,
+        args: Vec<Expr>,
+    },
     // DIM arr@(dims) [AS Type] (object arrays)
-    DimObjectArray { name: String, dims: Vec<Expr>, type_name: Option<String> },
+    DimObjectArray {
+        name: String,
+        dims: Vec<Expr>,
+        type_name: Option<String>,
+    },
     // Fixed-length string declaration: DIM name$ AS STRING * N  or  DIM name$[N]
-    DimFixedStr { name: String, len: usize },
+    DimFixedStr {
+        name: String,
+        len: usize,
+    },
     // TYPE ... END TYPE (struct definition)
-    TypeDef { name: String, fields: Vec<StructField> },
+    TypeDef {
+        name: String,
+        fields: Vec<StructField>,
+    },
     // Property set: obj.Prop = expr (without LET)
-    SetProp { target: Expr, prop: String, value: Expr },
+    SetProp {
+        target: Expr,
+        prop: String,
+        value: Expr,
+    },
     // Square-bracket index set: list[i] = expr or dict["k"] = expr
-    SetIndexSquare { target: Expr, index: Expr, value: Expr },
+    SetIndexSquare {
+        target: Expr,
+        index: Expr,
+        value: Expr,
+    },
     // DESCRIBE obj or array
-    Describe { target: Expr },
-    Print { expr: Expr },
+    Describe {
+        target: Expr,
+    },
+    Print {
+        expr: Expr,
+    },
     // EXEC statement: EXEC("...basil code...")
-    Exec { code: Expr },
+    Exec {
+        code: Expr,
+    },
     // SETENV/EXPORTENV statements
-    SetEnv { name: String, value: Expr, export: bool },
+    SetEnv {
+        name: String,
+        value: Expr,
+        export: bool,
+    },
     // SHELL statement
-    Shell { cmd: Expr },
+    Shell {
+        cmd: Expr,
+    },
     // EXIT statement (optional numeric code)
     Exit(Option<Expr>),
     // STOP statement: suspend execution
@@ -118,24 +194,62 @@ pub enum Stmt {
     Label(String),
     Goto(String),
     Gosub(String),
-    If { cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
-    While { cond: Expr, body: Box<Stmt> },
+    If {
+        cond: Expr,
+        then_branch: Box<Stmt>,
+        else_branch: Option<Box<Stmt>>,
+    },
+    While {
+        cond: Expr,
+        body: Box<Stmt>,
+    },
     Break,
     Continue,
     Block(Vec<Stmt>),
     // Forward prototype declaration (no body)
-    Declare { kind: FuncKind, name: String, params: Vec<String> },
+    Declare {
+        kind: FuncKind,
+        name: String,
+        params: Vec<String>,
+    },
     // Full function/subroutine definition with body
-    Func { kind: FuncKind, name: String, params: Vec<String>, body: Vec<Stmt> },
-    For { var: String, start: Expr, end: Expr, step: Option<Expr>, body: Box<Stmt> },
+    Func {
+        kind: FuncKind,
+        name: String,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
+    For {
+        var: String,
+        start: Expr,
+        end: Expr,
+        step: Option<Expr>,
+        body: Box<Stmt>,
+    },
     // FOR EACH var IN expr ... NEXT
-    ForEach { var: String, enumerable: Expr, body: Box<Stmt> },
+    ForEach {
+        var: String,
+        enumerable: Expr,
+        body: Box<Stmt>,
+    },
     // SELECT CASE statement
-    SelectCase { selector: Expr, arms: Vec<CaseArm>, else_body: Option<Vec<Stmt>> },
+    SelectCase {
+        selector: Expr,
+        arms: Vec<CaseArm>,
+        else_body: Option<Vec<Stmt>>,
+    },
     // WITH block
-    With { target: Expr, body: Vec<Stmt> },
+    With {
+        target: Expr,
+        body: Vec<Stmt>,
+    },
     // TRY/CATCH/FINALLY
-    Try { try_body: Vec<Stmt>, catch_var: Option<String>, catch_body: Option<Vec<Stmt>>, finally_body: Option<Vec<Stmt>> },
+    Try {
+        try_body: Vec<Stmt>,
+        catch_var: Option<String>,
+        catch_body: Option<Vec<Stmt>>,
+        finally_body: Option<Vec<Stmt>>,
+    },
     // RAISE statement
     Raise(Option<Expr>),
     // Line marker for runtime error reporting
@@ -157,13 +271,11 @@ pub enum CasePattern {
 
 pub type Program = Vec<Stmt>;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FuncKind {
     Func,
     Sub,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct StructField {
@@ -175,7 +287,7 @@ pub struct StructField {
 pub enum StructFieldKind {
     Int32,
     Float64,
-    VarString,              // variable-length string (handle/pointer at runtime)
-    FixedString(usize),     // fixed-length string with declared byte size
-    Struct(String),         // nested struct by type name
+    VarString,          // variable-length string (handle/pointer at runtime)
+    FixedString(usize), // fixed-length string with declared byte size
+    Struct(String),     // nested struct by type name
 }

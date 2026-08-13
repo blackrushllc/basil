@@ -1,0 +1,11 @@
+{
+  "format": "atomicflix-game-ir",
+  "version": 1,
+  "entryPoint": "start",
+  "instructions": [
+    {
+      "op": "UNKNOWN",
+      "line": 1
+    }
+  ]
+}

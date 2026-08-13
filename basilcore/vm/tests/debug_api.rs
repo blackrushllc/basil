@@ -1,21 +1,27 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
-use basil_vm::{VM};
-use basil_vm::debug::{Debugger, DebugEvent};
-use basil_bytecode::{Chunk, Program as BCProgram, Value, Op};
+use basil_bytecode::{Chunk, Op, Program as BCProgram, Value};
+use basil_vm::debug::{DebugEvent, Debugger};
+use basil_vm::VM;
 
 #[test]
 fn breakpoint_and_output_events() {
     // Build a minimal program: line 1; print "Hello"; halt
     let mut chunk = Chunk::default();
     let cidx = chunk.add_const(Value::Str("Hello".to_string()));
-    chunk.push_op(Op::SetLine); chunk.push_u16(1);
-    chunk.push_op(Op::Const); chunk.push_u16(cidx);
+    chunk.push_op(Op::SetLine);
+    chunk.push_u16(1);
+    chunk.push_op(Op::Const);
+    chunk.push_u16(cidx);
     chunk.push_op(Op::Print);
     chunk.push_op(Op::Halt);
-    let prog = BCProgram { chunk, globals: vec![], source_map: None };
+    let prog = BCProgram {
+        chunk,
+        globals: vec![],
+        source_map: None,
+    };
 
     let dbg = Debugger::new();
     // Watch events
@@ -26,11 +32,21 @@ fn breakpoint_and_output_events() {
     let handle = thread::spawn(move || {
         while let Ok(ev) = rx.recv() {
             match ev {
-                DebugEvent::Started => { events_clone.lock().unwrap().push("Started".into()); }
-                DebugEvent::StoppedBreakpoint { file: _, line: _ } => { events_clone.lock().unwrap().push("Stopped".into()); dbg_for_thread.resume(); }
-                DebugEvent::Output(s) => { events_clone.lock().unwrap().push(format!("Output:{s}")); }
+                DebugEvent::Started => {
+                    events_clone.lock().unwrap().push("Started".into());
+                }
+                DebugEvent::StoppedBreakpoint { file: _, line: _ } => {
+                    events_clone.lock().unwrap().push("Stopped".into());
+                    dbg_for_thread.resume();
+                }
+                DebugEvent::Output(s) => {
+                    events_clone.lock().unwrap().push(format!("Output:{s}"));
+                }
                 DebugEvent::Continued => { /* ignore */ }
-                DebugEvent::Exited => { events_clone.lock().unwrap().push("Exited".into()); break; }
+                DebugEvent::Exited => {
+                    events_clone.lock().unwrap().push("Exited".into());
+                    break;
+                }
             }
         }
     });

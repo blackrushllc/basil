@@ -1,0 +1,6 @@
+{
+  "type": "runtime_error",
+  "message": "Unknown label: basement",
+  "instruction": 12,
+  "sourceLine": 18
+}

@@ -1,19 +1,19 @@
-use std::collections::{HashMap, BTreeMap};
-use std::fs;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
+use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use basil_parser::parse;
-use basil_compiler::compile;
 use basil_bytecode::Value;
+use basil_compiler::compile;
+use basil_parser::parse;
 use basil_vm::VM;
 
 use crate::template::{precompile_template, Directives};
-use basil_bytecode::{serialize_program, deserialize_program};
-use std::time::UNIX_EPOCH;
-use basil_preprocessor as pre;
 use basil_bytecode::SourceMapMini;
+use basil_bytecode::{deserialize_program, serialize_program};
+use basil_preprocessor as pre;
+use std::time::UNIX_EPOCH;
 
 #[derive(Default)]
 pub struct SessionSettings {
@@ -37,7 +37,16 @@ pub struct Session {
 
 impl Session {
     pub fn new(settings: SessionSettings) -> Self {
-        Self { globals: HashMap::new(), order: Vec::new(), origins: HashMap::new(), history: Vec::new(), next_snippet_id: 0, settings, script_path: None, suspended_vm: None }
+        Self {
+            globals: HashMap::new(),
+            order: Vec::new(),
+            origins: HashMap::new(),
+            history: Vec::new(),
+            next_snippet_id: 0,
+            settings,
+            script_path: None,
+            suspended_vm: None,
+        }
     }
 
     pub fn run_program(&mut self, path: &str) -> Result<(), String> {
@@ -47,30 +56,45 @@ impl Session {
         let pre = if looks_like_template {
             precompile_template(&src).map_err(|e| format!("template error: {}", e))?
         } else {
-            crate::template::PrecompileResult { basil_source: src.clone(), directives: Directives::default() }
+            crate::template::PrecompileResult {
+                basil_source: src.clone(),
+                directives: Directives::default(),
+            }
         };
         let meta = fs::metadata(path).map_err(|e| format!("stat {}: {}", path, e))?;
         let source_size = meta.len();
-        let source_mtime_ns: u64 = meta.modified().ok()
+        let source_mtime_ns: u64 = meta
+            .modified()
+            .ok()
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
         let templating_used = src.contains("<?");
-        let flags: u32 = (if pre.directives.short_tags_on { 1u32 } else { 0u32 })
-                       | (if templating_used { 2u32 } else { 0u32 });
+        let flags: u32 = (if pre.directives.short_tags_on {
+            1u32
+        } else {
+            0u32
+        }) | (if templating_used { 2u32 } else { 0u32 });
         let mut cache_path = PathBuf::from(path);
         cache_path.set_extension("basilx");
         let mut program_opt: Option<basil_bytecode::Program> = None;
         if let Ok(bytes) = fs::read(&cache_path) {
             if bytes.len() > 32 && &bytes[0..4] == b"BSLX" {
-                let fmt_ver = u32::from_le_bytes([bytes[4],bytes[5],bytes[6],bytes[7]]);
-                let abi_ver = u32::from_le_bytes([bytes[8],bytes[9],bytes[10],bytes[11]]);
-                let flags_stored = u32::from_le_bytes([bytes[12],bytes[13],bytes[14],bytes[15]]);
+                let fmt_ver = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+                let abi_ver = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+                let flags_stored = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
                 let sz = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
                 let mt = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-                if fmt_ver == 3 && abi_ver == 1 && flags_stored == flags && sz == source_size && mt == source_mtime_ns {
+                if fmt_ver == 3
+                    && abi_ver == 1
+                    && flags_stored == flags
+                    && sz == source_size
+                    && mt == source_mtime_ns
+                {
                     let prog_bytes = &bytes[32..];
-                    if let Ok(p) = deserialize_program(prog_bytes) { program_opt = Some(p); }
+                    if let Ok(p) = deserialize_program(prog_bytes) {
+                        program_opt = Some(p);
+                    }
                 }
             }
         }
@@ -81,15 +105,25 @@ impl Session {
         } else {
             // Preprocess prior to parsing
             let env_paths: Vec<PathBuf> = match env::var("BASIL_PATH") {
-                Ok(val) => { let sep = if cfg!(windows) { ';' } else { ':' }; val.split(sep).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s)).collect() },
+                Ok(val) => {
+                    let sep = if cfg!(windows) { ';' } else { ':' };
+                    val.split(sep)
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| PathBuf::from(s))
+                        .collect()
+                }
                 Err(_) => Vec::new(),
             };
             let pp_opts = crate::build_pre_opts(PathBuf::from(path), env_paths);
-            let preprocessed = pre::preprocess(&pre.basil_source, &pp_opts).map_err(|e| format!("preprocess error: {}", e))?;
+            let preprocessed = pre::preprocess(&pre.basil_source, &pp_opts)
+                .map_err(|e| format!("preprocess error: {}", e))?;
             let ast = parse(&preprocessed.text).map_err(|e| format!("parse error: {}", e))?;
             let mut prog = compile(&ast).map_err(|e| format!("compile error: {}", e))?;
             // Embed source map for Phase B and keep local map for formatting errors
-            let sm = SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() };
+            let sm = SourceMapMini {
+                files: preprocessed.source_map.files.clone(),
+                lines: preprocessed.source_map.lines.clone(),
+            };
             prog.source_map = Some(sm);
             let body = serialize_program(&prog);
             let mut hdr = Vec::with_capacity(32 + body.len());
@@ -106,7 +140,13 @@ impl Session {
                 let _ = f.sync_all();
                 let _ = fs::rename(&tmp, &cache_path);
             }
-            (prog, Some(SourceMapMini { files: preprocessed.source_map.files.clone(), lines: preprocessed.source_map.lines.clone() }))
+            (
+                prog,
+                Some(SourceMapMini {
+                    files: preprocessed.source_map.files.clone(),
+                    lines: preprocessed.source_map.lines.clone(),
+                }),
+            )
         };
         let mut vm = VM::new(program);
         vm.set_script_path(path.to_string());
@@ -124,11 +164,26 @@ impl Session {
                 if let Some(sm) = &local_smap_opt {
                     if line < sm.lines.len() {
                         let (fi, ln) = sm.lines[line];
-                        let fname = sm.files.get(fi as usize).map(|s| std::path::Path::new(s).file_name().and_then(|s| s.to_str()).unwrap_or(s)).unwrap_or("<unknown>");
+                        let fname = sm
+                            .files
+                            .get(fi as usize)
+                            .map(|s| {
+                                std::path::Path::new(s)
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or(s)
+                            })
+                            .unwrap_or("<unknown>");
                         format!("runtime error at line {} in {}: {}", ln, fname, e)
-                    } else { format!("runtime error at line {}: {}", line, e) }
-                } else { format!("runtime error at line {}: {}", line, e) }
-            } else { format!("runtime error: {}", e) };
+                    } else {
+                        format!("runtime error at line {}: {}", line, e)
+                    }
+                } else {
+                    format!("runtime error at line {}: {}", line, e)
+                }
+            } else {
+                format!("runtime error: {}", e)
+            };
             return Err(msg);
         }
         // Merge globals back into REPL session so they are visible while suspended
@@ -144,11 +199,15 @@ impl Session {
     fn merge_globals(&mut self, names: &[String], values: &[Value], origin: Option<&str>) {
         for (i, name) in names.iter().enumerate() {
             let val = values.get(i).cloned().unwrap_or(Value::Null);
-            if !self.globals.contains_key(name) { self.order.push(name.clone()); }
+            if !self.globals.contains_key(name) {
+                self.order.push(name.clone());
+            }
             self.globals.insert(name.clone(), val);
             if let Some(src) = origin {
                 let e = self.origins.entry(name.clone()).or_default();
-                if !e.iter().any(|s| s.eq_ignore_ascii_case(src)) { e.push(src.to_string()); }
+                if !e.iter().any(|s| s.eq_ignore_ascii_case(src)) {
+                    e.push(src.to_string());
+                }
             }
         }
     }
@@ -158,7 +217,9 @@ impl Session {
         let filt = filter.map(|s| s.to_ascii_uppercase());
         for name in &self.order {
             if let Some(fu) = &filt {
-                if !name.to_ascii_uppercase().contains(fu) { continue; }
+                if !name.to_ascii_uppercase().contains(fu) {
+                    continue;
+                }
             }
             if let Some(v) = self.globals.get(name) {
                 out.push((name.clone(), format!("{}", v)));
@@ -171,25 +232,39 @@ impl Session {
         let ast = parse(src).map_err(|e| format!("parse error: {}", e))?;
         // Detect single expression: ignoring line markers
         let mut real_stmts = Vec::new();
-        for s in &ast { if !matches!(s, basil_ast::Stmt::Line(_)) { real_stmts.push(s.clone()); } }
+        for s in &ast {
+            if !matches!(s, basil_ast::Stmt::Line(_)) {
+                real_stmts.push(s.clone());
+            }
+        }
         let ast2 = if real_stmts.len() == 1 {
             if let basil_ast::Stmt::ExprStmt(e) = real_stmts.remove(0) {
                 vec![basil_ast::Stmt::Print { expr: e }]
-            } else { ast.clone() }
-        } else { ast.clone() };
+            } else {
+                ast.clone()
+            }
+        } else {
+            ast.clone()
+        };
         let prog = compile(&ast2).map_err(|e| format!("compile error: {}", e))?;
         let mut vm = VM::new(prog);
-        if let Some(p) = &self.script_path { vm.set_script_path(p.clone()); }
+        if let Some(p) = &self.script_path {
+            vm.set_script_path(p.clone());
+        }
         // Seed known globals into this snippet VM
-        for name in vm.globals_snapshot().0.iter() { // get names cheaply
+        for name in vm.globals_snapshot().0.iter() {
+            // get names cheaply
             if let Some(v) = self.globals.get(name) {
                 let _ = vm.set_global_by_name(name, v.clone());
             }
         }
         if let Err(e) = vm.run() {
             let line = vm.current_line();
-            let msg = if self.settings.show_backtraces { format!("runtime error at line {}: {}", line, e) }
-                      else { format!("runtime error: {}", e) };
+            let msg = if self.settings.show_backtraces {
+                format!("runtime error at line {}: {}", line, e)
+            } else {
+                format!("runtime error: {}", e)
+            };
             return Err(msg);
         }
         let (names, values) = vm.globals_snapshot();
@@ -229,27 +304,60 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
             let _ = io::stdout().flush();
         }
         let line = if let Some(editor) = rl.as_mut() {
-            match editor.readline("") { Ok(l)=>{ if !l.trim().is_empty() { let _=editor.add_history_entry(l.as_str()); } l }, Err(_)=> break }
+            match editor.readline("") {
+                Ok(l) => {
+                    if !l.trim().is_empty() {
+                        let _ = editor.add_history_entry(l.as_str());
+                    }
+                    l
+                }
+                Err(_) => break,
+            }
         } else {
             // No prompt in stdio mode; just read a line
-            let mut l = String::new(); if io::stdin().read_line(&mut l).is_err() { break; } l
+            let mut l = String::new();
+            if io::stdin().read_line(&mut l).is_err() {
+                break;
+            }
+            l
         };
-        let line_trim = line.trim_end_matches(['\r','\n']);
+        let line_trim = line.trim_end_matches(['\r', '\n']);
         let trimmed = line_trim.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         // Aliases
-        if trimmed.eq_ignore_ascii_case("quit") || trimmed.eq_ignore_ascii_case("system") { break; }
+        if trimmed.eq_ignore_ascii_case("quit") || trimmed.eq_ignore_ascii_case("system") {
+            break;
+        }
 
         // Line-numbered program entry (only when not buffering a snippet)
         if buffer.is_empty() {
             // Detect leading integer line number followed by optional code
             let mut di = 0usize;
-            for ch in trimmed.chars() { if ch.is_ascii_digit() { di += ch.len_utf8(); } else { break; } }
-            if di > 0 && (di == trimmed.len() || trimmed[di..].chars().next().map(|c| c.is_whitespace()).unwrap_or(true)) {
+            for ch in trimmed.chars() {
+                if ch.is_ascii_digit() {
+                    di += ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if di > 0
+                && (di == trimmed.len()
+                    || trimmed[di..]
+                        .chars()
+                        .next()
+                        .map(|c| c.is_whitespace())
+                        .unwrap_or(true))
+            {
                 if let Ok(ln) = trimmed[..di].parse::<usize>() {
                     let code = trimmed[di..].trim_start();
-                    if code.is_empty() { program_buf.remove(&ln); } else { program_buf.insert(ln, code.to_string()); }
+                    if code.is_empty() {
+                        program_buf.remove(&ln);
+                    } else {
+                        program_buf.insert(ln, code.to_string());
+                    }
                     continue;
                 }
             }
@@ -274,51 +382,88 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                         Ok(s) => {
                             for (i, line) in s.lines().enumerate() {
                                 let ln = i + 1;
-                                if !line.trim_end().is_empty() { program_buf.insert(ln, line.to_string()); }
+                                if !line.trim_end().is_empty() {
+                                    program_buf.insert(ln, line.to_string());
+                                }
                             }
                             last_file = file.to_string();
                         }
-                        Err(e) => { eprintln!("load error: {}", e); continue; }
+                        Err(e) => {
+                            eprintln!("load error: {}", e);
+                            continue;
+                        }
                     }
-                    if let Err(e) = sess.run_program(file) { eprintln!("Error running program: {}", e); }
+                    if let Err(e) = sess.run_program(file) {
+                        eprintln!("Error running program: {}", e);
+                    }
                 } else {
                     // Save program_buf to last_file (default _.basil) with blank-line gaps, then run
                     let path = last_file.clone();
                     let max_ln = program_buf.keys().copied().max().unwrap_or(0);
                     let mut out = String::new();
                     if max_ln > 0 {
-                        for i in 1..=max_ln { if let Some(t) = program_buf.get(&i) { out.push_str(t); out.push('\n'); } else { out.push('\n'); } }
+                        for i in 1..=max_ln {
+                            if let Some(t) = program_buf.get(&i) {
+                                out.push_str(t);
+                                out.push('\n');
+                            } else {
+                                out.push('\n');
+                            }
+                        }
                     }
-                    if let Err(e) = fs::write(&path, out) { eprintln!("save error: {}", e); continue; }
-                    if let Err(e) = sess.run_program(&path) { eprintln!("Error running program: {}", e); }
+                    if let Err(e) = fs::write(&path, out) {
+                        eprintln!("save error: {}", e);
+                        continue;
+                    }
+                    if let Err(e) = sess.run_program(&path) {
+                        eprintln!("Error running program: {}", e);
+                    }
                 }
                 continue;
             } else if upper.starts_with("LOAD ") || upper == "LOAD" {
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                if parts.len() < 2 { println!("usage: LOAD <filename>"); continue; }
+                if parts.len() < 2 {
+                    println!("usage: LOAD <filename>");
+                    continue;
+                }
                 let file = parts[1];
                 program_buf.clear();
                 match fs::read_to_string(file) {
                     Ok(s) => {
                         for (i, line) in s.lines().enumerate() {
                             let ln = i + 1;
-                            if !line.trim_end().is_empty() { program_buf.insert(ln, line.to_string()); }
+                            if !line.trim_end().is_empty() {
+                                program_buf.insert(ln, line.to_string());
+                            }
                         }
                         last_file = file.to_string();
                     }
-                    Err(e) => { eprintln!("load error: {}", e); }
+                    Err(e) => {
+                        eprintln!("load error: {}", e);
+                    }
                 }
                 continue;
             } else if upper.starts_with("SAVE") {
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                if parts.len() >= 2 { last_file = parts[1].to_string(); }
+                if parts.len() >= 2 {
+                    last_file = parts[1].to_string();
+                }
                 let path = last_file.clone();
                 let max_ln = program_buf.keys().copied().max().unwrap_or(0);
                 let mut out = String::new();
                 if max_ln > 0 {
-                    for i in 1..=max_ln { if let Some(t) = program_buf.get(&i) { out.push_str(t); out.push('\n'); } else { out.push('\n'); } }
+                    for i in 1..=max_ln {
+                        if let Some(t) = program_buf.get(&i) {
+                            out.push_str(t);
+                            out.push('\n');
+                        } else {
+                            out.push('\n');
+                        }
+                    }
                 }
-                if let Err(e) = fs::write(&path, out) { eprintln!("save error: {}", e); }
+                if let Err(e) = fs::write(&path, out) {
+                    eprintln!("save error: {}", e);
+                }
                 continue;
             } else if upper == "STATUS" {
                 // Program listing (like LIST)
@@ -330,50 +475,104 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                 println!("-- MODS --");
                 let mut mods: Vec<&str> = Vec::new();
                 // Core/common objects
-                if cfg!(feature = "obj-base64") { mods.push("obj-base64"); }
-                if cfg!(feature = "obj-zip")    { mods.push("obj-zip"); }
-                if cfg!(feature = "obj-curl")   { mods.push("obj-curl"); }
-                if cfg!(feature = "obj-json")   { mods.push("obj-json"); }
-                if cfg!(feature = "obj-csv")    { mods.push("obj-csv"); }
-                if cfg!(feature = "obj-sqlite") { mods.push("obj-sqlite"); }
-                if cfg!(feature = "obj-sql")    { mods.push("obj-sql"); }
-                if cfg!(feature = "obj-sql-mysql")    { mods.push("obj-sql-mysql"); }
-                if cfg!(feature = "obj-sql-postgres") { mods.push("obj-sql-postgres"); }
+                if cfg!(feature = "obj-base64") {
+                    mods.push("obj-base64");
+                }
+                if cfg!(feature = "obj-zip") {
+                    mods.push("obj-zip");
+                }
+                if cfg!(feature = "obj-curl") {
+                    mods.push("obj-curl");
+                }
+                if cfg!(feature = "obj-json") {
+                    mods.push("obj-json");
+                }
+                if cfg!(feature = "obj-csv") {
+                    mods.push("obj-csv");
+                }
+                if cfg!(feature = "obj-sqlite") {
+                    mods.push("obj-sqlite");
+                }
+                if cfg!(feature = "obj-sql") {
+                    mods.push("obj-sql");
+                }
+                if cfg!(feature = "obj-sql-mysql") {
+                    mods.push("obj-sql-mysql");
+                }
+                if cfg!(feature = "obj-sql-postgres") {
+                    mods.push("obj-sql-postgres");
+                }
 
                 // BMX sample domain objects
-                if cfg!(feature = "obj-bmx")        { mods.push("obj-bmx"); }
-                if cfg!(feature = "obj-bmx-rider")  { mods.push("obj-rider"); }
-                if cfg!(feature = "obj-bmx-team")   { mods.push("obj-team"); }
+                if cfg!(feature = "obj-bmx") {
+                    mods.push("obj-bmx");
+                }
+                if cfg!(feature = "obj-bmx-rider") {
+                    mods.push("obj-rider");
+                }
+                if cfg!(feature = "obj-bmx-team") {
+                    mods.push("obj-team");
+                }
 
                 // Audio/MIDI/DAW
-                if cfg!(feature = "obj-audio") { mods.push("obj-audio"); }
-                if cfg!(feature = "obj-midi")  { mods.push("obj-midi"); }
-                if cfg!(feature = "obj-daw")   { mods.push("obj-daw"); }
+                if cfg!(feature = "obj-audio") {
+                    mods.push("obj-audio");
+                }
+                if cfg!(feature = "obj-midi") {
+                    mods.push("obj-midi");
+                }
+                if cfg!(feature = "obj-daw") {
+                    mods.push("obj-daw");
+                }
 
                 // AI/Terminal
-                if cfg!(feature = "obj-ai")   { mods.push("obj-ai"); }
-                if cfg!(feature = "obj-term") { mods.push("obj-term"); }
+                if cfg!(feature = "obj-ai") {
+                    mods.push("obj-ai");
+                }
+                if cfg!(feature = "obj-term") {
+                    mods.push("obj-term");
+                }
 
                 // AWS
-                if cfg!(feature = "obj-aws-s3")  { mods.push("obj-s3"); }
-                if cfg!(feature = "obj-aws-ses") { mods.push("obj-ses"); }
-                if cfg!(feature = "obj-aws-sqs") { mods.push("obj-sqs"); }
+                if cfg!(feature = "obj-aws-s3") {
+                    mods.push("obj-s3");
+                }
+                if cfg!(feature = "obj-aws-ses") {
+                    mods.push("obj-ses");
+                }
+                if cfg!(feature = "obj-aws-sqs") {
+                    mods.push("obj-sqs");
+                }
 
                 // NET
-                if cfg!(feature = "obj-net-http") { mods.push("obj-http"); }
-                if cfg!(feature = "obj-net-smtp") { mods.push("obj-smtp"); }
-                if cfg!(feature = "obj-net-sftp") { mods.push("obj-sftp"); }
+                if cfg!(feature = "obj-net-http") {
+                    mods.push("obj-http");
+                }
+                if cfg!(feature = "obj-net-smtp") {
+                    mods.push("obj-smtp");
+                }
+                if cfg!(feature = "obj-net-sftp") {
+                    mods.push("obj-sftp");
+                }
 
                 // ORM
-                if cfg!(feature = "obj-orm")           { mods.push("obj-orm"); }
-                if cfg!(feature = "obj-orm-mysql")     { mods.push("obj-orm-mysql"); }
-                if cfg!(feature = "obj-orm-postgres")  { mods.push("obj-orm-postgres"); }
+                if cfg!(feature = "obj-orm") {
+                    mods.push("obj-orm");
+                }
+                if cfg!(feature = "obj-orm-mysql") {
+                    mods.push("obj-orm-mysql");
+                }
+                if cfg!(feature = "obj-orm-postgres") {
+                    mods.push("obj-orm-postgres");
+                }
 
                 if mods.is_empty() {
                     println!("(none)");
                 } else {
                     mods.sort();
-                    for m in mods { println!("{}", m); }
+                    for m in mods {
+                        println!("{}", m);
+                    }
                 }
 
                 // Then symbol table with types, values, and origins
@@ -386,9 +585,15 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                             Value::Num(_) => "FLOAT",
                             Value::Int(_) => "INTEGER",
                             Value::Str(_) => "STRING",
-                            Value::Func(f) => { let _ = f; "FUNCTION" },
+                            Value::Func(f) => {
+                                let _ = f;
+                                "FUNCTION"
+                            }
                             Value::Array(_) => "ARRAY",
-                            Value::Object(obj) => { let _ = obj; "OBJECT" },
+                            Value::Object(obj) => {
+                                let _ = obj;
+                                "OBJECT"
+                            }
                             Value::List(_) => "LIST",
                             Value::Dict(_) => "DICT",
                             Value::StrArray2D { .. } => "STRARRAY2D",
@@ -419,8 +624,11 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                         }
                         Err(e) => {
                             let line = vm.current_line();
-                            if sess.settings.show_backtraces { eprintln!("runtime error at line {}: {}", line, e); }
-                            else { eprintln!("runtime error: {}", e); }
+                            if sess.settings.show_backtraces {
+                                eprintln!("runtime error at line {}: {}", line, e);
+                            } else {
+                                eprintln!("runtime error: {}", e);
+                            }
                         }
                     }
                 } else {
@@ -439,7 +647,9 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                 }
                 ":vars" => {
                     let filt = parts.get(1).map(|s| *s);
-                    for (n, v) in sess.list_globals(filt) { println!("{} = {}", n, v); }
+                    for (n, v) in sess.list_globals(filt) {
+                        println!("{} = {}", n, v);
+                    }
                 }
                 ":types" => {
                     if let Some(name) = parts.get(1) {
@@ -459,7 +669,9 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                                 Value::StrArray2D { .. } => "STRARRAY2D",
                             };
                             println!("{} : {}", name, ty);
-                        } else { println!("not found"); }
+                        } else {
+                            println!("not found");
+                        }
                     } else {
                         println!("types: functions/classes not indexed in this build");
                     }
@@ -472,34 +684,76 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
                         if let Some(Value::Func(f)) = sess.globals.get(&name.to_string()) {
                             // very small disasm: print op bytes
                             let c = f.chunk.as_ref();
-                            println!("; function {} /{}", f.name.clone().unwrap_or(name.to_string()), f.arity);
+                            println!(
+                                "; function {} /{}",
+                                f.name.clone().unwrap_or(name.to_string()),
+                                f.arity
+                            );
                             println!("code bytes: {}", c.code.len());
-                        } else { println!("not found or not a function"); }
-                    } else { println!("usage: :disasm <name>"); }
+                        } else {
+                            println!("not found or not a function");
+                        }
+                    } else {
+                        println!("usage: :disasm <name>");
+                    }
                 }
                 ":history" => {
-                    for (i, h) in sess.history.iter().enumerate() { let first = h.lines().next().unwrap_or(""); println!("{:>4}: {}", i+1, first); }
+                    for (i, h) in sess.history.iter().enumerate() {
+                        let first = h.lines().next().unwrap_or("");
+                        println!("{:>4}: {}", i + 1, first);
+                    }
                 }
                 ":save" => {
                     if let Some(file) = parts.get(1) {
-                        let to_save = if !buffer.trim().is_empty() { buffer.clone() } else { sess.history.last().cloned().unwrap_or_default() };
-                        if to_save.is_empty() { println!("nothing to save"); }
-                        else { if let Err(e) = fs::write(file, to_save) { eprintln!("save error: {}", e); } }
-                    } else { println!("usage: :save <file>"); }
+                        let to_save = if !buffer.trim().is_empty() {
+                            buffer.clone()
+                        } else {
+                            sess.history.last().cloned().unwrap_or_default()
+                        };
+                        if to_save.is_empty() {
+                            println!("nothing to save");
+                        } else {
+                            if let Err(e) = fs::write(file, to_save) {
+                                eprintln!("save error: {}", e);
+                            }
+                        }
+                    } else {
+                        println!("usage: :save <file>");
+                    }
                 }
                 ":load" => {
                     if let Some(file) = parts.get(1) {
-                        match fs::read_to_string(file) { Ok(s)=>{ buffer.push_str(&s); println!("(loaded into buffer; enter ';;' to run)"); }, Err(e)=> eprintln!("load error: {}", e) }
-                    } else { println!("usage: :load <file>"); }
+                        match fs::read_to_string(file) {
+                            Ok(s) => {
+                                buffer.push_str(&s);
+                                println!("(loaded into buffer; enter ';;' to run)");
+                            }
+                            Err(e) => eprintln!("load error: {}", e),
+                        }
+                    } else {
+                        println!("usage: :load <file>");
+                    }
                 }
-                ":bt" => {
-                    match parts.get(1).copied() { Some("on")=>{sess.settings.show_backtraces=true; println!("backtraces: on");}, Some("off")=>{sess.settings.show_backtraces=false; println!("backtraces: off");}, _=> println!("usage: :bt on|off") }
-                }
+                ":bt" => match parts.get(1).copied() {
+                    Some("on") => {
+                        sess.settings.show_backtraces = true;
+                        println!("backtraces: on");
+                    }
+                    Some("off") => {
+                        sess.settings.show_backtraces = false;
+                        println!("backtraces: off");
+                    }
+                    _ => println!("usage: :bt on|off"),
+                },
                 ":env" => {
                     println!("REPL: features/search paths not tracked in this build");
                 }
-                ":exit" => { break; }
-                other => { println!("unknown meta command: {}", other); }
+                ":exit" => {
+                    break;
+                }
+                other => {
+                    println!("unknown meta command: {}", other);
+                }
             }
             continue;
         }
@@ -509,17 +763,29 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
             let cmd = trimmed.trim_start_matches('!').trim();
             if cmd.is_empty() {
                 // interactive shell
-                let _ = std::process::Command::new("cmd").spawn().and_then(|mut c| c.wait());
+                let _ = std::process::Command::new("cmd")
+                    .spawn()
+                    .and_then(|mut c| c.wait());
             } else {
                 let output = if cfg!(windows) {
-                    std::process::Command::new("cmd").arg("/C").arg(cmd).output()
+                    std::process::Command::new("cmd")
+                        .arg("/C")
+                        .arg(cmd)
+                        .output()
                 } else {
-                    std::process::Command::new("sh").arg("-lc").arg(cmd).output()
+                    std::process::Command::new("sh")
+                        .arg("-lc")
+                        .arg(cmd)
+                        .output()
                 };
                 match output {
                     Ok(o) => {
-                        if !o.stdout.is_empty() { print!("{}", String::from_utf8_lossy(&o.stdout)); }
-                        if !o.stderr.is_empty() { eprint!("{}", String::from_utf8_lossy(&o.stderr)); }
+                        if !o.stdout.is_empty() {
+                            print!("{}", String::from_utf8_lossy(&o.stdout));
+                        }
+                        if !o.stderr.is_empty() {
+                            eprint!("{}", String::from_utf8_lossy(&o.stderr));
+                        }
                     }
                     Err(e) => eprintln!("shell: {}", e),
                 }
@@ -532,18 +798,28 @@ pub fn start_repl(mut sess: Session, maybe_path: Option<String>) {
             let mut snippet = buffer.clone();
             let mut ln = line_trim.to_string();
             // strip trailing ';;'
-            if let Some(p) = ln.rfind(";;") { ln.replace_range(p.., ""); }
-            if !snippet.is_empty() && !snippet.ends_with('\n') { snippet.push('\n'); }
+            if let Some(p) = ln.rfind(";;") {
+                ln.replace_range(p.., "");
+            }
+            if !snippet.is_empty() && !snippet.ends_with('\n') {
+                snippet.push('\n');
+            }
             snippet.push_str(&ln);
 
             // Evaluate
             match sess.eval_snippet(&snippet) {
-                Ok(()) => { sess.history.push(snippet); }
-                Err(e) => { eprintln!("{}", e); }
+                Ok(()) => {
+                    sess.history.push(snippet);
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                }
             }
             buffer.clear();
         } else {
-            if !buffer.is_empty() { buffer.push('\n'); }
+            if !buffer.is_empty() {
+                buffer.push('\n');
+            }
             buffer.push_str(line_trim);
         }
     }

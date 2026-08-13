@@ -1,0 +1,16 @@
+{
+  "format": "atomicflix-game-ir",
+  "version": 1,
+  "entryPoint": "missing",
+  "instructions": [
+    {
+      "op": "LABEL",
+      "name": "start",
+      "line": 1
+    },
+    {
+      "op": "END",
+      "line": 2
+    }
+  ]
+}

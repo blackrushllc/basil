@@ -8,7 +8,9 @@ fn main() {
     // Windows: ensure STA for WebView2
     #[cfg(windows)]
     unsafe {
-        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+        use windows::Win32::System::Com::{
+            CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+        };
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     }
 
@@ -19,8 +21,12 @@ fn main() {
         let stdin = std::io::stdin();
         let reader = BufReader::new(stdin.lock());
         for line in reader.lines() {
-            let Ok(line) = line else { break; };
-            if line.trim().is_empty() { continue; }
+            let Ok(line) = line else {
+                break;
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
             if let Ok(v) = serde_json::from_str::<Json>(&line) {
                 if let Some(cmd) = parse_cmd(&v) {
                     let _ = tx_cmd.send(cmd);
@@ -37,7 +43,10 @@ fn main() {
 
     let event_loop: EventLoop<()> = EventLoop::new();
 
-    let window = match WindowBuilder::new().with_title("Basilica Webview").build(&event_loop) {
+    let window = match WindowBuilder::new()
+        .with_title("Basilica Webview")
+        .build(&event_loop)
+    {
         Ok(w) => w,
         Err(e) => {
             eprintln!("[helper] failed to create window: {}", e);
@@ -70,7 +79,8 @@ fn main() {
             // forward as JSON line to stdout
             println!("{}", s);
         })
-        .build() {
+        .build()
+    {
         Ok(wv) => wv,
         Err(e) => {
             eprintln!("[helper] failed to build webview: {}", e);
@@ -98,7 +108,10 @@ fn main() {
                     }
                 }
             }
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
@@ -107,7 +120,10 @@ fn main() {
 }
 
 #[derive(Debug)]
-enum HelperCmd { SetHtml(String), Eval(String) }
+enum HelperCmd {
+    SetHtml(String),
+    Eval(String),
+}
 
 fn parse_cmd(v: &Json) -> Option<HelperCmd> {
     let cmd = v.get("cmd")?.as_str()?.to_ascii_lowercase();

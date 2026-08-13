@@ -1,10 +1,17 @@
 use std::sync::Arc;
 
-use axum::{extract::State, http::{Request, StatusCode}, response::IntoResponse};
+use axum::{
+    extract::State,
+    http::{Request, StatusCode},
+    response::IntoResponse,
+};
 
 use crate::{static_files, AppState};
 
-pub async fn entry(State(app): State<Arc<AppState>>, req: Request<axum::body::Body>) -> axum::response::Response {
+pub async fn entry(
+    State(app): State<Arc<AppState>>,
+    req: Request<axum::body::Body>,
+) -> axum::response::Response {
     // Record method/uri for logging prior to moving the request
     let method = req.method().clone();
     let uri = req.uri().clone();

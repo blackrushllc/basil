@@ -1,7 +1,17 @@
+use basil_bytecode::{ObjectDescriptor, ObjectRef, Value};
 use basil_common::Result;
-use basil_bytecode::{ObjectDescriptor, Value, ObjectRef};
 
-#[cfg(any(feature = "obj-aws-s3", feature = "obj-aws-ses", feature = "obj-aws-sqs"))]
+#[cfg(any(
+    feature = "obj-aws-s3",
+    feature = "obj-aws-ses",
+    feature = "obj-aws-sqs"
+))]
+pub mod context;
+#[cfg(any(
+    feature = "obj-aws-s3",
+    feature = "obj-aws-ses",
+    feature = "obj-aws-sqs"
+))]
 mod runtime;
 #[cfg(feature = "obj-aws-s3")]
 pub mod s3;
@@ -9,8 +19,6 @@ pub mod s3;
 pub mod ses;
 #[cfg(feature = "obj-aws-sqs")]
 pub mod sqs;
-#[cfg(any(feature = "obj-aws-s3", feature = "obj-aws-ses", feature = "obj-aws-sqs"))]
-pub mod context;
 
 // Reuse the same Registry and TypeInfo types from basil-objects by declaring a minimal mirror here.
 // The basil-objects crate will call register() below and pass its Registry.
@@ -26,7 +34,9 @@ pub struct RegistryShim<'a> {
 }
 
 impl<'a> RegistryShim<'a> {
-    pub fn new<F: FnMut(&str, TypeInfo) + 'a>(f: &'a mut F) -> Self { Self { inner: f } }
+    pub fn new<F: FnMut(&str, TypeInfo) + 'a>(f: &'a mut F) -> Self {
+        Self { inner: f }
+    }
     pub fn register(&mut self, type_name: &str, info: TypeInfo) {
         (self.inner)(type_name, info);
     }
@@ -35,7 +45,11 @@ impl<'a> RegistryShim<'a> {
 // This function will be called from basil-objects when corresponding features are enabled.
 pub fn register<F: FnMut(&str, TypeInfo)>(mut reg: F) {
     // Context object (AWS@)
-    #[cfg(any(feature = "obj-aws-s3", feature = "obj-aws-ses", feature = "obj-aws-sqs"))]
+    #[cfg(any(
+        feature = "obj-aws-s3",
+        feature = "obj-aws-ses",
+        feature = "obj-aws-sqs"
+    ))]
     {
         context::register(&mut reg);
     }

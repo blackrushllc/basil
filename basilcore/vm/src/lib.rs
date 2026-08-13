@@ -39,49 +39,52 @@ SOFTWARE.
 */
 
 //! Frame-based VM with calls, locals, jumps, comparisons
-use std::rc::Rc;
-use std::sync::Arc;
-use std::io::{self, Write, Read, Seek, SeekFrom};
-use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
-use std::env;
-use std::time::Duration;
-use crossterm::event::{read, Event, KeyEvent, KeyCode};
-use crossterm::event::poll;
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::path::{Path, PathBuf};
-use std::io::copy;
 use chrono::Local;
+use crossterm::event::poll;
+use crossterm::event::{read, Event, KeyCode, KeyEvent};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
 use serde_json as sj;
 #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
-use serde_json::{Value as JValue};
+use serde_json::Value as JValue;
+use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::copy;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
 
 pub mod debug;
 mod render; // template rendering engine
 
-use basil_common::{Result, BasilError};
-use basil_bytecode::{Program as BCProgram, Chunk, Value, Op, ElemType, ArrayObj, ObjectDescriptor, PropDesc, MethodDesc};
-use basil_objects::{Registry, register_objects};
-use basil_parser::parse as parse_basil;
-use basil_compiler::compile as compile_basil;
-use basil_bytecode::{deserialize_program};
 #[cfg(feature = "obj-base64")]
 use base64::{engine::general_purpose, Engine as _};
-#[cfg(feature = "obj-zip")]
-use basil_objects::zip as zip_utils;
-#[cfg(feature = "obj-curl")]
-use basil_objects::curl as curl_utils;
-#[cfg(feature = "obj-csv")]
-use csv::{ReaderBuilder, WriterBuilder};
-#[cfg(feature = "obj-sqlite")]
-use basil_objects::sqlite as sqlite_utils;
+use basil_bytecode::deserialize_program;
+use basil_bytecode::{
+    ArrayObj, Chunk, ElemType, MethodDesc, ObjectDescriptor, Op, Program as BCProgram, PropDesc,
+    Value,
+};
+use basil_common::{BasilError, Result};
+use basil_compiler::compile as compile_basil;
 #[cfg(feature = "obj-audio")]
 use basil_objects::audio as audio_utils;
-#[cfg(feature = "obj-midi")]
-use basil_objects::midi as midi_utils;
+#[cfg(feature = "obj-curl")]
+use basil_objects::curl as curl_utils;
 #[cfg(feature = "obj-daw")]
 use basil_objects::daw as daw_utils;
+#[cfg(feature = "obj-midi")]
+use basil_objects::midi as midi_utils;
+#[cfg(feature = "obj-sqlite")]
+use basil_objects::sqlite as sqlite_utils;
+#[cfg(feature = "obj-zip")]
+use basil_objects::zip as zip_utils;
+use basil_objects::{register_objects, Registry};
+use basil_parser::parse as parse_basil;
+#[cfg(feature = "obj-csv")]
+use csv::{ReaderBuilder, WriterBuilder};
 
 // --- Network helper for NET_DOWNLOAD_FILE% ---
 // Status codes:
@@ -132,7 +135,10 @@ fn net_download_file(url: &str, dest_path: &str) -> i32 {
     }
 
     // Ensure file is flushed to disk
-    if let Err(_) = file.flush() { let _ = fs::remove_file(&tmp_path); return 4; }
+    if let Err(_) = file.flush() {
+        let _ = fs::remove_file(&tmp_path);
+        return 4;
+    }
 
     // Overwrite if destination exists (Windows-friendly): remove dest first
     if dest.exists() {
@@ -207,13 +213,15 @@ fn value_to_jvalue(v: &Value) -> Result<JValue> {
             }
             Ok(JValue::Array(out))
         }
-        Value::Func(_) => Err(BasilError("JSON_STRINGIFY$: cannot stringify a function".into())),
+        Value::Func(_) => Err(BasilError(
+            "JSON_STRINGIFY$: cannot stringify a function".into(),
+        )),
     }
 }
 
 // --- Input provider abstraction for test mode ---
 pub trait InputProvider {
-    fn read_line(&mut self) -> String;       // for INPUT/INPUT$
+    fn read_line(&mut self) -> String; // for INPUT/INPUT$
     fn read_char(&mut self) -> Option<char>; // for INPUTC$/INKEY$/INKEY%
 }
 
@@ -224,7 +232,11 @@ pub struct MockInputProvider {
 }
 impl MockInputProvider {
     pub fn new(seed: u64) -> Self {
-        let mut s = if seed == 0 { 0x9E3779B97F4A7C15u64 } else { seed };
+        let mut s = if seed == 0 {
+            0x9E3779B97F4A7C15u64
+        } else {
+            seed
+        };
         let mut seq = Vec::with_capacity(1024);
         for _ in 0..1024 {
             // xorshift64*
@@ -275,8 +287,8 @@ struct Frame {
 
 struct ArrEnum {
     arr: Rc<ArrayObj>,
-    cur: isize,    // -1 before first element
-    total: usize,  // total elements
+    cur: isize,   // -1 before first element
+    total: usize, // total elements
 }
 
 struct FileHandleEntry {
@@ -287,17 +299,31 @@ struct FileHandleEntry {
     owner_depth: usize,
 }
 
-struct HandlerEntry { handler_ip: usize, stack_depth: usize }
+struct HandlerEntry {
+    handler_ip: usize,
+    stack_depth: usize,
+}
 
 // --- Struct type descriptors for pack/unpack ---
 #[derive(Clone)]
-enum VMFieldKind { Int32, Float64, VarString, FixedString(usize), Struct(String) }
+enum VMFieldKind {
+    Int32,
+    Float64,
+    VarString,
+    FixedString(usize),
+    Struct(String),
+}
 
 #[derive(Clone)]
-struct VMFieldDesc { name: String, kind: VMFieldKind }
+struct VMFieldDesc {
+    name: String,
+    kind: VMFieldKind,
+}
 
 #[derive(Clone)]
-struct VMTypeDesc { fields: Vec<VMFieldDesc> }
+struct VMTypeDesc {
+    fields: Vec<VMFieldDesc>,
+}
 
 pub struct VM {
     frames: Vec<Frame>,
@@ -319,9 +345,9 @@ pub struct VM {
     max_mocked_inputs: Option<usize>,
     mock: Option<MockInputProvider>,
     // Caches for CGI params
-    get_params_cache: Option<Vec<String>>,    // name=value pairs from QUERY_STRING
-    post_params_cache: Option<Vec<String>>,   // name=value pairs from stdin (x-www-form-urlencoded)
-    request_body_cache: Option<String>,       // raw body from stdin
+    get_params_cache: Option<Vec<String>>, // name=value pairs from QUERY_STRING
+    post_params_cache: Option<Vec<String>>, // name=value pairs from stdin (x-www-form-urlencoded)
+    request_body_cache: Option<String>,    // raw body from stdin
     // File I/O
     file_table: HashMap<i64, FileHandleEntry>,
     next_fh: i64,
@@ -373,7 +399,13 @@ impl ClassInstance {
         for (i, n) in globals_names.iter().enumerate() {
             name_to_index.insert(n.to_ascii_uppercase(), i);
         }
-        Self { globals_names, values, name_to_index, file_table: HashMap::new(), next_fh: 1 }
+        Self {
+            globals_names,
+            values,
+            name_to_index,
+            file_table: HashMap::new(),
+            next_fh: 1,
+        }
     }
 
     fn get_index(&self, name: &str) -> Option<usize> {
@@ -382,7 +414,9 @@ impl ClassInstance {
 }
 
 impl basil_bytecode::BasicObject for ClassInstance {
-    fn type_name(&self) -> &str { "CLASS" }
+    fn type_name(&self) -> &str {
+        "CLASS"
+    }
 
     fn get_prop(&self, name: &str) -> Result<Value> {
         if let Some(i) = self.get_index(name) {
@@ -409,13 +443,22 @@ impl basil_bytecode::BasicObject for ClassInstance {
     }
 
     fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
-        let i = self.get_index(method).ok_or_else(|| BasilError("Unknown property or function in class.".into()))?;
-        let f = match &self.values[i] { Value::Func(f) => f.clone(), _ => return Err(BasilError("Unknown property or function in class.".into())) };
+        let i = self
+            .get_index(method)
+            .ok_or_else(|| BasilError("Unknown property or function in class.".into()))?;
+        let f = match &self.values[i] {
+            Value::Func(f) => f.clone(),
+            _ => return Err(BasilError("Unknown property or function in class.".into())),
+        };
         // Run function in inner VM with this instance's globals
         // Build a tiny program with empty top chunk (HALT) and same globals names
         let mut top = Chunk::default();
         top.push_op(Op::Halt);
-        let prog = BCProgram { chunk: top, globals: self.globals_names.clone(), source_map: None };
+        let prog = BCProgram {
+            chunk: top,
+            globals: self.globals_names.clone(),
+            source_map: None,
+        };
         let mut vm = VM::new(prog);
         // Move persistent file handles into inner VM and disable auto-close-on-ret for methods
         vm.file_table = std::mem::take(&mut self.file_table);
@@ -424,9 +467,17 @@ impl basil_bytecode::BasicObject for ClassInstance {
         // Seed globals with our instance values
         vm.globals = self.values.clone();
         // Prepare stack: place arguments starting at base 0
-        for a in args { vm.stack.push(a.clone()); }
+        for a in args {
+            vm.stack.push(a.clone());
+        }
         // Push frame directly
-        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base: 0, gosub_base: 0, handler_base: 0 };
+        let frame = Frame {
+            chunk: f.chunk.clone(),
+            ip: 0,
+            base: 0,
+            gosub_base: 0,
+            handler_base: 0,
+        };
         vm.frames.push(frame);
         vm.run()?;
         // Capture back persistent file handles into this instance
@@ -445,21 +496,83 @@ impl basil_bytecode::BasicObject for ClassInstance {
         for (i, n) in self.globals_names.iter().enumerate() {
             match &self.values[i] {
                 Value::Func(f) => {
-                    methods.push(MethodDesc { name: n.clone(), arity: f.arity, arg_names: Vec::new(), return_type: "ANY".to_string() });
+                    methods.push(MethodDesc {
+                        name: n.clone(),
+                        arity: f.arity,
+                        arg_names: Vec::new(),
+                        return_type: "ANY".to_string(),
+                    });
                 }
-                Value::Array(_) => props.push(PropDesc { name: n.clone(), type_name: "ARRAY".to_string(), readable: true, writable: true }),
-                Value::Num(_) => props.push(PropDesc { name: n.clone(), type_name: "FLOAT".to_string(), readable: true, writable: true }),
-                Value::Int(_) => props.push(PropDesc { name: n.clone(), type_name: "INTEGER".to_string(), readable: true, writable: true }),
-                Value::Str(_) => props.push(PropDesc { name: n.clone(), type_name: "STRING".to_string(), readable: true, writable: true }),
-                Value::Bool(_) => props.push(PropDesc { name: n.clone(), type_name: "BOOL".to_string(), readable: true, writable: true }),
-                Value::Object(_) => props.push(PropDesc { name: n.clone(), type_name: "OBJECT".to_string(), readable: true, writable: true }),
-                Value::Null => props.push(PropDesc { name: n.clone(), type_name: "NULL".to_string(), readable: true, writable: true }),
-                Value::List(_) => props.push(PropDesc { name: n.clone(), type_name: "LIST".to_string(), readable: true, writable: true }),
-                Value::Dict(_) => props.push(PropDesc { name: n.clone(), type_name: "DICT".to_string(), readable: true, writable: true }),
-                Value::StrArray2D { .. } => props.push(PropDesc { name: n.clone(), type_name: "STRARRAY2D".to_string(), readable: true, writable: true }),
+                Value::Array(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "ARRAY".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Num(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "FLOAT".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Int(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "INTEGER".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Str(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "STRING".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Bool(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "BOOL".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Object(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "OBJECT".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Null => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "NULL".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::List(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "LIST".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::Dict(_) => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "DICT".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
+                Value::StrArray2D { .. } => props.push(PropDesc {
+                    name: n.clone(),
+                    type_name: "STRARRAY2D".to_string(),
+                    readable: true,
+                    writable: true,
+                }),
             }
         }
-        ObjectDescriptor { type_name: "CLASS".to_string(), version: "1.0".to_string(), summary: "Basil file-based class instance".to_string(), properties: props, methods, examples: Vec::new() }
+        ObjectDescriptor {
+            type_name: "CLASS".to_string(),
+            version: "1.0".to_string(),
+            summary: "Basil file-based class instance".to_string(),
+            properties: props,
+            methods,
+            examples: Vec::new(),
+        }
     }
 }
 
@@ -468,40 +581,78 @@ impl basil_bytecode::BasicObject for ClassInstance {
 struct JsonObject;
 #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
 impl basil_bytecode::BasicObject for JsonObject {
-    fn type_name(&self) -> &str { "JSON" }
-    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("JSON has no properties".into())) }
-    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("JSON properties are read-only".into())) }
+    fn type_name(&self) -> &str {
+        "JSON"
+    }
+    fn get_prop(&self, _name: &str) -> Result<Value> {
+        Err(BasilError("JSON has no properties".into()))
+    }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> {
+        Err(BasilError("JSON properties are read-only".into()))
+    }
     fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
         match method.to_ascii_uppercase().as_str() {
             "PARSE" => {
-                if args.is_empty() { return Err(BasilError("JSON.PARSE expects 1 argument".into())); }
-                let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("JSON.PARSE expects string".into())) };
-                let v: sj::Value = sj::from_str(s).map_err(|e| BasilError(format!("JSON.PARSE error: {}", e)))?;
+                if args.is_empty() {
+                    return Err(BasilError("JSON.PARSE expects 1 argument".into()));
+                }
+                let s = match &args[0] {
+                    Value::Str(s) => s.as_str(),
+                    _ => return Err(BasilError("JSON.PARSE expects string".into())),
+                };
+                let v: sj::Value =
+                    sj::from_str(s).map_err(|e| BasilError(format!("JSON.PARSE error: {}", e)))?;
                 Ok(VM::json_to_value_static(&v))
             }
             "STRINGIFY" | "STRINGIFY$" => {
-                if args.is_empty() { return Err(BasilError("JSON.STRINGIFY expects 1 argument".into())); }
+                if args.is_empty() {
+                    return Err(BasilError("JSON.STRINGIFY expects 1 argument".into()));
+                }
                 let v = value_to_jvalue(&args[0])?;
-                let out = sj::to_string(&v).map_err(|e| BasilError(format!("JSON.STRINGIFY error: {}", e)))?;
+                let out = sj::to_string(&v)
+                    .map_err(|e| BasilError(format!("JSON.STRINGIFY error: {}", e)))?;
                 Ok(Value::Str(out))
             }
             _ => Err(BasilError(format!("JSON has no method '{}'", method))),
         }
     }
     fn descriptor(&self) -> ObjectDescriptor {
-        ObjectDescriptor { type_name: "JSON".into(), version: "1.0".into(), summary: "JSON parser/stringifier".into(), properties: vec![], methods: vec![
-            MethodDesc { name: "PARSE".into(), arity: 1, arg_names: vec!["json$".into()], return_type: "ANY".into() },
-            MethodDesc { name: "STRINGIFY".into(), arity: 1, arg_names: vec!["value".into()], return_type: "STRING".into() },
-        ], examples: vec![] }
+        ObjectDescriptor {
+            type_name: "JSON".into(),
+            version: "1.0".into(),
+            summary: "JSON parser/stringifier".into(),
+            properties: vec![],
+            methods: vec![
+                MethodDesc {
+                    name: "PARSE".into(),
+                    arity: 1,
+                    arg_names: vec!["json$".into()],
+                    return_type: "ANY".into(),
+                },
+                MethodDesc {
+                    name: "STRINGIFY".into(),
+                    arity: 1,
+                    arg_names: vec!["value".into()],
+                    return_type: "STRING".into(),
+                },
+            ],
+            examples: vec![],
+        }
     }
 }
 
 // --- Native CGI helper object ---
 struct CgiObject {}
 impl basil_bytecode::BasicObject for CgiObject {
-    fn type_name(&self) -> &str { "CGI" }
-    fn get_prop(&self, _name: &str) -> Result<Value> { Err(BasilError("CGI has no properties".into())) }
-    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> { Err(BasilError("CGI properties are read-only".into())) }
+    fn type_name(&self) -> &str {
+        "CGI"
+    }
+    fn get_prop(&self, _name: &str) -> Result<Value> {
+        Err(BasilError("CGI has no properties".into()))
+    }
+    fn set_prop(&mut self, _name: &str, _v: Value) -> Result<()> {
+        Err(BasilError("CGI properties are read-only".into()))
+    }
     fn call(&mut self, method: &str, _args: &[Value]) -> Result<Value> {
         match method.to_ascii_uppercase().as_str() {
             "JSON_DATA" | "JSON_DATA$" => {
@@ -511,7 +662,9 @@ impl basil_bytecode::BasicObject for CgiObject {
                 let mut map: HashMap<String, Value> = HashMap::new();
                 if let Ok(qs) = std::env::var("QUERY_STRING") {
                     for pair in qs.split('&') {
-                        if pair.is_empty() { continue; }
+                        if pair.is_empty() {
+                            continue;
+                        }
                         let mut it = pair.split('=');
                         let k = it.next().unwrap_or("").to_string();
                         let v = it.next().unwrap_or("").to_string();
@@ -525,9 +678,19 @@ impl basil_bytecode::BasicObject for CgiObject {
         }
     }
     fn descriptor(&self) -> ObjectDescriptor {
-        ObjectDescriptor { type_name: "CGI".into(), version: "1.0".into(), summary: "CGI request helper".into(), properties: vec![], methods: vec![
-            MethodDesc { name: "JSON_DATA".into(), arity: 0, arg_names: vec![], return_type: "DICT".into() },
-        ], examples: vec![] }
+        ObjectDescriptor {
+            type_name: "CGI".into(),
+            version: "1.0".into(),
+            summary: "CGI request helper".into(),
+            properties: vec![],
+            methods: vec![MethodDesc {
+                name: "JSON_DATA".into(),
+                arity: 0,
+                arg_names: vec![],
+                return_type: "DICT".into(),
+            }],
+            examples: vec![],
+        }
     }
 }
 
@@ -537,13 +700,23 @@ impl VM {
         for (i, name) in p.globals.iter().enumerate() {
             match name.to_ascii_uppercase().as_str() {
                 #[cfg(any(feature = "obj-json", feature = "obj-csv", feature = "obj-yore"))]
-                "JSON" => { globals[i] = Value::Object(Rc::new(std::cell::RefCell::new(JsonObject))); }
-                "CGI" => { globals[i] = Value::Object(Rc::new(std::cell::RefCell::new(CgiObject {}))); }
+                "JSON" => {
+                    globals[i] = Value::Object(Rc::new(std::cell::RefCell::new(JsonObject)));
+                }
+                "CGI" => {
+                    globals[i] = Value::Object(Rc::new(std::cell::RefCell::new(CgiObject {})));
+                }
                 _ => {}
             }
         }
         let top_chunk = Rc::new(p.chunk);
-        let frame = Frame { chunk: top_chunk, ip: 0, base: 0, gosub_base: 0, handler_base: 0 };
+        let frame = Frame {
+            chunk: top_chunk,
+            ip: 0,
+            base: 0,
+            gosub_base: 0,
+            handler_base: 0,
+        };
         let mut registry = Registry::new();
         register_objects(&mut registry);
         #[allow(unused_mut)]
@@ -579,8 +752,15 @@ impl VM {
             out_col: 0,
             rnd_state: {
                 use std::time::{SystemTime, UNIX_EPOCH};
-                let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x9E3779B97F4A7C15);
-                if ns == 0 { 0x9E3779B97F4A7C15 } else { ns }
+                let ns = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0x9E3779B97F4A7C15);
+                if ns == 0 {
+                    0x9E3779B97F4A7C15
+                } else {
+                    ns
+                }
             },
             #[cfg(feature = "obj-yore")]
             yore: None,
@@ -598,7 +778,14 @@ impl VM {
         s
     }
 
-    pub fn new_with_test(p: BCProgram, mock: MockInputProvider, trace: bool, script_path: Option<String>, comments_map: Option<HashMap<u32, Vec<String>>>, max_mocked_inputs: Option<usize>) -> Self {
+    pub fn new_with_test(
+        p: BCProgram,
+        mock: MockInputProvider,
+        trace: bool,
+        script_path: Option<String>,
+        comments_map: Option<HashMap<u32, Vec<String>>>,
+        max_mocked_inputs: Option<usize>,
+    ) -> Self {
         let mut vm = VM::new(p);
         vm.test_mode = true;
         vm.trace = trace;
@@ -607,22 +794,32 @@ impl VM {
         vm.max_mocked_inputs = max_mocked_inputs;
         vm.mock = Some(mock);
         #[cfg(feature = "obj-ai")]
-        { basil_objects::ai::set_test_mode(true); }
+        {
+            basil_objects::ai::set_test_mode(true);
+        }
         vm
     }
 
-    pub fn current_line(&self) -> u32 { self.current_line }
+    pub fn current_line(&self) -> u32 {
+        self.current_line
+    }
 
     // Suspension state API
-    pub fn is_suspended(&self) -> bool { self.suspended }
+    pub fn is_suspended(&self) -> bool {
+        self.suspended
+    }
     pub fn resume(&mut self) -> Result<()> {
-        if !self.suspended { return Ok(()); }
+        if !self.suspended {
+            return Ok(());
+        }
         self.suspended = false;
         self.run()
     }
 
     // Provide script path so CLASS() can resolve relative file names
-    pub fn set_script_path(&mut self, p: String) { self.script_path = Some(p); }
+    pub fn set_script_path(&mut self, p: String) {
+        self.script_path = Some(p);
+    }
 
     // Provide the directory of the current script, if known (for INCLUDE in renderer)
     pub fn script_dir(&self) -> Option<String> {
@@ -639,17 +836,29 @@ impl VM {
 
     // Lookup a global by name (case-insensitive). Returns a cloned value if found.
     pub fn get_global_by_name(&self, name: &str) -> Option<Value> {
-        if let Some(idx) = self.global_names.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+        if let Some(idx) = self
+            .global_names
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case(name))
+        {
             self.globals.get(idx).cloned()
-        } else { None }
+        } else {
+            None
+        }
     }
 
     // Seed a global by name (case-insensitive). Returns true if found.
     pub fn set_global_by_name(&mut self, name: &str, v: Value) -> bool {
-        if let Some(idx) = self.global_names.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+        if let Some(idx) = self
+            .global_names
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case(name))
+        {
             self.globals[idx] = v;
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
     // Extension hook: allow embedding hosts to register additional object types.
@@ -658,7 +867,9 @@ impl VM {
         &mut self.registry
     }
 
-    fn cur(&mut self) -> &mut Frame { self.frames.last_mut().expect("no frame") }
+    fn cur(&mut self) -> &mut Frame {
+        self.frames.last_mut().expect("no frame")
+    }
 
     // --- CGI param helpers ---
     fn url_decode_form(&self, s: &str) -> String {
@@ -667,14 +878,27 @@ impl VM {
         let mut i = 0usize;
         while i < bytes.len() {
             match bytes[i] {
-                b'+' => { out.push(' '); i += 1; }
+                b'+' => {
+                    out.push(' ');
+                    i += 1;
+                }
                 b'%' if i + 2 < bytes.len() => {
-                    let h1 = bytes[i+1] as char; let h2 = bytes[i+2] as char;
+                    let h1 = bytes[i + 1] as char;
+                    let h2 = bytes[i + 2] as char;
                     let hex = [h1, h2];
                     let hv = u8::from_str_radix(&hex.iter().collect::<String>(), 16).ok();
-                    if let Some(b) = hv { out.push(b as char); i += 3; } else { out.push('%'); i += 1; }
+                    if let Some(b) = hv {
+                        out.push(b as char);
+                        i += 3;
+                    } else {
+                        out.push('%');
+                        i += 1;
+                    }
                 }
-                b => { out.push(b as char); i += 1; }
+                b => {
+                    out.push(b as char);
+                    i += 1;
+                }
             }
         }
         out
@@ -683,7 +907,9 @@ impl VM {
         let mut out = String::with_capacity(s.len());
         for &b in s.as_bytes() {
             match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(b as char)
+                }
                 b' ' => out.push('+'),
                 _ => {
                     out.push('%');
@@ -698,7 +924,9 @@ impl VM {
     fn struct_reg(&mut self, name: &str, spec: &str) -> Result<()> {
         let mut fields: Vec<VMFieldDesc> = Vec::new();
         for part in spec.split(';') {
-            if part.trim().is_empty() { continue; }
+            if part.trim().is_empty() {
+                continue;
+            }
             let mut it = part.split('|');
             let fname = it.next().unwrap_or("").to_string();
             let ktag = it.next().unwrap_or("");
@@ -707,19 +935,31 @@ impl VM {
                 "F" => VMFieldKind::Float64,
                 "S" => VMFieldKind::VarString,
                 "X" => {
-                    let nstr = it.next().ok_or_else(|| BasilError("STRUCT_REG: missing length for FixedString".into()))?;
-                    let n: usize = nstr.parse().map_err(|_| BasilError("STRUCT_REG: bad FixedString length".into()))?;
+                    let nstr = it.next().ok_or_else(|| {
+                        BasilError("STRUCT_REG: missing length for FixedString".into())
+                    })?;
+                    let n: usize = nstr
+                        .parse()
+                        .map_err(|_| BasilError("STRUCT_REG: bad FixedString length".into()))?;
                     VMFieldKind::FixedString(n)
                 }
                 "T" => {
-                    let tname = it.next().ok_or_else(|| BasilError("STRUCT_REG: missing nested type name".into()))?;
+                    let tname = it
+                        .next()
+                        .ok_or_else(|| BasilError("STRUCT_REG: missing nested type name".into()))?;
                     VMFieldKind::Struct(tname.to_string())
                 }
-                other => return Err(BasilError(format!("STRUCT_REG: unknown field kind '{}'", other))),
+                other => {
+                    return Err(BasilError(format!(
+                        "STRUCT_REG: unknown field kind '{}'",
+                        other
+                    )))
+                }
             };
             fields.push(VMFieldDesc { name: fname, kind });
         }
-        self.struct_types.insert(name.to_ascii_uppercase(), VMTypeDesc { fields });
+        self.struct_types
+            .insert(name.to_ascii_uppercase(), VMTypeDesc { fields });
         Ok(())
     }
 
@@ -727,7 +967,9 @@ impl VM {
         fn inner(vm: &VM, tname: &str, seen: &mut HashSet<String>) -> Option<usize> {
             let key = tname.to_ascii_uppercase();
             let td = vm.struct_types.get(&key)?;
-            if seen.contains(&key) { return None; }
+            if seen.contains(&key) {
+                return None;
+            }
             seen.insert(key.clone());
             let mut total: usize = 0;
             for f in &td.fields {
@@ -748,45 +990,90 @@ impl VM {
         inner(self, name, &mut seen)
     }
 
-    fn pack_struct_bytes(&self, dict_rc: &std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>, name: &str) -> Result<Vec<u8>> {
+    fn pack_struct_bytes(
+        &self,
+        dict_rc: &std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>,
+        name: &str,
+    ) -> Result<Vec<u8>> {
         fn enforce_len(s: &str, n: usize) -> String {
             let bytes = s.as_bytes();
-            if bytes.len() == n { return s.to_string(); }
+            if bytes.len() == n {
+                return s.to_string();
+            }
             if bytes.len() > n {
-                let mut cut = n; while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 { cut -= 1; }
+                let mut cut = n;
+                while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 {
+                    cut -= 1;
+                }
                 return std::str::from_utf8(&bytes[..cut]).unwrap_or("").to_string();
             }
-            let mut out = s.to_string(); let pad = n - bytes.len(); if pad > 0 { out.push_str(&" ".repeat(pad)); } out
+            let mut out = s.to_string();
+            let pad = n - bytes.len();
+            if pad > 0 {
+                out.push_str(&" ".repeat(pad));
+            }
+            out
         }
         let key = name.to_ascii_uppercase();
-        let td = self.struct_types.get(&key).ok_or_else(|| BasilError(format!("STRUCT_PACK: unknown struct type '{}'", name)))?;
-        let fixed = self.sizeof_struct(&key).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
+        let td = self
+            .struct_types
+            .get(&key)
+            .ok_or_else(|| BasilError(format!("STRUCT_PACK: unknown struct type '{}'", name)))?;
+        let fixed = self.sizeof_struct(&key).ok_or_else(|| {
+            BasilError("Struct contains variable-length fields; size is not fixed.".into())
+        })?;
         let mut out: Vec<u8> = Vec::with_capacity(fixed);
         let map = dict_rc.borrow();
         for f in &td.fields {
             match &f.kind {
                 VMFieldKind::Int32 => {
                     let v = map.get(&f.name).cloned().unwrap_or(Value::Int(0));
-                    let i = match v { Value::Int(i)=> i as i32, Value::Num(n)=> n.trunc() as i32, Value::Str(ref s)=> s.parse::<i32>().unwrap_or(0), _=>0 };
+                    let i = match v {
+                        Value::Int(i) => i as i32,
+                        Value::Num(n) => n.trunc() as i32,
+                        Value::Str(ref s) => s.parse::<i32>().unwrap_or(0),
+                        _ => 0,
+                    };
                     out.extend_from_slice(&i.to_le_bytes());
                 }
                 VMFieldKind::Float64 => {
                     let v = map.get(&f.name).cloned().unwrap_or(Value::Num(0.0));
-                    let x = match v { Value::Num(n)=> n, Value::Int(i)=> i as f64, Value::Str(ref s)=> s.parse::<f64>().unwrap_or(0.0), _=>0.0 };
+                    let x = match v {
+                        Value::Num(n) => n,
+                        Value::Int(i) => i as f64,
+                        Value::Str(ref s) => s.parse::<f64>().unwrap_or(0.0),
+                        _ => 0.0,
+                    };
                     out.extend_from_slice(&x.to_le_bytes());
                 }
                 VMFieldKind::FixedString(n) => {
-                    let v = map.get(&f.name).cloned().unwrap_or(Value::Str(String::new()));
-                    let s = match v { Value::Str(s)=>s, other=> format!("{}", other) };
+                    let v = map
+                        .get(&f.name)
+                        .cloned()
+                        .unwrap_or(Value::Str(String::new()));
+                    let s = match v {
+                        Value::Str(s) => s,
+                        other => format!("{}", other),
+                    };
                     let s2 = enforce_len(&s, *n);
                     out.extend_from_slice(s2.as_bytes());
                 }
                 VMFieldKind::VarString => {
-                    return Err(BasilError("Struct contains variable-length fields; size is not fixed.".into()));
+                    return Err(BasilError(
+                        "Struct contains variable-length fields; size is not fixed.".into(),
+                    ));
                 }
                 VMFieldKind::Struct(nm) => {
-                    let v = map.get(&f.name).cloned().unwrap_or(Value::Dict(std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()))));
-                    let drc = match v { Value::Dict(rc)=> rc, _ => std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())) };
+                    let v = map
+                        .get(&f.name)
+                        .cloned()
+                        .unwrap_or(Value::Dict(std::rc::Rc::new(std::cell::RefCell::new(
+                            HashMap::new(),
+                        ))));
+                    let drc = match v {
+                        Value::Dict(rc) => rc,
+                        _ => std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())),
+                    };
                     let nested = self.pack_struct_bytes(&drc, nm)?;
                     out.extend_from_slice(&nested);
                 }
@@ -797,33 +1084,60 @@ impl VM {
 
     fn unpack_struct_from(&self, buf: &[u8], name: &str) -> Result<Value> {
         let key = name.to_ascii_uppercase();
-        let td = self.struct_types.get(&key).ok_or_else(|| BasilError(format!("STRUCT_UNPACK: unknown struct type '{}'", name)))?;
-        let fixed = self.sizeof_struct(&key).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
-        if buf.len() != fixed { return Err(BasilError(format!("Unpack: expected {} bytes, got {}.", fixed, buf.len()))); }
+        let td = self
+            .struct_types
+            .get(&key)
+            .ok_or_else(|| BasilError(format!("STRUCT_UNPACK: unknown struct type '{}'", name)))?;
+        let fixed = self.sizeof_struct(&key).ok_or_else(|| {
+            BasilError("Struct contains variable-length fields; size is not fixed.".into())
+        })?;
+        if buf.len() != fixed {
+            return Err(BasilError(format!(
+                "Unpack: expected {} bytes, got {}.",
+                fixed,
+                buf.len()
+            )));
+        }
         let mut offset = 0usize;
         let mut map: HashMap<String, Value> = HashMap::new();
         for f in &td.fields {
             match &f.kind {
                 VMFieldKind::Int32 => {
-                    let mut arr = [0u8;4]; arr.copy_from_slice(&buf[offset..offset+4]); offset += 4;
-                    let i = i32::from_le_bytes(arr) as i64; map.insert(f.name.clone(), Value::Int(i));
+                    let mut arr = [0u8; 4];
+                    arr.copy_from_slice(&buf[offset..offset + 4]);
+                    offset += 4;
+                    let i = i32::from_le_bytes(arr) as i64;
+                    map.insert(f.name.clone(), Value::Int(i));
                 }
                 VMFieldKind::Float64 => {
-                    let mut arr = [0u8;8]; arr.copy_from_slice(&buf[offset..offset+8]); offset += 8;
-                    let x = f64::from_le_bytes(arr); map.insert(f.name.clone(), Value::Num(x));
+                    let mut arr = [0u8; 8];
+                    arr.copy_from_slice(&buf[offset..offset + 8]);
+                    offset += 8;
+                    let x = f64::from_le_bytes(arr);
+                    map.insert(f.name.clone(), Value::Num(x));
                 }
                 VMFieldKind::FixedString(n) => {
-                    let slice = &buf[offset..offset+*n]; offset += *n;
+                    let slice = &buf[offset..offset + *n];
+                    offset += *n;
                     let s = match std::str::from_utf8(slice) {
                         Ok(s) => s.to_string(),
                         Err(_) => String::from_utf8_lossy(slice).to_string(),
                     };
                     map.insert(f.name.clone(), Value::Str(s));
                 }
-                VMFieldKind::VarString => { return Err(BasilError("Struct contains variable-length fields; size is not fixed.".into())); }
+                VMFieldKind::VarString => {
+                    return Err(BasilError(
+                        "Struct contains variable-length fields; size is not fixed.".into(),
+                    ));
+                }
                 VMFieldKind::Struct(nm) => {
-                    let sz = self.sizeof_struct(nm).ok_or_else(|| BasilError("Struct contains variable-length fields; size is not fixed.".into()))?;
-                    let slice = &buf[offset..offset+sz]; offset += sz;
+                    let sz = self.sizeof_struct(nm).ok_or_else(|| {
+                        BasilError(
+                            "Struct contains variable-length fields; size is not fixed.".into(),
+                        )
+                    })?;
+                    let slice = &buf[offset..offset + sz];
+                    offset += sz;
                     let v = self.unpack_struct_from(slice, nm)?;
                     map.insert(f.name.clone(), v);
                 }
@@ -834,7 +1148,9 @@ impl VM {
     fn parse_pairs(&self, s: &str) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for part in s.split('&') {
-            if part.is_empty() { continue; }
+            if part.is_empty() {
+                continue;
+            }
             let mut it = part.splitn(2, '=');
             let k = it.next().unwrap_or("");
             let v = it.next().unwrap_or("");
@@ -852,8 +1168,13 @@ impl VM {
         }
     }
     fn ensure_request_body(&mut self) {
-        if self.request_body_cache.is_some() { return; }
-        let clen: usize = env::var("CONTENT_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+        if self.request_body_cache.is_some() {
+            return;
+        }
+        let clen: usize = env::var("CONTENT_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
         if clen == 0 {
             self.request_body_cache = Some(String::new());
             return;
@@ -864,15 +1185,24 @@ impl VM {
         self.request_body_cache = Some(s);
     }
     fn ensure_post_params(&mut self) {
-        if self.post_params_cache.is_some() { return; }
+        if self.post_params_cache.is_some() {
+            return;
+        }
         self.ensure_request_body();
-        let body_s = self.request_body_cache.as_ref().cloned().unwrap_or_default();
+        let body_s = self
+            .request_body_cache
+            .as_ref()
+            .cloned()
+            .unwrap_or_default();
         if body_s.is_empty() {
             self.post_params_cache = Some(Vec::new());
             return;
         }
         let ctype = env::var("CONTENT_TYPE").unwrap_or_default();
-        if !ctype.to_ascii_lowercase().starts_with("application/x-www-form-urlencoded") {
+        if !ctype
+            .to_ascii_lowercase()
+            .starts_with("application/x-www-form-urlencoded")
+        {
             // unsupported type for now
             self.post_params_cache = Some(Vec::new());
             return;
@@ -884,7 +1214,11 @@ impl VM {
         use std::cell::RefCell;
         let dims = vec![vals.len()];
         let data: Vec<Value> = vals.into_iter().map(Value::Str).collect();
-        let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: RefCell::new(data) });
+        let arr = Rc::new(ArrayObj {
+            elem: ElemType::Str,
+            dims,
+            data: RefCell::new(data),
+        });
         Value::Array(arr)
     }
 
@@ -892,28 +1226,48 @@ impl VM {
         if !self.file_table.contains_key(&h) {
             let mut keys: Vec<i64> = self.file_table.keys().copied().collect();
             keys.sort();
-            return Err(BasilError(format!("InvalidHandle (wanted {}, have {:?})", h, keys)));
+            return Err(BasilError(format!(
+                "InvalidHandle (wanted {}, have {:?})",
+                h, keys
+            )));
         }
         Ok(self.file_table.get_mut(&h).unwrap())
     }
 
     fn fh_close(&mut self, h: i64) -> Result<()> {
         if let Some(mut e) = self.file_table.remove(&h) {
-            e.file.flush().map_err(|er| BasilError(format!("FCLOSE flush error: {}", er)))?;
+            e.file
+                .flush()
+                .map_err(|er| BasilError(format!("FCLOSE flush error: {}", er)))?;
         }
         Ok(())
     }
 
     fn fh_close_owner_depth(&mut self, depth: usize) {
-        let keys: Vec<i64> = self.file_table.iter().filter_map(|(k,e)| if e.owner_depth == depth { Some(*k) } else { None }).collect();
-        for k in keys { let _ = self.fh_close(k); }
+        let keys: Vec<i64> = self
+            .file_table
+            .iter()
+            .filter_map(|(k, e)| {
+                if e.owner_depth == depth {
+                    Some(*k)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for k in keys {
+            let _ = self.fh_close(k);
+        }
     }
 
     fn to_i64(&self, v: &Value) -> Result<i64> {
         match v {
             Value::Int(i) => Ok(*i),
             Value::Num(n) => Ok(n.trunc() as i64),
-            other => Err(BasilError(format!("expected numeric value, got {}", self.type_of(other)))),
+            other => Err(BasilError(format!(
+                "expected numeric value, got {}",
+                self.type_of(other)
+            ))),
         }
     }
 
@@ -921,7 +1275,10 @@ impl VM {
         match v {
             Value::Num(n) => Ok(*n),
             Value::Int(i) => Ok(*i as f64),
-            other => Err(BasilError(format!("expected numeric value, got {}", self.type_of(other)))),
+            other => Err(BasilError(format!(
+                "expected numeric value, got {}",
+                self.type_of(other)
+            ))),
         }
     }
 
@@ -952,8 +1309,15 @@ impl VM {
             host = env::var("SERVER_NAME").ok().unwrap_or_default();
         }
         let host_l = host.to_ascii_lowercase();
-        let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
-        let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
+        let host_norm = if let Some(i) = host_l.find(':') {
+            host_l[..i].to_string()
+        } else {
+            host_l
+        };
+        let is_local = host_norm == "localhost"
+            || host_norm == "127.0.0.1"
+            || host_norm == "::1"
+            || host_norm.is_empty();
         let mut domain = host_norm.clone();
         let mut dir: Option<PathBuf> = None;
         let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -961,11 +1325,18 @@ impl VM {
         if is_local {
             let p1 = base.join("_local");
             let p2 = base.join("local");
-            if p1.is_dir() { dir = Some(p1); domain = "_local".to_string(); }
-            else if p2.is_dir() { dir = Some(p2); domain = "local".to_string(); }
+            if p1.is_dir() {
+                dir = Some(p1);
+                domain = "_local".to_string();
+            } else if p2.is_dir() {
+                dir = Some(p2);
+                domain = "local".to_string();
+            }
         } else {
             let p = base.join(&host_norm);
-            if p.is_dir() { dir = Some(p); }
+            if p.is_dir() {
+                dir = Some(p);
+            }
         }
         (domain, dir)
     }
@@ -994,10 +1365,16 @@ impl VM {
 
     #[cfg(feature = "obj-yore")]
     fn yore_section_dirname(&self, domain_dir: &Path, section: &str) -> String {
-        let s = if section.is_empty() { "default" } else { section };
+        let s = if section.is_empty() {
+            "default"
+        } else {
+            section
+        };
         if s.eq_ignore_ascii_case("default") {
             let a = domain_dir.join("_default");
-            if a.is_dir() { return "_default".to_string(); }
+            if a.is_dir() {
+                return "_default".to_string();
+            }
             return "default".to_string();
         }
         s.to_string()
@@ -1007,15 +1384,25 @@ impl VM {
     fn yore_build_request(&mut self) -> Result<Value> {
         use std::env;
         let (_domain, _) = self.yore_detect_domain_and_dir();
-        let domain = if let Some(y) = &self.yore { y.domain.clone() } else { _domain };
+        let domain = if let Some(y) = &self.yore {
+            y.domain.clone()
+        } else {
+            _domain
+        };
         let method = env::var("REQUEST_METHOD").unwrap_or_else(|_| "GET".to_string());
         let uri = env::var("REQUEST_URI").unwrap_or_else(|_| "/".to_string());
         // Strip query string
         let path_only = uri.split('?').next().unwrap_or("").to_string();
         let mut path_norm = path_only.trim().to_string();
-        if path_norm.is_empty() { path_norm = "/".to_string(); }
+        if path_norm.is_empty() {
+            path_norm = "/".to_string();
+        }
         // tokenize
-        let segs: Vec<&str> = path_norm.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+        let segs: Vec<&str> = path_norm
+            .trim_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
         let (section_raw, pagekey_raw, a1, a2, a3) = if segs.is_empty() {
             ("default", Some("home"), "", "", "")
         } else if segs.len() == 1 {
@@ -1039,7 +1426,8 @@ impl VM {
         let mut query: HashMap<String, Value> = HashMap::new();
         for p in get_pairs {
             let mut it = p.splitn(2, '=');
-            let k = it.next().unwrap_or(""); let v = it.next().unwrap_or("");
+            let k = it.next().unwrap_or("");
+            let v = it.next().unwrap_or("");
             query.insert(k.to_string(), Value::Str(v.to_string()));
         }
         // Post form params
@@ -1048,7 +1436,8 @@ impl VM {
         let mut post: HashMap<String, Value> = HashMap::new();
         for p in post_pairs {
             let mut it = p.splitn(2, '=');
-            let k = it.next().unwrap_or(""); let v = it.next().unwrap_or("");
+            let k = it.next().unwrap_or("");
+            let v = it.next().unwrap_or("");
             post.insert(k.to_string(), Value::Str(v.to_string()));
         }
         // Headers (optional)
@@ -1059,7 +1448,10 @@ impl VM {
             }
         }
         // is_debug flag
-        let is_debug = query.get("debug").map(|v| matches!(v, Value::Str(s) if s=="1")).unwrap_or(false);
+        let is_debug = query
+            .get("debug")
+            .map(|v| matches!(v, Value::Str(s) if s=="1"))
+            .unwrap_or(false);
         use std::cell::RefCell;
         let mut map: HashMap<String, Value> = HashMap::new();
         map.insert("domain$".to_string(), Value::Str(domain));
@@ -1070,10 +1462,22 @@ impl VM {
         map.insert("arg1$".to_string(), Value::Str(arg1));
         map.insert("arg2$".to_string(), Value::Str(arg2));
         map.insert("arg3$".to_string(), Value::Str(arg3));
-        map.insert("is_debug%".to_string(), Value::Int(if is_debug {1} else {0}));
-        map.insert("query@".to_string(), Value::Dict(Rc::new(RefCell::new(query))));
-        map.insert("post@".to_string(), Value::Dict(Rc::new(RefCell::new(post))));
-        map.insert("headers@".to_string(), Value::Dict(Rc::new(RefCell::new(headers))));
+        map.insert(
+            "is_debug%".to_string(),
+            Value::Int(if is_debug { 1 } else { 0 }),
+        );
+        map.insert(
+            "query@".to_string(),
+            Value::Dict(Rc::new(RefCell::new(query))),
+        );
+        map.insert(
+            "post@".to_string(),
+            Value::Dict(Rc::new(RefCell::new(post))),
+        );
+        map.insert(
+            "headers@".to_string(),
+            Value::Dict(Rc::new(RefCell::new(headers))),
+        );
         Ok(Value::Dict(Rc::new(RefCell::new(map))))
     }
 
@@ -1084,9 +1488,13 @@ impl VM {
             sj::Value::Null => Value::Null,
             sj::Value::Bool(b) => Value::Bool(*b),
             sj::Value::Number(n) => {
-                if let Some(i) = n.as_i64() { Value::Int(i) }
-                else if let Some(f) = n.as_f64() { Value::Num(f) }
-                else { Value::Null }
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i)
+                } else if let Some(f) = n.as_f64() {
+                    Value::Num(f)
+                } else {
+                    Value::Null
+                }
             }
             sj::Value::String(s) => Value::Str(s.clone()),
             sj::Value::Array(a) => {
@@ -1095,7 +1503,9 @@ impl VM {
             }
             sj::Value::Object(o) => {
                 let mut m: HashMap<String, Value> = HashMap::new();
-                for (k, v) in o.iter() { m.insert(k.clone(), Self::json_to_value_static(v)); }
+                for (k, v) in o.iter() {
+                    m.insert(k.clone(), Self::json_to_value_static(v));
+                }
                 Value::Dict(Rc::new(RefCell::new(m)))
             }
         }
@@ -1104,17 +1514,32 @@ impl VM {
     #[cfg(feature = "obj-yore")]
     fn yore_resolve_page(&self, req: &Value) -> Result<Value> {
         use std::cell::RefCell;
-        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized; call YORE_INIT% first".into()))?;
-        let reqm = match req { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RESOLVE_PAGE: req@ must be a Dict".into())) };
-        let section = match reqm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
-        let pagekey = match reqm.get("pagekey$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
+        let y = self
+            .yore
+            .as_ref()
+            .ok_or_else(|| BasilError("YORE: not initialized; call YORE_INIT% first".into()))?;
+        let reqm = match req {
+            Value::Dict(rc) => rc.borrow(),
+            _ => return Err(BasilError("YORE_RESOLVE_PAGE: req@ must be a Dict".into())),
+        };
+        let section = match reqm.get("section$") {
+            Some(Value::Str(s)) => s.clone(),
+            _ => "default".to_string(),
+        };
+        let pagekey = match reqm.get("pagekey$") {
+            Some(Value::Str(s)) => s.clone(),
+            _ => "home".to_string(),
+        };
         let section_dir = self.yore_section_dirname(&y.domain_dir, &section);
         let base = y.domain_dir.join(&section_dir);
         let path = base.join(format!("{}.json", pagekey));
         let alt = base.join("home.json");
         let mut found: Option<PathBuf> = None;
-        if path.is_file() { found = Some(path); }
-        else if pagekey == "home" && alt.is_file() { found = Some(alt); }
+        if path.is_file() {
+            found = Some(path);
+        } else if pagekey == "home" && alt.is_file() {
+            found = Some(alt);
+        }
         // Build page map
         let mut page: HashMap<String, Value> = HashMap::new();
         page.insert("section$".to_string(), Value::Str(section));
@@ -1122,11 +1547,21 @@ impl VM {
         if let Some(fp) = found {
             if let Some(j) = self.yore_load_json_if_exists(&fp) {
                 // common fields
-                if let Some(v) = j.get("view").and_then(|x| x.as_str()) { page.insert("view$".to_string(), Value::Str(v.to_string())); }
-                if let Some(v) = j.get("theme").and_then(|x| x.as_str()) { page.insert("theme$".to_string(), Value::Str(v.to_string())); }
-                if let Some(v) = j.get("title").and_then(|x| x.as_str()) { page.insert("title$".to_string(), Value::Str(v.to_string())); }
-                if let Some(v) = j.get("views") { page.insert("views@".to_string(), Self::json_to_value_static(v)); }
-                if let Some(v) = j.get("module_hook").and_then(|x| x.as_str()) { page.insert("module_hook$".to_string(), Value::Str(v.to_string())); }
+                if let Some(v) = j.get("view").and_then(|x| x.as_str()) {
+                    page.insert("view$".to_string(), Value::Str(v.to_string()));
+                }
+                if let Some(v) = j.get("theme").and_then(|x| x.as_str()) {
+                    page.insert("theme$".to_string(), Value::Str(v.to_string()));
+                }
+                if let Some(v) = j.get("title").and_then(|x| x.as_str()) {
+                    page.insert("title$".to_string(), Value::Str(v.to_string()));
+                }
+                if let Some(v) = j.get("views") {
+                    page.insert("views@".to_string(), Self::json_to_value_static(v));
+                }
+                if let Some(v) = j.get("module_hook").and_then(|x| x.as_str()) {
+                    page.insert("module_hook$".to_string(), Value::Str(v.to_string()));
+                }
                 page.insert("raw_json@".to_string(), Self::json_to_value_static(&j));
             }
         } else {
@@ -1140,31 +1575,70 @@ impl VM {
     #[cfg(feature = "obj-yore")]
     fn yore_build_context(&self, req: &Value, page: &Value) -> Result<Value> {
         use std::cell::RefCell;
-        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        let y = self
+            .yore
+            .as_ref()
+            .ok_or_else(|| BasilError("YORE: not initialized".into()))?;
         let mut ctx: HashMap<String, Value> = HashMap::new();
         // carry over request basics
-        let reqm = match req { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: req@ must be a Dict".into())) };
-        for k in ["section$","pagekey$","arg1$","arg2$","arg3$","method$","path$"] {
-            if let Some(v) = reqm.get(k) { ctx.insert(k.to_string(), v.clone()); }
+        let reqm = match req {
+            Value::Dict(rc) => rc.borrow(),
+            _ => return Err(BasilError("YORE_BUILD_CONTEXT: req@ must be a Dict".into())),
+        };
+        for k in [
+            "section$", "pagekey$", "arg1$", "arg2$", "arg3$", "method$", "path$",
+        ] {
+            if let Some(v) = reqm.get(k) {
+                ctx.insert(k.to_string(), v.clone());
+            }
         }
-        if let Some(v) = reqm.get("query@") { ctx.insert("query@".to_string(), v.clone()); }
-        if let Some(v) = reqm.get("post@") { ctx.insert("post@".to_string(), v.clone()); }
+        if let Some(v) = reqm.get("query@") {
+            ctx.insert("query@".to_string(), v.clone());
+        }
+        if let Some(v) = reqm.get("post@") {
+            ctx.insert("post@".to_string(), v.clone());
+        }
         ctx.insert("domain$".to_string(), Value::Str(y.domain.clone()));
         // env.json
-        if let Some(j) = &y.env { ctx.insert("env@".to_string(), Self::json_to_value_static(j)); }
-        if let Some(j) = &y.modules { ctx.insert("modules@".to_string(), Self::json_to_value_static(j)); }
-        if let Some(db) = &y.db { ctx.insert("db@".to_string(), db.clone()); }
+        if let Some(j) = &y.env {
+            ctx.insert("env@".to_string(), Self::json_to_value_static(j));
+        }
+        if let Some(j) = &y.modules {
+            ctx.insert("modules@".to_string(), Self::json_to_value_static(j));
+        }
+        if let Some(db) = &y.db {
+            ctx.insert("db@".to_string(), db.clone());
+        }
         // page fields
-        let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_BUILD_CONTEXT: page@ must be a Dict".into())) };
-        for k in ["view$","theme$","title$","raw_json@","views@","module_hook$"] {
-            if let Some(v) = pm.get(k) { ctx.insert(k.to_string(), v.clone()); }
+        let pm = match page {
+            Value::Dict(rc) => rc.borrow(),
+            _ => {
+                return Err(BasilError(
+                    "YORE_BUILD_CONTEXT: page@ must be a Dict".into(),
+                ))
+            }
+        };
+        for k in [
+            "view$",
+            "theme$",
+            "title$",
+            "raw_json@",
+            "views@",
+            "module_hook$",
+        ] {
+            if let Some(v) = pm.get(k) {
+                ctx.insert(k.to_string(), v.clone());
+            }
         }
         Ok(Value::Dict(Rc::new(RefCell::new(ctx))))
     }
 
     #[cfg(feature = "obj-yore")]
     fn yore_render_page_template(&self, page: &Value, _ctx: &Value) -> Result<String> {
-        let y = self.yore.as_ref().ok_or_else(|| BasilError("YORE: not initialized".into()))?;
+        let y = self
+            .yore
+            .as_ref()
+            .ok_or_else(|| BasilError("YORE: not initialized".into()))?;
         // If Yore was initialized but no domain directory is present, provide
         // a clear, actionable HTML message instead of failing with a generic error.
         if !y.domain_dir_exists {
@@ -1193,46 +1667,82 @@ impl VM {
                 page = page_json.display()
             ));
         }
-        let pm = match page { Value::Dict(rc)=>rc.borrow(), _=> return Err(BasilError("YORE_RENDER_PAGE$: page@ must be a Dict".into())) };
-        let section = match pm.get("section$") { Some(Value::Str(s))=>s.clone(), _=>"default".to_string() };
-        let view = match pm.get("view$") { Some(Value::Str(s))=>s.clone(), _=>"home".to_string() };
+        let pm = match page {
+            Value::Dict(rc) => rc.borrow(),
+            _ => return Err(BasilError("YORE_RENDER_PAGE$: page@ must be a Dict".into())),
+        };
+        let section = match pm.get("section$") {
+            Some(Value::Str(s)) => s.clone(),
+            _ => "default".to_string(),
+        };
+        let view = match pm.get("view$") {
+            Some(Value::Str(s)) => s.clone(),
+            _ => "home".to_string(),
+        };
         let section_dir = self.yore_section_dirname(&y.domain_dir, &section);
         let base = y.domain_dir.join(&section_dir).join("views");
         let p1 = base.join(format!("{}.html", view));
         let p2 = base.join(format!("{}.blade.php", view));
         let p3 = base.join(format!("{}.blade", view));
-        let content_res: std::io::Result<String> = if p1.is_file() { fs::read_to_string(&p1) }
-            else if p2.is_file() { fs::read_to_string(&p2) }
-            else if p3.is_file() { fs::read_to_string(&p3) }
-            else { Ok(format!("<!-- Yore: view '{}' not found under {} -->", view, base.display())) };
+        let content_res: std::io::Result<String> = if p1.is_file() {
+            fs::read_to_string(&p1)
+        } else if p2.is_file() {
+            fs::read_to_string(&p2)
+        } else if p3.is_file() {
+            fs::read_to_string(&p3)
+        } else {
+            Ok(format!(
+                "<!-- Yore: view '{}' not found under {} -->",
+                view,
+                base.display()
+            ))
+        };
         match content_res {
             Ok(s) => Ok(s),
-            Err(e) => Ok(format!("<!-- Yore: failed to read view '{}': {} -->", view, e)),
+            Err(e) => Ok(format!(
+                "<!-- Yore: failed to read view '{}': {} -->",
+                view, e
+            )),
         }
     }
 
     fn glob_match_simple(&self, pat: &str, name: &str) -> bool {
         #[allow(clippy::collapsible_else_if)]
         fn inner(p: &[u8], s: &[u8], case_insens: bool) -> bool {
-            if p.is_empty() { return s.is_empty(); }
+            if p.is_empty() {
+                return s.is_empty();
+            }
             match p[0] {
                 b'*' => {
                     let mut i = 0usize;
                     while i <= s.len() {
-                        if inner(&p[1..], &s[i..], case_insens) { return true; }
+                        if inner(&p[1..], &s[i..], case_insens) {
+                            return true;
+                        }
                         i += 1;
                     }
                     false
                 }
                 b'?' => {
-                    if s.is_empty() { false } else { inner(&p[1..], &s[1..], case_insens) }
+                    if s.is_empty() {
+                        false
+                    } else {
+                        inner(&p[1..], &s[1..], case_insens)
+                    }
                 }
                 c => {
-                    if s.is_empty() { return false; }
+                    if s.is_empty() {
+                        return false;
+                    }
                     let mut pc = c;
                     let mut sc = s[0];
-                    if case_insens { pc = (pc as char).to_ascii_lowercase() as u8; sc = (sc as char).to_ascii_lowercase() as u8; }
-                    if pc != sc { return false; }
+                    if case_insens {
+                        pc = (pc as char).to_ascii_lowercase() as u8;
+                        sc = (sc as char).to_ascii_lowercase() as u8;
+                    }
+                    if pc != sc {
+                        return false;
+                    }
                     inner(&p[1..], &s[1..], case_insens)
                 }
             }
@@ -1242,8 +1752,10 @@ impl VM {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let prev_ptr = basil_bytecode::CURRENT_VM_PTR.with(|p| p.replace(Some(self as *mut VM as *mut ())));
-        let prev_call = basil_bytecode::CURRENT_VM_CALL.with(|c| c.replace(Some(Self::callback_bridge)));
+        let prev_ptr =
+            basil_bytecode::CURRENT_VM_PTR.with(|p| p.replace(Some(self as *mut VM as *mut ())));
+        let prev_call =
+            basil_bytecode::CURRENT_VM_CALL.with(|c| c.replace(Some(Self::callback_bridge)));
 
         let res = self.run_internal(None);
 
@@ -1263,7 +1775,11 @@ impl VM {
             _ => return Err(BasilError("Value is not a function".into())),
         };
         if f.arity as usize != args.len() {
-            return Err(BasilError(format!("arity mismatch: expected {}, got {}", f.arity, args.len())));
+            return Err(BasilError(format!(
+                "arity mismatch: expected {}, got {}",
+                f.arity,
+                args.len()
+            )));
         }
 
         let base = self.stack.len();
@@ -1271,7 +1787,13 @@ impl VM {
             self.stack.push(arg.clone());
         }
 
-        let frame = Frame { chunk: f.chunk.clone(), ip: 0, base, gosub_base: self.gosub_stack.len(), handler_base: self._handlers.len() };
+        let frame = Frame {
+            chunk: f.chunk.clone(),
+            ip: 0,
+            base,
+            gosub_base: self.gosub_stack.len(),
+            handler_base: self._handlers.len(),
+        };
         self.frames.push(frame);
 
         let initial_depth = self.frames.len();
@@ -1282,7 +1804,10 @@ impl VM {
 
     fn perform_ret(&mut self, retv: Value, until_depth: Option<usize>) -> Result<bool> {
         let depth = self.frames.len();
-        let frame = self.frames.pop().ok_or_else(|| BasilError("RET with no frame".into()))?;
+        let frame = self
+            .frames
+            .pop()
+            .ok_or_else(|| BasilError("RET with no frame".into()))?;
         self.stack.truncate(frame.base);
         self.stack.push(retv);
         self.gosub_stack.truncate(frame.gosub_base);
@@ -1290,17 +1815,25 @@ impl VM {
         if self.close_handles_on_ret {
             self.fh_close_owner_depth(depth);
         }
-        if self.frames.is_empty() { return Ok(true); }
+        if self.frames.is_empty() {
+            return Ok(true);
+        }
         if let Some(target) = until_depth {
-            if self.frames.len() < target { return Ok(true); }
+            if self.frames.len() < target {
+                return Ok(true);
+            }
         }
         Ok(false)
     }
 
     fn run_internal(&mut self, until_depth: Option<usize>) -> Result<()> {
-        if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Started); }
+        if let Some(dbg) = &self.debugger {
+            dbg.emit(debug::DebugEvent::Started);
+        }
         loop {
-            if self.suspended { break; }
+            if self.suspended {
+                break;
+            }
             let res = self.run_internal_step(until_depth);
             match res {
                 Ok(true) => break,
@@ -1319,9 +1852,14 @@ impl VM {
                 }
             }
         }
-        if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Exited); }
+        if let Some(dbg) = &self.debugger {
+            dbg.emit(debug::DebugEvent::Exited);
+        }
         if !self.gosub_stack.is_empty() {
-            eprintln!("warning: program terminated with {} pending GOSUB frames (missing RETURN?)", self.gosub_stack.len());
+            eprintln!(
+                "warning: program terminated with {} pending GOSUB frames (missing RETURN?)",
+                self.gosub_stack.len()
+            );
         }
         Ok(())
     }
@@ -1329,2720 +1867,5162 @@ impl VM {
     fn run_internal_step(&mut self, until_depth: Option<usize>) -> Result<bool> {
         let op = self.read_op()?;
         match op {
-                Op::Const => {
-                    let i = self.read_u16()? as usize;
-                    let v = self.cur().chunk.consts[i].clone();
-                    self.stack.push(v);
-                }
-                Op::LoadGlobal => {
-                    let i = self.read_u8()? as usize;
-                    let v = self.globals[i].clone();
-                    self.stack.push(v);
-                }
-                Op::StoreGlobal => {
-                    let i = self.read_u8()? as usize;
-                    let v = self.pop()?;
-                    self.globals[i] = v;
-                }
+            Op::Const => {
+                let i = self.read_u16()? as usize;
+                let v = self.cur().chunk.consts[i].clone();
+                self.stack.push(v);
+            }
+            Op::LoadGlobal => {
+                let i = self.read_u8()? as usize;
+                let v = self.globals[i].clone();
+                self.stack.push(v);
+            }
+            Op::StoreGlobal => {
+                let i = self.read_u8()? as usize;
+                let v = self.pop()?;
+                self.globals[i] = v;
+            }
 
-                Op::LoadLocal => {
-                    let i = self.read_u8()? as usize;
-                    let base = self.cur().base;
-                    let v = self.stack[base + i].clone();
-                    self.stack.push(v);
+            Op::LoadLocal => {
+                let i = self.read_u8()? as usize;
+                let base = self.cur().base;
+                let v = self.stack[base + i].clone();
+                self.stack.push(v);
+            }
+            Op::StoreLocal => {
+                let i = self.read_u8()? as usize;
+                let v = self.pop()?;
+                let base = self.cur().base;
+                while self.stack.len() <= base + i {
+                    self.stack.push(Value::Null);
                 }
-                Op::StoreLocal => {
-                    let i = self.read_u8()? as usize;
-                    let v = self.pop()?;
-                    let base = self.cur().base;
-                    while self.stack.len() <= base + i { self.stack.push(Value::Null); }
-                    self.stack[base + i] = v;
-                }
+                self.stack[base + i] = v;
+            }
 
-                Op::Add => {
-                    let rb = self.pop()?;
-                    let lb = self.pop()?;
-                    match (&lb, &rb) {
-                        (Value::Str(_), _) | (_, Value::Str(_)) => {
-                            let ls = format!("{}", lb);
-                            let rs = format!("{}", rb);
-                            self.stack.push(Value::Str(format!("{}{}", ls, rs)));
-                        }
-                        _ => {
-                            // numeric addition (use existing numeric coercion)
-                            let a = self.as_num(lb)?;
-                            let b = self.as_num(rb)?;
-                            self.stack.push(Value::Num(a + b));
-                        }
+            Op::Add => {
+                let rb = self.pop()?;
+                let lb = self.pop()?;
+                match (&lb, &rb) {
+                    (Value::Str(_), _) | (_, Value::Str(_)) => {
+                        let ls = format!("{}", lb);
+                        let rs = format!("{}", rb);
+                        self.stack.push(Value::Str(format!("{}{}", ls, rs)));
                     }
-                },
-                Op::Sub => self.bin_num(|a,b| a-b)?,
-                Op::Mul => self.bin_num(|a,b| a*b)?,
-                Op::Div => {
-                    let rb = self.pop()?;
-                    let lb = self.pop()?;
-                    let a = self.as_num(lb)?;
-                    let b = self.as_num(rb)?;
-                    if b == 0.0 { return Err(BasilError("Division by zero".into())); }
-                    self.stack.push(Value::Num(a / b));
-                },
-                Op::Mod => {
-                    let rb = self.pop()?;
-                    let lb = self.pop()?;
-                    match (&lb, &rb) {
-                        (Value::Int(a), Value::Int(b)) => {
-                            if *b == 0 { return Err(BasilError("Division by zero in MOD".into())); }
-                            self.stack.push(Value::Int(a % b));
-                        }
-                        _ => {
-                            let a = self.as_num(lb)?;
-                            let b = self.as_num(rb)?;
-                            if b == 0.0 { return Err(BasilError("Division by zero in MOD".into())); }
-                            self.stack.push(Value::Num(a % b));
-                        }
+                    _ => {
+                        // numeric addition (use existing numeric coercion)
+                        let a = self.as_num(lb)?;
+                        let b = self.as_num(rb)?;
+                        self.stack.push(Value::Num(a + b));
                     }
-                },
-                Op::Neg => {
-                    let v = self.pop()?;
-                    let n = self.as_num(v)?;
-                    self.stack.push(Value::Num(-n));
                 }
+            }
+            Op::Sub => self.bin_num(|a, b| a - b)?,
+            Op::Mul => self.bin_num(|a, b| a * b)?,
+            Op::Div => {
+                let rb = self.pop()?;
+                let lb = self.pop()?;
+                let a = self.as_num(lb)?;
+                let b = self.as_num(rb)?;
+                if b == 0.0 {
+                    return Err(BasilError("Division by zero".into()));
+                }
+                self.stack.push(Value::Num(a / b));
+            }
+            Op::Mod => {
+                let rb = self.pop()?;
+                let lb = self.pop()?;
+                match (&lb, &rb) {
+                    (Value::Int(a), Value::Int(b)) => {
+                        if *b == 0 {
+                            return Err(BasilError("Division by zero in MOD".into()));
+                        }
+                        self.stack.push(Value::Int(a % b));
+                    }
+                    _ => {
+                        let a = self.as_num(lb)?;
+                        let b = self.as_num(rb)?;
+                        if b == 0.0 {
+                            return Err(BasilError("Division by zero in MOD".into()));
+                        }
+                        self.stack.push(Value::Num(a % b));
+                    }
+                }
+            }
+            Op::Neg => {
+                let v = self.pop()?;
+                let n = self.as_num(v)?;
+                self.stack.push(Value::Num(-n));
+            }
 
-                Op::Eq => self.bin_eq()?,
-                Op::Ne => self.bin_ne()?,
-                Op::Lt => self.bin_num_cmp(|a,b| a<b)?,
-                Op::Le => self.bin_num_cmp(|a,b| a<=b)?,
-                Op::Gt => self.bin_num_cmp(|a,b| a>b)?,
-                Op::Ge => self.bin_num_cmp(|a,b| a>=b)?,
+            Op::Eq => self.bin_eq()?,
+            Op::Ne => self.bin_ne()?,
+            Op::Lt => self.bin_num_cmp(|a, b| a < b)?,
+            Op::Le => self.bin_num_cmp(|a, b| a <= b)?,
+            Op::Gt => self.bin_num_cmp(|a, b| a > b)?,
+            Op::Ge => self.bin_num_cmp(|a, b| a >= b)?,
 
-                Op::Jump => {
-                    let off = self.read_u16()? as usize;
+            Op::Jump => {
+                let off = self.read_u16()? as usize;
+                self.cur().ip += off;
+            }
+            Op::JumpIfFalse => {
+                let off = self.read_u16()? as usize;
+                let cond = self.pop()?;
+                if !is_truthy(&cond) {
                     self.cur().ip += off;
                 }
-                Op::JumpIfFalse => {
-                    let off = self.read_u16()? as usize;
-                    let cond = self.pop()?;
-                    if !is_truthy(&cond) { self.cur().ip += off; }
+            }
+            Op::JumpBack => {
+                let off = self.read_u16()? as usize;
+                self.cur().ip -= off;
+            }
+            Op::Gosub => {
+                let off = self.read_u16()? as usize;
+                let ip_after = self.cur().ip;
+                if self.gosub_stack.len() >= self.gosub_max_depth {
+                    return Err(BasilError(format!(
+                        "GOSUB stack overflow (depth limit {})",
+                        self.gosub_max_depth
+                    )));
                 }
-                Op::JumpBack => {
-                    let off = self.read_u16()? as usize;
-                    self.cur().ip -= off;
+                self.gosub_stack.push(ip_after);
+                self.cur().ip += off;
+            }
+            Op::GosubBack => {
+                let off = self.read_u16()? as usize;
+                let ip_after = self.cur().ip;
+                if self.gosub_stack.len() >= self.gosub_max_depth {
+                    return Err(BasilError(format!(
+                        "GOSUB stack overflow (depth limit {})",
+                        self.gosub_max_depth
+                    )));
                 }
-                Op::Gosub => {
-                    let off = self.read_u16()? as usize;
-                    let ip_after = self.cur().ip;
-                    if self.gosub_stack.len() >= self.gosub_max_depth { return Err(BasilError(format!("GOSUB stack overflow (depth limit {})", self.gosub_max_depth))); }
-                    self.gosub_stack.push(ip_after);
-                    self.cur().ip += off;
-                }
-                Op::GosubBack => {
-                    let off = self.read_u16()? as usize;
-                    let ip_after = self.cur().ip;
-                    if self.gosub_stack.len() >= self.gosub_max_depth { return Err(BasilError(format!("GOSUB stack overflow (depth limit {})", self.gosub_max_depth))); }
-                    self.gosub_stack.push(ip_after);
-                    self.cur().ip -= off;
-                }
-                Op::GosubRet => {
-                    if let Some(ret_ip) = self.gosub_stack.pop() {
-                        self.cur().ip = ret_ip;
+                self.gosub_stack.push(ip_after);
+                self.cur().ip -= off;
+            }
+            Op::GosubRet => {
+                if let Some(ret_ip) = self.gosub_stack.pop() {
+                    self.cur().ip = ret_ip;
+                } else {
+                    if self.frames.len() > 1 {
+                        if self.perform_ret(Value::Null, until_depth)? {
+                            return Ok(true);
+                        }
                     } else {
-                        if self.frames.len() > 1 {
-                            if self.perform_ret(Value::Null, until_depth)? { return Ok(true); }
+                        return Err(BasilError("RETURN without GOSUB".into()));
+                    }
+                }
+            }
+            Op::GosubPop => {
+                if self.gosub_stack.pop().is_none() {
+                    return Err(BasilError("RETURN without GOSUB".into()));
+                }
+                // continue execution; typically followed by a Jump to a label
+            }
+            Op::TryPush => {
+                // Read handler and finally offsets (we ignore finally; compiler handles FINALLY paths)
+                let handler_off = self.read_u16()? as usize;
+                let _finally_off = self.read_u16()? as usize;
+                let target_ip = self.cur().ip + handler_off;
+                let stack_depth = self.stack.len();
+                self._handlers.push(HandlerEntry {
+                    handler_ip: target_ip,
+                    stack_depth,
+                });
+            }
+            Op::TryPop => {
+                let _ = self._handlers.pop();
+                // Clear any handled exception when leaving TRY region normally
+                self.current_exception = None;
+            }
+            Op::Raise => {
+                // Pop message, convert to string, then transfer to nearest handler or abort
+                let msg_v = self.pop()?;
+                let msg = format!("{}", msg_v);
+                if let Some(h) = self._handlers.last() {
+                    self.stack.truncate(h.stack_depth);
+                    // record message and jump to handler; also make it available on stack
+                    self.current_exception = Some(msg.clone());
+                    self.stack.push(Value::Str(msg));
+                    let target = h.handler_ip;
+                    self.cur().ip = target;
+                } else {
+                    return Err(BasilError(msg));
+                }
+            }
+            Op::Reraise => {
+                // rethrow current exception to next outer handler
+                let msg = match self.current_exception.clone() {
+                    Some(m) => m,
+                    None => return Err(BasilError("Reraise without active exception".into())),
+                };
+                // Pop current handler if any
+                let _ = self._handlers.pop();
+                if let Some(h) = self._handlers.last() {
+                    self.stack.truncate(h.stack_depth);
+                    self.stack.push(Value::Str(msg));
+                    let target = h.handler_ip;
+                    self.cur().ip = target;
+                } else {
+                    return Err(BasilError(msg));
+                }
+            }
+            Op::Stop => {
+                if self.test_mode {
+                    std::process::exit(0);
+                } else {
+                    self.suspended = true;
+                    return Ok(true);
+                }
+            }
+
+            Op::Call => {
+                let argc = self.read_u8()? as usize;
+                let callee_idx = self.stack.len() - 1 - argc;
+                let callee = self.stack.remove(callee_idx);
+                let base = callee_idx;
+                match callee {
+                    Value::Func(f) => {
+                        if f.arity as usize != argc {
+                            return Err(BasilError(format!(
+                                "arity mismatch: expected {}, got {}",
+                                f.arity, argc
+                            )));
+                        }
+                        let frame = Frame {
+                            chunk: f.chunk.clone(),
+                            ip: 0,
+                            base,
+                            gosub_base: self.gosub_stack.len(),
+                            handler_base: self._handlers.len(),
+                        };
+                        self.frames.push(frame);
+                    }
+                    _ => return Err(BasilError("CALL target is not a function".into())),
+                }
+            }
+
+            Op::SetLine => {
+                let line = self.read_u16()? as u32;
+                self.current_line = line;
+                if self.test_mode {
+                    if let Some(map) = &self.comments_map {
+                        if let Some(list) = map.get(&line) {
+                            for text in list {
+                                println!("COMMENT: {}", text);
+                            }
+                        }
+                    }
+                }
+                if let Some(dbg) = &self.debugger {
+                    let file = self
+                        .script_path
+                        .clone()
+                        .unwrap_or_else(|| "<unknown>".into());
+                    let cur_depth = self.frames.len();
+                    if dbg.check_pause_point(&file, line as usize, cur_depth) {
+                        // Wait until resumed
+                        loop {
+                            if let Ok(st) = dbg.state.lock() {
+                                if !st.paused {
+                                    break;
+                                }
+                            }
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                    }
+                }
+            }
+
+            Op::Ret => {
+                let retv = self.pop().unwrap_or(Value::Null);
+                if self.perform_ret(retv, until_depth)? {
+                    return Ok(true);
+                }
+            }
+
+            Op::Print => {
+                let v = self.pop()?;
+                let s = format!("{}", v);
+                if let Some(dbg) = &self.debugger {
+                    dbg.emit(debug::DebugEvent::Output(s.clone()));
+                }
+                self.update_out_col_with(&s);
+                print!("{}", s);
+                let _ = io::stdout().flush();
+            }
+            Op::Pop => {
+                let _ = self.pop()?;
+            }
+            Op::ToInt => {
+                let v = self.pop()?;
+                match v {
+                    Value::Int(i) => self.stack.push(Value::Int(i)),
+                    Value::Num(n) => self.stack.push(Value::Int(n.trunc() as i64)),
+                    _ => return Err(BasilError("ToInt expects a numeric value".into())),
+                }
+            }
+
+            Op::ArrMake => {
+                let rank = self.read_u8()? as usize;
+                let et_code = self.read_u8()? as u8;
+                let type_cidx = self.read_u16()?; // may be 0xFFFF if not applicable
+                let elem = match et_code {
+                    0 => ElemType::Num,
+                    1 => ElemType::Int,
+                    2 => ElemType::Str,
+                    3 => {
+                        if type_cidx == 0xFFFF {
+                            ElemType::Obj(None)
                         } else {
-                            return Err(BasilError("RETURN without GOSUB".into()));
+                            let tn_v = self.cur().chunk.consts[type_cidx as usize].clone();
+                            let tn = match tn_v {
+                                Value::Str(s) => s,
+                                _ => {
+                                    return Err(BasilError(
+                                        "ArrMake type expects string const".into(),
+                                    ))
+                                }
+                            };
+                            ElemType::Obj(Some(tn))
                         }
                     }
+                    _ => return Err(BasilError("bad elem type".into())),
+                };
+                if rank == 0 || rank > 4 {
+                    return Err(BasilError("array rank must be 1..4".into()));
                 }
-                Op::GosubPop => {
-                    if self.gosub_stack.pop().is_none() { return Err(BasilError("RETURN without GOSUB".into())); }
-                    // continue execution; typically followed by a Jump to a label
-                }
-                Op::TryPush => {
-                    // Read handler and finally offsets (we ignore finally; compiler handles FINALLY paths)
-                    let handler_off = self.read_u16()? as usize;
-                    let _finally_off = self.read_u16()? as usize;
-                    let target_ip = self.cur().ip + handler_off;
-                    let stack_depth = self.stack.len();
-                    self._handlers.push(HandlerEntry { handler_ip: target_ip, stack_depth });
-                }
-                Op::TryPop => {
-                    let _ = self._handlers.pop();
-                    // Clear any handled exception when leaving TRY region normally
-                    self.current_exception = None;
-                }
-                Op::Raise => {
-                    // Pop message, convert to string, then transfer to nearest handler or abort
-                    let msg_v = self.pop()?;
-                    let msg = format!("{}", msg_v);
-                    if let Some(h) = self._handlers.last() {
-                        self.stack.truncate(h.stack_depth);
-                        // record message and jump to handler; also make it available on stack
-                        self.current_exception = Some(msg.clone());
-                        self.stack.push(Value::Str(msg));
-                        let target = h.handler_ip;
-                        self.cur().ip = target;
-                    } else {
-                        return Err(BasilError(msg));
-                    }
-                }
-                Op::Reraise => {
-                    // rethrow current exception to next outer handler
-                    let msg = match self.current_exception.clone() { Some(m) => m, None => return Err(BasilError("Reraise without active exception".into())) };
-                    // Pop current handler if any
-                    let _ = self._handlers.pop();
-                    if let Some(h) = self._handlers.last() {
-                        self.stack.truncate(h.stack_depth);
-                        self.stack.push(Value::Str(msg));
-                        let target = h.handler_ip;
-                        self.cur().ip = target;
-                    } else {
-                        return Err(BasilError(msg));
-                    }
-                }
-                Op::Stop => {
-                    if self.test_mode {
-                        std::process::exit(0);
-                    } else {
-                        self.suspended = true;
-                        return Ok(true);
-                    }
-                }
-
-                Op::Call => {
-                    let argc = self.read_u8()? as usize;
-                    let callee_idx = self.stack.len() - 1 - argc;
-                    let callee = self.stack.remove(callee_idx);
-                    let base = callee_idx;
-                    match callee {
-                        Value::Func(f) => {
-                            if f.arity as usize != argc {
-                                return Err(BasilError(format!("arity mismatch: expected {}, got {}", f.arity, argc)));
-                            }
-                            let frame = Frame { chunk: f.chunk.clone(), ip: 0, base, gosub_base: self.gosub_stack.len(), handler_base: self._handlers.len() };
-                            self.frames.push(frame);
-                        }
-                        _ => return Err(BasilError("CALL target is not a function".into())),
-                    }
-                }
-
-                Op::SetLine => {
-                    let line = self.read_u16()? as u32;
-                    self.current_line = line;
-                    if self.test_mode {
-                        if let Some(map) = &self.comments_map {
-                            if let Some(list) = map.get(&line) {
-                                for text in list { println!("COMMENT: {}", text); }
-                            }
-                        }
-                    }
-                    if let Some(dbg) = &self.debugger {
-                        let file = self.script_path.clone().unwrap_or_else(|| "<unknown>".into());
-                        let cur_depth = self.frames.len();
-                        if dbg.check_pause_point(&file, line as usize, cur_depth) {
-                            // Wait until resumed
-                            loop {
-                                if let Ok(st) = dbg.state.lock() { if !st.paused { break; } }
-                                std::thread::sleep(Duration::from_millis(5));
-                            }
-                        }
-                    }
-                }
-
-                Op::Ret => {
-                    let retv = self.pop().unwrap_or(Value::Null);
-                    if self.perform_ret(retv, until_depth)? { return Ok(true); }
-                }
-
-                Op::Print => {
+                let mut uppers: Vec<i64> = Vec::with_capacity(rank);
+                for _ in 0..rank {
                     let v = self.pop()?;
-                    let s = format!("{}", v);
-                    if let Some(dbg) = &self.debugger { dbg.emit(debug::DebugEvent::Output(s.clone())); }
-                    self.update_out_col_with(&s);
-                    print!("{}", s);
-                    let _ = io::stdout().flush();
+                    let n = match v {
+                        Value::Int(i) => i,
+                        Value::Num(n) => n.trunc() as i64,
+                        _ => return Err(BasilError("array dimension must be numeric".into())),
+                    };
+                    uppers.push(n);
                 }
-                Op::Pop   => { let _ = self.pop()?; }
-                Op::ToInt => {
-                    let v = self.pop()?;
-                    match v {
-                        Value::Int(i) => self.stack.push(Value::Int(i)),
-                        Value::Num(n) => self.stack.push(Value::Int(n.trunc() as i64)),
-                        _ => return Err(BasilError("ToInt expects a numeric value".into())),
+                uppers.reverse();
+                let mut dims: Vec<usize> = Vec::with_capacity(rank);
+                let mut total: usize = 1;
+                for u in uppers {
+                    if u < 0 {
+                        return Err(BasilError(
+                            "array dimension upper bound must be >= 0".into(),
+                        ));
                     }
+                    let len = (u as usize) + 1;
+                    dims.push(len);
+                    total = total.saturating_mul(len);
                 }
+                let defv = match &elem {
+                    ElemType::Num => Value::Num(0.0),
+                    ElemType::Int => Value::Int(0),
+                    ElemType::Str => Value::Str(String::new()),
+                    ElemType::Obj(Some(_)) => {
+                        Value::Dict(Rc::new(std::cell::RefCell::new(HashMap::new())))
+                    }
+                    ElemType::Obj(None) => Value::Null,
+                };
+                let mut data = Vec::with_capacity(total);
+                data.resize(total, defv);
+                let arr = Rc::new(ArrayObj {
+                    elem,
+                    dims,
+                    data: std::cell::RefCell::new(data),
+                });
+                self.stack.push(Value::Array(arr));
+            }
 
-                Op::ArrMake => {
-                    let rank = self.read_u8()? as usize;
-                    let et_code = self.read_u8()? as u8;
-                    let type_cidx = self.read_u16()?; // may be 0xFFFF if not applicable
-                    let elem = match et_code {
-                        0 => ElemType::Num,
-                        1 => ElemType::Int,
-                        2 => ElemType::Str,
-                        3 => {
-                            if type_cidx == 0xFFFF {
-                                ElemType::Obj(None)
+            Op::ArrGet => {
+                let rank = self.read_u8()? as usize;
+                let mut idxs: Vec<Value> = Vec::with_capacity(rank);
+                for _ in 0..rank {
+                    idxs.push(self.pop()?);
+                }
+                idxs.reverse();
+                let target = self.pop()?;
+                match target {
+                    Value::Array(arr_rc) => {
+                        let arr = arr_rc.as_ref();
+                        if idxs.len() != arr.dims.len() {
+                            return Err(BasilError("array rank mismatch".into()));
+                        }
+                        let mut nidxs = Vec::with_capacity(rank);
+                        for v in idxs {
+                            let n = match v {
+                                Value::Int(i) => i,
+                                Value::Num(n) => n.trunc() as i64,
+                                _ => return Err(BasilError("array index must be numeric".into())),
+                            };
+                            nidxs.push(n);
+                        }
+                        for (dim_len, idx) in arr.dims.iter().zip(&nidxs) {
+                            if *idx < 0 || (*idx as usize) >= *dim_len {
+                                return Err(BasilError("array index out of bounds".into()));
+                            }
+                        }
+                        let mut lin: usize = 0;
+                        let mut stride: usize = 1;
+                        for d in 0..arr.dims.len() {
+                            let len = arr.dims[arr.dims.len() - 1 - d];
+                            let idx = nidxs[arr.dims.len() - 1 - d] as usize;
+                            if d == 0 {
+                                lin = idx;
+                                stride = len;
                             } else {
-                                let tn_v = self.cur().chunk.consts[type_cidx as usize].clone();
-                                let tn = match tn_v { Value::Str(s) => s, _ => return Err(BasilError("ArrMake type expects string const".into())) };
-                                ElemType::Obj(Some(tn))
+                                lin += idx * stride;
+                                stride *= len;
                             }
                         }
-                        _ => return Err(BasilError("bad elem type".into())),
-                    };
-                    if rank == 0 || rank > 4 { return Err(BasilError("array rank must be 1..4".into())); }
-                    let mut uppers: Vec<i64> = Vec::with_capacity(rank);
-                    for _ in 0..rank {
-                        let v = self.pop()?;
-                        let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array dimension must be numeric".into())) };
-                        uppers.push(n);
+                        let val = arr.data.borrow()[lin].clone();
+                        self.stack.push(val);
                     }
-                    uppers.reverse();
-                    let mut dims: Vec<usize> = Vec::with_capacity(rank);
-                    let mut total: usize = 1;
-                    for u in uppers {
-                        if u < 0 { return Err(BasilError("array dimension upper bound must be >= 0".into())); }
-                        let len = (u as usize) + 1;
-                        dims.push(len);
-                        total = total.saturating_mul(len);
+                    Value::List(list_rc) => {
+                        if rank != 1 {
+                            return Err(BasilError("List index must be 1-D".into()));
+                        }
+                        let idx = match idxs[0] {
+                            Value::Int(i) => i,
+                            Value::Num(n) => n.trunc() as i64,
+                            _ => return Err(BasilError("List index must be numeric".into())),
+                        };
+                        let list = list_rc.borrow();
+                        if idx < 1 || (idx as usize) > list.len() {
+                            return Err(BasilError(format!(
+                                "List index {} out of bounds (1..{})",
+                                idx,
+                                list.len()
+                            )));
+                        }
+                        self.stack.push(list[(idx - 1) as usize].clone());
                     }
-                    let defv = match &elem {
-                        ElemType::Num => Value::Num(0.0),
-                        ElemType::Int => Value::Int(0),
-                        ElemType::Str => Value::Str(String::new()),
-                        ElemType::Obj(Some(_)) => Value::Dict(Rc::new(std::cell::RefCell::new(HashMap::new()))),
-                        ElemType::Obj(None) => Value::Null,
-                    };
-                    let mut data = Vec::with_capacity(total);
-                    data.resize(total, defv);
-                    let arr = Rc::new(ArrayObj { elem, dims, data: std::cell::RefCell::new(data) });
-                    self.stack.push(Value::Array(arr));
+                    Value::Dict(dict_rc) => {
+                        if rank != 1 {
+                            return Err(BasilError("Dict index must be 1-D".into()));
+                        }
+                        let key = match &idxs[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let dict = dict_rc.borrow();
+                        if let Some(v) = dict.get(&key) {
+                            self.stack.push(v.clone());
+                        } else {
+                            self.stack.push(Value::Null);
+                        }
+                    }
+                    _ => return Err(BasilError("array access on non-array or not DIMed".into())),
                 }
+            }
 
-                Op::ArrGet => {
-                    let rank = self.read_u8()? as usize;
-                    let mut idxs: Vec<Value> = Vec::with_capacity(rank);
-                    for _ in 0..rank { idxs.push(self.pop()?); }
-                    idxs.reverse();
-                    let target = self.pop()?;
-                    match target {
-                        Value::Array(arr_rc) => {
-                            let arr = arr_rc.as_ref();
-                            if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
-                            let mut nidxs = Vec::with_capacity(rank);
-                            for v in idxs {
-                                let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
-                                nidxs.push(n);
-                            }
-                            for (dim_len, idx) in arr.dims.iter().zip(&nidxs) {
-                                if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
-                            }
-                            let mut lin: usize = 0;
-                            let mut stride: usize = 1;
-                            for d in 0..arr.dims.len() {
-                                let len = arr.dims[arr.dims.len() - 1 - d];
-                                let idx = nidxs[arr.dims.len() - 1 - d] as usize;
-                                if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
-                            }
-                            let val = arr.data.borrow()[lin].clone();
-                            self.stack.push(val);
-                        }
-                        Value::List(list_rc) => {
-                            if rank != 1 { return Err(BasilError("List index must be 1-D".into())); }
-                            let idx = match idxs[0] { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("List index must be numeric".into())) };
-                            let list = list_rc.borrow();
-                            if idx < 1 || (idx as usize) > list.len() { return Err(BasilError(format!("List index {} out of bounds (1..{})", idx, list.len()))); }
-                            self.stack.push(list[(idx - 1) as usize].clone());
-                        }
-                        Value::Dict(dict_rc) => {
-                            if rank != 1 { return Err(BasilError("Dict index must be 1-D".into())); }
-                            let key = match &idxs[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
-                            let dict = dict_rc.borrow();
-                            if let Some(v) = dict.get(&key) { self.stack.push(v.clone()); }
-                            else { self.stack.push(Value::Null); }
-                        }
-                        _ => return Err(BasilError("array access on non-array or not DIMed".into())),
-                    }
+            Op::ArrSet => {
+                let rank = self.read_u8()? as usize;
+                let val = self.pop()?;
+                let mut idxs: Vec<Value> = Vec::with_capacity(rank);
+                for _ in 0..rank {
+                    idxs.push(self.pop()?);
                 }
-
-                Op::ArrSet => {
-                    let rank = self.read_u8()? as usize;
-                    let val = self.pop()?;
-                    let mut idxs: Vec<Value> = Vec::with_capacity(rank);
-                    for _ in 0..rank { idxs.push(self.pop()?); }
-                    idxs.reverse();
-                    let target = self.pop()?;
-                    match target {
-                        Value::Array(arr_rc) => {
-                            let arr = arr_rc.as_ref();
-                            if idxs.len() != arr.dims.len() { return Err(BasilError("array rank mismatch".into())); }
-                            let mut nidxs = Vec::with_capacity(rank);
-                            for v in idxs {
-                                let n = match v { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("array index must be numeric".into())) };
-                                nidxs.push(n);
+                idxs.reverse();
+                let target = self.pop()?;
+                match target {
+                    Value::Array(arr_rc) => {
+                        let arr = arr_rc.as_ref();
+                        if idxs.len() != arr.dims.len() {
+                            return Err(BasilError("array rank mismatch".into()));
+                        }
+                        let mut nidxs = Vec::with_capacity(rank);
+                        for v in idxs {
+                            let n = match v {
+                                Value::Int(i) => i,
+                                Value::Num(n) => n.trunc() as i64,
+                                _ => return Err(BasilError("array index must be numeric".into())),
+                            };
+                            nidxs.push(n);
+                        }
+                        for (dim_len, idx) in arr.dims.iter().zip(&nidxs) {
+                            if *idx < 0 || (*idx as usize) >= *dim_len {
+                                return Err(BasilError("array index out of bounds".into()));
                             }
-                            for (dim_len, idx) in arr.dims.iter().zip(&nidxs) {
-                                if *idx < 0 || (*idx as usize) >= *dim_len { return Err(BasilError("array index out of bounds".into())); }
+                        }
+                        let mut lin: usize = 0;
+                        let mut stride: usize = 1;
+                        for d in 0..arr.dims.len() {
+                            let len = arr.dims[arr.dims.len() - 1 - d];
+                            let idx = nidxs[arr.dims.len() - 1 - d] as usize;
+                            if d == 0 {
+                                lin = idx;
+                                stride = len;
+                            } else {
+                                lin += idx * stride;
+                                stride *= len;
                             }
-                            let mut lin: usize = 0;
-                            let mut stride: usize = 1;
-                            for d in 0..arr.dims.len() {
-                                let len = arr.dims[arr.dims.len() - 1 - d];
-                                let idx = nidxs[arr.dims.len() - 1 - d] as usize;
-                                if d == 0 { lin = idx; stride = len; } else { lin += idx * stride; stride *= len; }
-                            }
-                            let coerced = match &arr.elem {
-                                ElemType::Num => match val { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into numeric array", other))) },
-                                ElemType::Int => match val { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {:?} into integer array", other))) },
-                                ElemType::Str => match val { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
+                        }
+                        let coerced =
+                            match &arr.elem {
+                                ElemType::Num => match val {
+                                    Value::Num(n) => Value::Num(n),
+                                    Value::Int(i) => Value::Num(i as f64),
+                                    other => {
+                                        return Err(BasilError(format!(
+                                            "cannot store non-numeric {:?} into numeric array",
+                                            other
+                                        )))
+                                    }
+                                },
+                                ElemType::Int => match val {
+                                    Value::Int(i) => Value::Int(i),
+                                    Value::Num(n) => Value::Int(n.trunc() as i64),
+                                    other => {
+                                        return Err(BasilError(format!(
+                                            "cannot store non-numeric {:?} into integer array",
+                                            other
+                                        )))
+                                    }
+                                },
+                                ElemType::Str => match val {
+                                    Value::Str(s) => Value::Str(s),
+                                    other => Value::Str(format!("{}", other)),
+                                },
                                 ElemType::Obj(Some(tname)) => match val {
                                     Value::Object(rc) => {
                                         let got = rc.borrow().type_name().to_string();
-                                        if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
-                                        else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
+                                        if got.eq_ignore_ascii_case(tname) {
+                                            Value::Object(rc)
+                                        } else {
+                                            return Err(BasilError(format!(
+                                                "Expected {} in typed object array, got {}.",
+                                                tname, got
+                                            )));
+                                        }
                                     }
                                     Value::Null => Value::Null,
-                                    other => return Err(BasilError(format!("cannot store non-object {:?} into typed OBJECT[] array", other))),
+                                    other => return Err(BasilError(format!(
+                                        "cannot store non-object {:?} into typed OBJECT[] array",
+                                        other
+                                    ))),
                                 },
                                 ElemType::Obj(None) => match val {
                                     Value::Object(_) | Value::Null => val,
-                                    other => return Err(BasilError(format!("cannot store non-object {:?} into OBJECT[] array", other))),
+                                    other => {
+                                        return Err(BasilError(format!(
+                                            "cannot store non-object {:?} into OBJECT[] array",
+                                            other
+                                        )))
+                                    }
                                 },
                             };
-                            arr.data.borrow_mut()[lin] = coerced;
-                        }
-                        Value::List(list_rc) => {
-                            if rank != 1 { return Err(BasilError("List index must be 1-D".into())); }
-                            let idx = match idxs[0] { Value::Int(i) => i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("List index must be numeric".into())) };
-                            let mut list = list_rc.borrow_mut();
-                            if idx < 1 || (idx as usize) > list.len() { return Err(BasilError(format!("List index {} out of bounds (1..{})", idx, list.len()))); }
-                            list[(idx - 1) as usize] = val;
-                        }
-                        Value::Dict(dict_rc) => {
-                            if rank != 1 { return Err(BasilError("Dict index must be 1-D".into())); }
-                            let key = match &idxs[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
-                            dict_rc.borrow_mut().insert(key, val);
-                        }
-                        _ => return Err(BasilError("array write on non-array or not DIMed".into())),
+                        arr.data.borrow_mut()[lin] = coerced;
                     }
+                    Value::List(list_rc) => {
+                        if rank != 1 {
+                            return Err(BasilError("List index must be 1-D".into()));
+                        }
+                        let idx = match idxs[0] {
+                            Value::Int(i) => i,
+                            Value::Num(n) => n.trunc() as i64,
+                            _ => return Err(BasilError("List index must be numeric".into())),
+                        };
+                        let mut list = list_rc.borrow_mut();
+                        if idx < 1 || (idx as usize) > list.len() {
+                            return Err(BasilError(format!(
+                                "List index {} out of bounds (1..{})",
+                                idx,
+                                list.len()
+                            )));
+                        }
+                        list[(idx - 1) as usize] = val;
+                    }
+                    Value::Dict(dict_rc) => {
+                        if rank != 1 {
+                            return Err(BasilError("Dict index must be 1-D".into()));
+                        }
+                        let key = match &idxs[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        dict_rc.borrow_mut().insert(key, val);
+                    }
+                    _ => return Err(BasilError("array write on non-array or not DIMed".into())),
                 }
+            }
 
-                // enumeration over arrays
-                Op::EnumNew => {
-                    let it = self.pop()?;
-                    match it {
-                        Value::Array(rc) => {
-                            let total = rc.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
-                            let handle = self.enums.len();
-                            self.enums.push(ArrEnum { arr: rc, cur: -1, total });
-                            self.stack.push(Value::Int(handle as i64));
+            // enumeration over arrays
+            Op::EnumNew => {
+                let it = self.pop()?;
+                match it {
+                    Value::Array(rc) => {
+                        let total = rc
+                            .dims
+                            .iter()
+                            .copied()
+                            .fold(1usize, |acc, d| acc.saturating_mul(d));
+                        let handle = self.enums.len();
+                        self.enums.push(ArrEnum {
+                            arr: rc,
+                            cur: -1,
+                            total,
+                        });
+                        self.stack.push(Value::Int(handle as i64));
+                    }
+                    Value::List(items_rc) => {
+                        // Enumerate list elements by materializing a temporary 1-D array view
+                        let items = items_rc.borrow();
+                        let mut data: Vec<Value> = Vec::with_capacity(items.len());
+                        for v in items.iter() {
+                            data.push(v.clone());
                         }
-                        Value::List(items_rc) => {
-                            // Enumerate list elements by materializing a temporary 1-D array view
-                            let items = items_rc.borrow();
-                            let mut data: Vec<Value> = Vec::with_capacity(items.len());
-                            for v in items.iter() { data.push(v.clone()); }
-                            let arr = Rc::new(ArrayObj { elem: ElemType::Obj(None), dims: vec![data.len()], data: std::cell::RefCell::new(data) });
-                            let total = arr.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
-                            let handle = self.enums.len();
-                            self.enums.push(ArrEnum { arr, cur: -1, total });
-                            self.stack.push(Value::Int(handle as i64));
+                        let arr = Rc::new(ArrayObj {
+                            elem: ElemType::Obj(None),
+                            dims: vec![data.len()],
+                            data: std::cell::RefCell::new(data),
+                        });
+                        let total = arr
+                            .dims
+                            .iter()
+                            .copied()
+                            .fold(1usize, |acc, d| acc.saturating_mul(d));
+                        let handle = self.enums.len();
+                        self.enums.push(ArrEnum {
+                            arr,
+                            cur: -1,
+                            total,
+                        });
+                        self.stack.push(Value::Int(handle as i64));
+                    }
+                    Value::Dict(map_rc) => {
+                        // Enumerate dictionary keys (strings) by materializing a temporary 1-D array of keys
+                        let map = map_rc.borrow();
+                        let mut data: Vec<Value> = Vec::with_capacity(map.len());
+                        for k in map.keys() {
+                            data.push(Value::Str(k.clone()));
                         }
-                        Value::Dict(map_rc) => {
-                            // Enumerate dictionary keys (strings) by materializing a temporary 1-D array of keys
-                            let map = map_rc.borrow();
-                            let mut data: Vec<Value> = Vec::with_capacity(map.len());
-                            for k in map.keys() { data.push(Value::Str(k.clone())); }
-                            let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims: vec![data.len()], data: std::cell::RefCell::new(data) });
-                            let total = arr.dims.iter().copied().fold(1usize, |acc, d| acc.saturating_mul(d));
-                            let handle = self.enums.len();
-                            self.enums.push(ArrEnum { arr, cur: -1, total });
-                            self.stack.push(Value::Int(handle as i64));
-                        }
-                        Value::Object(_) => {
-                            let ty = self.type_of(&it);
-                            return Err(BasilError(format!("FOR EACH expects an array or iterable object after IN (got TYPE={}).", ty)));
-                        }
-                        other => {
-                            let ty = self.type_of(&other);
-                            return Err(BasilError(format!("FOR EACH expects an array or iterable object after IN (got TYPE={}).", ty)));
-                        }
+                        let arr = Rc::new(ArrayObj {
+                            elem: ElemType::Str,
+                            dims: vec![data.len()],
+                            data: std::cell::RefCell::new(data),
+                        });
+                        let total = arr
+                            .dims
+                            .iter()
+                            .copied()
+                            .fold(1usize, |acc, d| acc.saturating_mul(d));
+                        let handle = self.enums.len();
+                        self.enums.push(ArrEnum {
+                            arr,
+                            cur: -1,
+                            total,
+                        });
+                        self.stack.push(Value::Int(handle as i64));
+                    }
+                    Value::Object(_) => {
+                        let ty = self.type_of(&it);
+                        return Err(BasilError(format!(
+                            "FOR EACH expects an array or iterable object after IN (got TYPE={}).",
+                            ty
+                        )));
+                    }
+                    other => {
+                        let ty = self.type_of(&other);
+                        return Err(BasilError(format!(
+                            "FOR EACH expects an array or iterable object after IN (got TYPE={}).",
+                            ty
+                        )));
                     }
                 }
-                Op::EnumMoveNext => {
-                    let handle = match self.stack.last() {
-                        Some(Value::Int(i)) => *i as usize,
-                        _ => return Err(BasilError("ENUM_MOVENEXT requires enumerator handle on stack".into())),
-                    };
-                    let e = self.enums.get_mut(handle).ok_or_else(|| BasilError("bad enumerator handle".into()))?;
-                    if (e.cur + 1) < e.total as isize { e.cur += 1; self.stack.push(Value::Bool(true)); }
-                    else { self.stack.push(Value::Bool(false)); }
-                }
-                Op::EnumCurrent => {
-                    let handle = match self.stack.last() {
-                        Some(Value::Int(i)) => *i as usize,
-                        _ => return Err(BasilError("ENUM_CURRENT requires enumerator handle on stack".into())),
-                    };
-                    let e = self.enums.get(handle).ok_or_else(|| BasilError("bad enumerator handle".into()))?;
-                    if e.cur < 0 { return Err(BasilError("ENUM_CURRENT before first element".into())); }
-                    let lin = e.cur as usize;
-                    let val = e.arr.data.borrow()[lin].clone();
-                    self.stack.push(val);
-                }
-                Op::EnumDispose => {
-                    let h = self.pop()?;
-                    match h {
-                        Value::Int(_i) => { /* no-op; freed with VM */ }
-                        _ => return Err(BasilError("ENUM_DISPOSE expects enumerator handle".into())),
+            }
+            Op::EnumMoveNext => {
+                let handle = match self.stack.last() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => {
+                        return Err(BasilError(
+                            "ENUM_MOVENEXT requires enumerator handle on stack".into(),
+                        ))
                     }
+                };
+                let e = self
+                    .enums
+                    .get_mut(handle)
+                    .ok_or_else(|| BasilError("bad enumerator handle".into()))?;
+                if (e.cur + 1) < e.total as isize {
+                    e.cur += 1;
+                    self.stack.push(Value::Bool(true));
+                } else {
+                    self.stack.push(Value::Bool(false));
                 }
+            }
+            Op::EnumCurrent => {
+                let handle = match self.stack.last() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => {
+                        return Err(BasilError(
+                            "ENUM_CURRENT requires enumerator handle on stack".into(),
+                        ))
+                    }
+                };
+                let e = self
+                    .enums
+                    .get(handle)
+                    .ok_or_else(|| BasilError("bad enumerator handle".into()))?;
+                if e.cur < 0 {
+                    return Err(BasilError("ENUM_CURRENT before first element".into()));
+                }
+                let lin = e.cur as usize;
+                let val = e.arr.data.borrow()[lin].clone();
+                self.stack.push(val);
+            }
+            Op::EnumDispose => {
+                let h = self.pop()?;
+                match h {
+                    Value::Int(_i) => { /* no-op; freed with VM */ }
+                    _ => return Err(BasilError("ENUM_DISPOSE expects enumerator handle".into())),
+                }
+            }
 
-                // --- Objects ---
-                Op::NewObj => {
-                    let type_cidx = self.read_u16()? as usize;
-                    let argc = self.read_u8()? as usize;
-                    let tname_v = self.cur().chunk.consts[type_cidx].clone();
-                    let type_name = match tname_v { Value::Str(s) => s, _ => return Err(BasilError("NEW_OBJ expects type name string const".into())) };
-                    let mut args = Vec::with_capacity(argc);
-                    for _ in 0..argc { args.push(self.pop()?); }
-                    args.reverse();
-                    if type_name.eq_ignore_ascii_case("JSON_DATA") {
-                        #[cfg(feature = "obj-json")]
-                        {
-                            if args.is_empty() { return Err(BasilError("JSON_DATA expects a JSON string".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
-                            let v: sj::Value = sj::from_str(&s).map_err(|e| BasilError(format!("JSON_DATA parse error: {}", e)))?;
-                            let val = Self::json_to_value_static(&v);
-                            self.stack.push(val);
+            // --- Objects ---
+            Op::NewObj => {
+                let type_cidx = self.read_u16()? as usize;
+                let argc = self.read_u8()? as usize;
+                let tname_v = self.cur().chunk.consts[type_cidx].clone();
+                let type_name = match tname_v {
+                    Value::Str(s) => s,
+                    _ => return Err(BasilError("NEW_OBJ expects type name string const".into())),
+                };
+                let mut args = Vec::with_capacity(argc);
+                for _ in 0..argc {
+                    args.push(self.pop()?);
+                }
+                args.reverse();
+                if type_name.eq_ignore_ascii_case("JSON_DATA") {
+                    #[cfg(feature = "obj-json")]
+                    {
+                        if args.is_empty() {
+                            return Err(BasilError("JSON_DATA expects a JSON string".into()));
                         }
-                        #[cfg(not(feature = "obj-json"))]
-                        {
-                            return Err(BasilError("JSON_DATA requires --features obj-json".into()));
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let v: sj::Value = sj::from_str(&s)
+                            .map_err(|e| BasilError(format!("JSON_DATA parse error: {}", e)))?;
+                        let val = Self::json_to_value_static(&v);
+                        self.stack.push(val);
+                    }
+                    #[cfg(not(feature = "obj-json"))]
+                    {
+                        return Err(BasilError("JSON_DATA requires --features obj-json".into()));
+                    }
+                } else {
+                    let obj = self.registry.make(&type_name, &args)?;
+                    self.stack.push(Value::Object(obj));
+                }
+            }
+            Op::GetProp => {
+                let prop_cidx = self.read_u16()? as usize;
+                let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                let prop = match pname_v {
+                    Value::Str(s) => s,
+                    _ => {
+                        return Err(BasilError(
+                            "GETPROP expects property name string const".into(),
+                        ))
+                    }
+                };
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        let v = rc.borrow().get_prop(&prop)?;
+                        self.stack.push(v);
+                    }
+                    Value::Dict(map_rc) => {
+                        let m = map_rc.borrow();
+                        if let Some(v) = m.get(&prop) {
+                            self.stack.push(v.clone());
+                        } else {
+                            self.stack.push(Value::Null);
                         }
-                    } else {
-                        let obj = self.registry.make(&type_name, &args)?;
-                        self.stack.push(Value::Object(obj));
+                    }
+                    other => {
+                        let ty = self.type_of(&other);
+                        return Err(BasilError(format!(
+                            "GETPROP on non-object/dict (got TYPE={})",
+                            ty
+                        )));
                     }
                 }
-                Op::GetProp => {
-                    let prop_cidx = self.read_u16()? as usize;
-                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
-                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETPROP expects property name string const".into())) };
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            let v = rc.borrow().get_prop(&prop)?;
-                            self.stack.push(v);
-                        }
-                        Value::Dict(map_rc) => {
-                            let m = map_rc.borrow();
-                            if let Some(v) = m.get(&prop) { self.stack.push(v.clone()); }
-                            else { self.stack.push(Value::Null); }
-                        }
-                        other => { let ty = self.type_of(&other); return Err(BasilError(format!("GETPROP on non-object/dict (got TYPE={})", ty))); }, 
+            }
+            Op::SetProp => {
+                let prop_cidx = self.read_u16()? as usize;
+                let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                let prop = match pname_v {
+                    Value::Str(s) => s,
+                    _ => {
+                        return Err(BasilError(
+                            "SETPROP expects property name string const".into(),
+                        ))
                     }
-                }
-                Op::SetProp => {
-                    let prop_cidx = self.read_u16()? as usize;
-                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
-                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETPROP expects property name string const".into())) };
-                    let val = self.pop()?;
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            rc.borrow_mut().set_prop(&prop, val)?;
-                        }
-                        Value::Dict(map_rc) => {
-                            map_rc.borrow_mut().insert(prop, val);
-                        }
-                        _ => return Err(BasilError("SETPROP on non-object/dict".into())),
+                };
+                let val = self.pop()?;
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        rc.borrow_mut().set_prop(&prop, val)?;
                     }
+                    Value::Dict(map_rc) => {
+                        map_rc.borrow_mut().insert(prop, val);
+                    }
+                    _ => return Err(BasilError("SETPROP on non-object/dict".into())),
                 }
-                Op::CallMethod => {
-                    let meth_cidx = self.read_u16()? as usize;
-                    let argc = self.read_u8()? as usize;
-                    let mname_v = self.cur().chunk.consts[meth_cidx].clone();
-                    let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMETHOD expects method name string const".into())) };
-                    let mut args = Vec::with_capacity(argc);
-                    for _ in 0..argc { args.push(self.pop()?); }
-                    args.reverse();
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            let v = rc.borrow_mut().call(&method, &args)?;
-                            self.stack.push(v);
-                        }
-                        Value::Dict(rc) => {
-                            match method.to_ascii_uppercase().as_str() {
-                                "HAS" | "CONTAINS" => {
-                                    if args.is_empty() { return Err(BasilError("HAS expects 1 argument".into())); }
-                                    let key = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                                    let res = rc.borrow().contains_key(&key);
-                                    self.stack.push(Value::Bool(res));
-                                }
-                                "GET" | "GET$" => {
-                                    if args.is_empty() { return Err(BasilError("GET expects 1 or 2 arguments".into())); }
-                                    let key = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                                    let default = args.get(1).cloned().unwrap_or(Value::Null);
-                                    let dict = rc.borrow();
-                                    if let Some(v) = dict.get(&key) { self.stack.push(v.clone()); }
-                                    else { self.stack.push(default); }
-                                }
-                                "KEYS" | "KEYS$" => {
-                                    let keys: Vec<Value> = rc.borrow().keys().cloned().map(Value::Str).collect();
-                                    self.stack.push(Value::List(Rc::new(std::cell::RefCell::new(keys))));
-                                }
-                                _ => return Err(BasilError(format!("Dict has no method '{}'", method))),
+            }
+            Op::CallMethod => {
+                let meth_cidx = self.read_u16()? as usize;
+                let argc = self.read_u8()? as usize;
+                let mname_v = self.cur().chunk.consts[meth_cidx].clone();
+                let method = match mname_v {
+                    Value::Str(s) => s,
+                    _ => {
+                        return Err(BasilError(
+                            "CALLMETHOD expects method name string const".into(),
+                        ))
+                    }
+                };
+                let mut args = Vec::with_capacity(argc);
+                for _ in 0..argc {
+                    args.push(self.pop()?);
+                }
+                args.reverse();
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        let v = rc.borrow_mut().call(&method, &args)?;
+                        self.stack.push(v);
+                    }
+                    Value::Dict(rc) => match method.to_ascii_uppercase().as_str() {
+                        "HAS" | "CONTAINS" => {
+                            if args.is_empty() {
+                                return Err(BasilError("HAS expects 1 argument".into()));
                             }
-                        }
-                        _ => return Err(BasilError("CALLMETHOD on non-object".into())),
-                    }
-                }
-                Op::DescribeObj => {
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            let desc = rc.borrow().descriptor();
-                            // simple formatting
-                            let mut s = String::new();
-                            s.push_str(&format!("{} — v{}\n{}\n", desc.type_name, desc.version, desc.summary));
-                            if !desc.properties.is_empty() {
-                                s.push_str("Properties:\n");
-                                for p in desc.properties { s.push_str(&format!("  {} : {} {}{}\n", p.name, p.type_name, if p.readable {"R"} else {""}, if p.writable {"W"} else {""})); }
-                            }
-                            if !desc.methods.is_empty() {
-                                s.push_str("Methods:\n");
-                                for m in desc.methods { s.push_str(&format!("  {}({}) -> {}\n", m.name, m.arg_names.join(", "), m.return_type)); }
-                            }
-                            self.stack.push(Value::Str(s));
-                        }
-                        Value::Array(arr_rc) => {
-                            let arr = arr_rc.as_ref();
-                            let elem = match &arr.elem {
-                                ElemType::Num => "FLOAT".to_string(),
-                                ElemType::Int => "INTEGER".to_string(),
-                                ElemType::Str => "STRING".to_string(),
-                                ElemType::Obj(Some(t)) => t.clone(),
-                                ElemType::Obj(None) => "OBJECT".to_string(),
+                            let key = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
                             };
-                            let mut total: usize = 1;
-                            for d in &arr.dims { total = total.saturating_mul(*d); }
-                            let dims = if arr.dims.is_empty() { "0".to_string() } else { arr.dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x") };
-                            let s = format!("Array — elem={}, dims={}, size={} (row-major)", elem, dims, total);
-                            self.stack.push(Value::Str(s));
+                            let res = rc.borrow().contains_key(&key);
+                            self.stack.push(Value::Bool(res));
                         }
-                        other => return Err(BasilError(format!("DESCRIBE on unsupported value: {}", self.type_of(&other)))),
-                    }
-                }
-
-                Op::NewClass => {
-                    // Pop filename and instantiate class instance
-                    let fname_v = self.pop()?;
-                    let fname = match fname_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("CLASS(filename) expects a string, got {}", self.type_of(&other)))) };
-                    let (prog, resolved_path) = self.load_class_program(&fname)?;
-                    // Run top-level of class program in an inner VM to initialize globals
-                    let mut inner = VM::new(prog.clone());
-                    inner.set_script_path(resolved_path.clone());
-                    inner.run()?;
-                    let class_vals = inner.globals.clone();
-                    let inst = ClassInstance::new(prog.globals.clone(), class_vals);
-                    let rc: basil_bytecode::ObjectRef = Rc::new(std::cell::RefCell::new(inst));
-                    self.stack.push(Value::Object(rc));
-                }
-                Op::GetMember => {
-                    let prop_cidx = self.read_u16()? as usize;
-                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
-                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("GETMEMBER expects property name string const".into())) };
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            let v = rc.borrow().get_prop(&prop)?;
-                            self.stack.push(v);
-                        }
-                        _ => return Err(BasilError("GETMEMBER on non-object".into())), 
-                    }
-                }
-                Op::SetMember => {
-                    let prop_cidx = self.read_u16()? as usize;
-                    let pname_v = self.cur().chunk.consts[prop_cidx].clone();
-                    let prop = match pname_v { Value::Str(s)=>s, _=>return Err(BasilError("SETMEMBER expects property name string const".into())) };
-                    let val = self.pop()?;
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            rc.borrow_mut().set_prop(&prop, val)?;
-                        }
-                        _ => return Err(BasilError("SETMEMBER on non-object".into())),
-                    }
-                }
-                Op::CallMember => {
-                    let meth_cidx = self.read_u16()? as usize;
-                    let argc = self.read_u8()? as usize;
-                    let mname_v = self.cur().chunk.consts[meth_cidx].clone();
-                    let method = match mname_v { Value::Str(s)=>s, _=>return Err(BasilError("CALLMEMBER expects method name string const".into())) };
-                    let mut args = Vec::with_capacity(argc);
-                    for _ in 0..argc { args.push(self.pop()?); }
-                    args.reverse();
-                    let target = self.pop()?;
-                    match target {
-                        Value::Object(rc) => {
-                            let v = rc.borrow_mut().call(&method, &args)?;
-                            self.stack.push(v);
-                        }
-                        _ => return Err(BasilError("CALLMEMBER on non-object".into())),
-                    }
-                }
-                Op::DestroyInstance => {
-                    // Hint to GC; currently a no-op
-                }
-
-                Op::ExecString => {
-                    let code_v = self.pop()?;
-                    let code = match code_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("EXEC expects a STRING, got {}", self.type_of(&other)))) };
-                    let ast = parse_basil(&code)?;
-                    let prog = compile_basil(&ast)?;
-                    let mut child = VM::new(prog.clone());
-                    if let Some(sp) = &self.script_path { child.set_script_path(sp.clone()); }
-                    child.run()?;
-                    // no value pushed
-                }
-                Op::EvalString => {
-                    let expr_v = self.pop()?;
-                    let expr = match expr_v { Value::Str(s)=>s, other=> return Err(BasilError(format!("EVAL expects a STRING, got {}", self.type_of(&other)))) };
-                    let src = format!("LET __EVAL_RES = ({});", expr);
-                    let ast = parse_basil(&src)?;
-                    let prog = compile_basil(&ast)?;
-                    let mut child = VM::new(prog.clone());
-                    if let Some(sp) = &self.script_path { child.set_script_path(sp.clone()); }
-                    child.run()?;
-                    // locate result global
-                    let mut idx_opt: Option<usize> = None;
-                    for (i, name) in prog.globals.iter().enumerate() {
-                        if name == "__EVAL_RES" { idx_opt = Some(i); break; }
-                    }
-                    let idx = idx_opt.ok_or_else(|| BasilError("EVAL internal error: result not found".into()))?;
-                    let val = child.globals.get(idx).cloned().unwrap_or(Value::Null);
-                    self.stack.push(val);
-                }
-
-                Op::Builtin => {
-                    let bid = self.read_u8()? as u8;
-                    let argc = self.read_u8()? as usize;
-                    // pop args in reverse then reverse to preserve call order
-                    let mut args = Vec::with_capacity(argc);
-                    for _ in 0..argc { args.push(self.pop()?); }
-                    args.reverse();
-
-                    match bid {
-                        141 => { // REMOVE$(hay$, needle$)
-                            if argc != 2 { return Err(BasilError("REMOVE$ expects 2 arguments".into())); }
-                            let hay = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REMOVE$ arg 1 must be string".into())) };
-                            let needle = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REMOVE$ arg 2 must be string".into())) };
-                            if needle.is_empty() { self.stack.push(Value::Str(hay)); }
-                            else { self.stack.push(Value::Str(hay.replace(&needle, ""))); }
-                        }
-                        142 => { // REPLACE$(needle$, new$, hay$)
-                            if argc != 3 { return Err(BasilError("REPLACE$ expects 3 arguments".into())); }
-                            let needle = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REPLACE$ arg 1 must be string".into())) };
-                            let newv = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REPLACE$ arg 2 must be string".into())) };
-                            let hay = match &args[2] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("REPLACE$ arg 3 must be string".into())) };
-                            if needle.is_empty() { self.stack.push(Value::Str(hay)); }
-                            else { self.stack.push(Value::Str(hay.replace(&needle, &newv))); }
-                        }
-                        143 => { // INSERT$(hay$, ins$, pos%)
-                            if argc != 3 { return Err(BasilError("INSERT$ expects 3 arguments".into())); }
-                            let hay = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("INSERT$ arg 1 must be string".into())) };
-                            let ins = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("INSERT$ arg 2 must be string".into())) };
-                            let pos_i = match &args[2] { Value::Int(i)=>*i, Value::Num(n)=> n.trunc() as i64, _=> return Err(BasilError("INSERT$ position must be numeric".into())) };
-                            // Convert pos (1-based chars) to byte index
-                            let nchars = hay.chars().count() as i64;
-                            let idx0 = if pos_i <= 0 { 0 } else if pos_i > nchars { nchars } else { pos_i - 1 } as usize;
-                            // find byte index at character idx0
-                            let mut byte_idx = 0usize;
-                            if idx0 == 0 { byte_idx = 0; }
-                            else {
-                                let mut seen = 0usize;
-                                for (b, _) in hay.char_indices() {
-                                    if seen == idx0 { byte_idx = b; break; }
-                                    seen += 1;
-                                    byte_idx = hay.len();
-                                }
+                        "GET" | "GET$" => {
+                            if args.is_empty() {
+                                return Err(BasilError("GET expects 1 or 2 arguments".into()));
                             }
-                            let (left, right) = hay.split_at(byte_idx);
-                            let mut out = String::with_capacity(left.len() + ins.len() + right.len());
-                            out.push_str(left); out.push_str(&ins); out.push_str(right);
-                            self.stack.push(Value::Str(out));
+                            let key = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            };
+                            let default = args.get(1).cloned().unwrap_or(Value::Null);
+                            let dict = rc.borrow();
+                            if let Some(v) = dict.get(&key) {
+                                self.stack.push(v.clone());
+                            } else {
+                                self.stack.push(default);
+                            }
                         }
-                        144 => { // DATE$()
-                            if argc != 0 { return Err(BasilError("DATE$ expects 0 arguments".into())); }
-                            let now = Local::now();
-                            self.stack.push(Value::Str(now.format("%Y-%m-%d").to_string()));
+                        "KEYS" | "KEYS$" => {
+                            let keys: Vec<Value> =
+                                rc.borrow().keys().cloned().map(Value::Str).collect();
+                            self.stack
+                                .push(Value::List(Rc::new(std::cell::RefCell::new(keys))));
                         }
-                        145 => { // TIME$()
-                            if argc != 0 { return Err(BasilError("TIME$ expects 0 arguments".into())); }
-                            let now = Local::now();
-                            self.stack.push(Value::Str(now.format("%H:%M:%S").to_string()));
+                        _ => return Err(BasilError(format!("Dict has no method '{}'", method))),
+                    },
+                    _ => return Err(BasilError("CALLMETHOD on non-object".into())),
+                }
+            }
+            Op::DescribeObj => {
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        let desc = rc.borrow().descriptor();
+                        // simple formatting
+                        let mut s = String::new();
+                        s.push_str(&format!(
+                            "{} — v{}\n{}\n",
+                            desc.type_name, desc.version, desc.summary
+                        ));
+                        if !desc.properties.is_empty() {
+                            s.push_str("Properties:\n");
+                            for p in desc.properties {
+                                s.push_str(&format!(
+                                    "  {} : {} {}{}\n",
+                                    p.name,
+                                    p.type_name,
+                                    if p.readable { "R" } else { "" },
+                                    if p.writable { "W" } else { "" }
+                                ));
+                            }
                         }
-                        146 => { // NOW$()
-                            if argc != 0 { return Err(BasilError("NOW$ expects 0 arguments".into())); }
-                            let now = Local::now();
-                            self.stack.push(Value::Str(now.format("%Y-%m-%d %H:%M:%S").to_string()));
+                        if !desc.methods.is_empty() {
+                            s.push_str("Methods:\n");
+                            for m in desc.methods {
+                                s.push_str(&format!(
+                                    "  {}({}) -> {}\n",
+                                    m.name,
+                                    m.arg_names.join(", "),
+                                    m.return_type
+                                ));
+                            }
                         }
-                        147 => { // EXPLODE(src$, delim1$ [,kvDelim$])
-                            if !(argc == 2 || argc == 3) { return Err(BasilError("EXPLODE expects 2 or 3 arguments".into())); }
-                            let src = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("EXPLODE arg 1 must be string".into())) };
-                            let d1 = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("EXPLODE arg 2 must be string".into())) };
-                            if d1.is_empty() { return Err(BasilError("EXPLODE: delimiter must not be empty".into())); }
-                            if argc == 2 {
-                                use std::cell::RefCell;
-                                let mut items: Vec<Value> = Vec::new();
-                                let _start = 0usize;
-                                if d1.is_empty() {
-                                    items.push(Value::Str(src));
-                                } else {
-                                    let _cur = src.as_str();
-                                    if d1.len() == 1 {
-                                        let ch = d1.chars().next().unwrap();
-                                        let mut tmp = String::new();
-                                        for c in src.chars() {
-                                            if c == ch { items.push(Value::Str(std::mem::take(&mut tmp))); }
-                                            else { tmp.push(c); }
-                                        }
-                                        items.push(Value::Str(tmp));
-                                    } else {
-                                        // substring split preserving empties
-                                        let mut s = src.as_str();
-                                        loop {
-                                            if let Some(i) = s.find(&d1) {
-                                                let (a,b) = s.split_at(i);
-                                                items.push(Value::Str(a.to_string()));
-                                                s = &b[d1.len()..];
-                                            } else {
-                                                items.push(Value::Str(s.to_string()));
-                                                break;
-                                            }
+                        self.stack.push(Value::Str(s));
+                    }
+                    Value::Array(arr_rc) => {
+                        let arr = arr_rc.as_ref();
+                        let elem = match &arr.elem {
+                            ElemType::Num => "FLOAT".to_string(),
+                            ElemType::Int => "INTEGER".to_string(),
+                            ElemType::Str => "STRING".to_string(),
+                            ElemType::Obj(Some(t)) => t.clone(),
+                            ElemType::Obj(None) => "OBJECT".to_string(),
+                        };
+                        let mut total: usize = 1;
+                        for d in &arr.dims {
+                            total = total.saturating_mul(*d);
+                        }
+                        let dims = if arr.dims.is_empty() {
+                            "0".to_string()
+                        } else {
+                            arr.dims
+                                .iter()
+                                .map(|d| d.to_string())
+                                .collect::<Vec<_>>()
+                                .join("x")
+                        };
+                        let s = format!(
+                            "Array — elem={}, dims={}, size={} (row-major)",
+                            elem, dims, total
+                        );
+                        self.stack.push(Value::Str(s));
+                    }
+                    other => {
+                        return Err(BasilError(format!(
+                            "DESCRIBE on unsupported value: {}",
+                            self.type_of(&other)
+                        )))
+                    }
+                }
+            }
+
+            Op::NewClass => {
+                // Pop filename and instantiate class instance
+                let fname_v = self.pop()?;
+                let fname = match fname_v {
+                    Value::Str(s) => s,
+                    other => {
+                        return Err(BasilError(format!(
+                            "CLASS(filename) expects a string, got {}",
+                            self.type_of(&other)
+                        )))
+                    }
+                };
+                let (prog, resolved_path) = self.load_class_program(&fname)?;
+                // Run top-level of class program in an inner VM to initialize globals
+                let mut inner = VM::new(prog.clone());
+                inner.set_script_path(resolved_path.clone());
+                inner.run()?;
+                let class_vals = inner.globals.clone();
+                let inst = ClassInstance::new(prog.globals.clone(), class_vals);
+                let rc: basil_bytecode::ObjectRef = Rc::new(std::cell::RefCell::new(inst));
+                self.stack.push(Value::Object(rc));
+            }
+            Op::GetMember => {
+                let prop_cidx = self.read_u16()? as usize;
+                let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                let prop = match pname_v {
+                    Value::Str(s) => s,
+                    _ => {
+                        return Err(BasilError(
+                            "GETMEMBER expects property name string const".into(),
+                        ))
+                    }
+                };
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        let v = rc.borrow().get_prop(&prop)?;
+                        self.stack.push(v);
+                    }
+                    _ => return Err(BasilError("GETMEMBER on non-object".into())),
+                }
+            }
+            Op::SetMember => {
+                let prop_cidx = self.read_u16()? as usize;
+                let pname_v = self.cur().chunk.consts[prop_cidx].clone();
+                let prop = match pname_v {
+                    Value::Str(s) => s,
+                    _ => {
+                        return Err(BasilError(
+                            "SETMEMBER expects property name string const".into(),
+                        ))
+                    }
+                };
+                let val = self.pop()?;
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        rc.borrow_mut().set_prop(&prop, val)?;
+                    }
+                    _ => return Err(BasilError("SETMEMBER on non-object".into())),
+                }
+            }
+            Op::CallMember => {
+                let meth_cidx = self.read_u16()? as usize;
+                let argc = self.read_u8()? as usize;
+                let mname_v = self.cur().chunk.consts[meth_cidx].clone();
+                let method = match mname_v {
+                    Value::Str(s) => s,
+                    _ => {
+                        return Err(BasilError(
+                            "CALLMEMBER expects method name string const".into(),
+                        ))
+                    }
+                };
+                let mut args = Vec::with_capacity(argc);
+                for _ in 0..argc {
+                    args.push(self.pop()?);
+                }
+                args.reverse();
+                let target = self.pop()?;
+                match target {
+                    Value::Object(rc) => {
+                        let v = rc.borrow_mut().call(&method, &args)?;
+                        self.stack.push(v);
+                    }
+                    _ => return Err(BasilError("CALLMEMBER on non-object".into())),
+                }
+            }
+            Op::DestroyInstance => {
+                // Hint to GC; currently a no-op
+            }
+
+            Op::ExecString => {
+                let code_v = self.pop()?;
+                let code = match code_v {
+                    Value::Str(s) => s,
+                    other => {
+                        return Err(BasilError(format!(
+                            "EXEC expects a STRING, got {}",
+                            self.type_of(&other)
+                        )))
+                    }
+                };
+                let ast = parse_basil(&code)?;
+                let prog = compile_basil(&ast)?;
+                let mut child = VM::new(prog.clone());
+                if let Some(sp) = &self.script_path {
+                    child.set_script_path(sp.clone());
+                }
+                child.run()?;
+                // no value pushed
+            }
+            Op::EvalString => {
+                let expr_v = self.pop()?;
+                let expr = match expr_v {
+                    Value::Str(s) => s,
+                    other => {
+                        return Err(BasilError(format!(
+                            "EVAL expects a STRING, got {}",
+                            self.type_of(&other)
+                        )))
+                    }
+                };
+                let src = format!("LET __EVAL_RES = ({});", expr);
+                let ast = parse_basil(&src)?;
+                let prog = compile_basil(&ast)?;
+                let mut child = VM::new(prog.clone());
+                if let Some(sp) = &self.script_path {
+                    child.set_script_path(sp.clone());
+                }
+                child.run()?;
+                // locate result global
+                let mut idx_opt: Option<usize> = None;
+                for (i, name) in prog.globals.iter().enumerate() {
+                    if name == "__EVAL_RES" {
+                        idx_opt = Some(i);
+                        break;
+                    }
+                }
+                let idx = idx_opt
+                    .ok_or_else(|| BasilError("EVAL internal error: result not found".into()))?;
+                let val = child.globals.get(idx).cloned().unwrap_or(Value::Null);
+                self.stack.push(val);
+            }
+
+            Op::Builtin => {
+                let bid = self.read_u8()? as u8;
+                let argc = self.read_u8()? as usize;
+                // pop args in reverse then reverse to preserve call order
+                let mut args = Vec::with_capacity(argc);
+                for _ in 0..argc {
+                    args.push(self.pop()?);
+                }
+                args.reverse();
+
+                match bid {
+                    141 => {
+                        // REMOVE$(hay$, needle$)
+                        if argc != 2 {
+                            return Err(BasilError("REMOVE$ expects 2 arguments".into()));
+                        }
+                        let hay = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("REMOVE$ arg 1 must be string".into())),
+                        };
+                        let needle = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("REMOVE$ arg 2 must be string".into())),
+                        };
+                        if needle.is_empty() {
+                            self.stack.push(Value::Str(hay));
+                        } else {
+                            self.stack.push(Value::Str(hay.replace(&needle, "")));
+                        }
+                    }
+                    142 => {
+                        // REPLACE$(needle$, new$, hay$)
+                        if argc != 3 {
+                            return Err(BasilError("REPLACE$ expects 3 arguments".into()));
+                        }
+                        let needle = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("REPLACE$ arg 1 must be string".into())),
+                        };
+                        let newv = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("REPLACE$ arg 2 must be string".into())),
+                        };
+                        let hay = match &args[2] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("REPLACE$ arg 3 must be string".into())),
+                        };
+                        if needle.is_empty() {
+                            self.stack.push(Value::Str(hay));
+                        } else {
+                            self.stack.push(Value::Str(hay.replace(&needle, &newv)));
+                        }
+                    }
+                    143 => {
+                        // INSERT$(hay$, ins$, pos%)
+                        if argc != 3 {
+                            return Err(BasilError("INSERT$ expects 3 arguments".into()));
+                        }
+                        let hay = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("INSERT$ arg 1 must be string".into())),
+                        };
+                        let ins = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("INSERT$ arg 2 must be string".into())),
+                        };
+                        let pos_i = match &args[2] {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => n.trunc() as i64,
+                            _ => return Err(BasilError("INSERT$ position must be numeric".into())),
+                        };
+                        // Convert pos (1-based chars) to byte index
+                        let nchars = hay.chars().count() as i64;
+                        let idx0 = if pos_i <= 0 {
+                            0
+                        } else if pos_i > nchars {
+                            nchars
+                        } else {
+                            pos_i - 1
+                        } as usize;
+                        // find byte index at character idx0
+                        let mut byte_idx = 0usize;
+                        if idx0 == 0 {
+                            byte_idx = 0;
+                        } else {
+                            let mut seen = 0usize;
+                            for (b, _) in hay.char_indices() {
+                                if seen == idx0 {
+                                    byte_idx = b;
+                                    break;
+                                }
+                                seen += 1;
+                                byte_idx = hay.len();
+                            }
+                        }
+                        let (left, right) = hay.split_at(byte_idx);
+                        let mut out = String::with_capacity(left.len() + ins.len() + right.len());
+                        out.push_str(left);
+                        out.push_str(&ins);
+                        out.push_str(right);
+                        self.stack.push(Value::Str(out));
+                    }
+                    144 => {
+                        // DATE$()
+                        if argc != 0 {
+                            return Err(BasilError("DATE$ expects 0 arguments".into()));
+                        }
+                        let now = Local::now();
+                        self.stack
+                            .push(Value::Str(now.format("%Y-%m-%d").to_string()));
+                    }
+                    145 => {
+                        // TIME$()
+                        if argc != 0 {
+                            return Err(BasilError("TIME$ expects 0 arguments".into()));
+                        }
+                        let now = Local::now();
+                        self.stack
+                            .push(Value::Str(now.format("%H:%M:%S").to_string()));
+                    }
+                    146 => {
+                        // NOW$()
+                        if argc != 0 {
+                            return Err(BasilError("NOW$ expects 0 arguments".into()));
+                        }
+                        let now = Local::now();
+                        self.stack
+                            .push(Value::Str(now.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    }
+                    147 => {
+                        // EXPLODE(src$, delim1$ [,kvDelim$])
+                        if !(argc == 2 || argc == 3) {
+                            return Err(BasilError("EXPLODE expects 2 or 3 arguments".into()));
+                        }
+                        let src = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("EXPLODE arg 1 must be string".into())),
+                        };
+                        let d1 = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("EXPLODE arg 2 must be string".into())),
+                        };
+                        if d1.is_empty() {
+                            return Err(BasilError("EXPLODE: delimiter must not be empty".into()));
+                        }
+                        if argc == 2 {
+                            use std::cell::RefCell;
+                            let mut items: Vec<Value> = Vec::new();
+                            let _start = 0usize;
+                            if d1.is_empty() {
+                                items.push(Value::Str(src));
+                            } else {
+                                let _cur = src.as_str();
+                                if d1.len() == 1 {
+                                    let ch = d1.chars().next().unwrap();
+                                    let mut tmp = String::new();
+                                    for c in src.chars() {
+                                        if c == ch {
+                                            items.push(Value::Str(std::mem::take(&mut tmp)));
+                                        } else {
+                                            tmp.push(c);
                                         }
                                     }
-                                }
-                                self.stack.push(Value::List(Rc::new(RefCell::new(items))));
-                            } else {
-                                let d2 = match &args[2] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("EXPLODE arg 3 must be string".into())) };
-                                if d2.is_empty() { return Err(BasilError("EXPLODE: key/value delimiter must not be empty".into())); }
-                                use std::cell::RefCell;
-                                let mut map: HashMap<String, Value> = HashMap::new();
-                                // split pairs
-                                let pairs: Vec<&str> = if d1.len()==1 {
-                                    src.split(d1.chars().next().unwrap()).collect()
+                                    items.push(Value::Str(tmp));
                                 } else {
-                                    // substring splitter preserving empties
-                                    let mut v: Vec<&str> = Vec::new();
+                                    // substring split preserving empties
                                     let mut s = src.as_str();
                                     loop {
                                         if let Some(i) = s.find(&d1) {
-                                            let (a,b) = s.split_at(i);
-                                            v.push(a);
+                                            let (a, b) = s.split_at(i);
+                                            items.push(Value::Str(a.to_string()));
                                             s = &b[d1.len()..];
-                                        } else { v.push(s); break; }
-                                    }
-                                    v
-                                };
-                                for p in pairs {
-                                    if p.is_empty() { map.insert(String::new(), Value::Str(String::new())); continue; }
-                                    if let Some(i) = p.find(&d2) {
-                                        let (k, rest) = p.split_at(i);
-                                        let v = &rest[d2.len()..];
-                                        map.insert(k.to_string(), Value::Str(v.to_string()));
-                                    } else {
-                                        map.insert(p.to_string(), Value::Str(String::new()));
+                                        } else {
+                                            items.push(Value::Str(s.to_string()));
+                                            break;
+                                        }
                                     }
                                 }
-                                self.stack.push(Value::Dict(Rc::new(RefCell::new(map))));
                             }
-                        }
-                        149 => { // RENDER$(template$ [, context@])
-                            if !(argc == 1 || argc == 2) { return Err(BasilError("RENDER$ expects 1 or 2 arguments".into())); }
-                            let tpl = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("RENDER$ arg 1 must be string (template$)".into())) };
-                            let ctx_opt = if argc == 2 {
-                                match &args[1] {
-                                    Value::Dict(rc) => Some(rc.clone()),
-                                    _ => return Err(BasilError("RENDER$ arg 2 must be a Dictionary (context@)".into())),
+                            self.stack.push(Value::List(Rc::new(RefCell::new(items))));
+                        } else {
+                            let d2 = match &args[2] {
+                                Value::Str(s) => s.clone(),
+                                _ => return Err(BasilError("EXPLODE arg 3 must be string".into())),
+                            };
+                            if d2.is_empty() {
+                                return Err(BasilError(
+                                    "EXPLODE: key/value delimiter must not be empty".into(),
+                                ));
+                            }
+                            use std::cell::RefCell;
+                            let mut map: HashMap<String, Value> = HashMap::new();
+                            // split pairs
+                            let pairs: Vec<&str> = if d1.len() == 1 {
+                                src.split(d1.chars().next().unwrap()).collect()
+                            } else {
+                                // substring splitter preserving empties
+                                let mut v: Vec<&str> = Vec::new();
+                                let mut s = src.as_str();
+                                loop {
+                                    if let Some(i) = s.find(&d1) {
+                                        let (a, b) = s.split_at(i);
+                                        v.push(a);
+                                        s = &b[d1.len()..];
+                                    } else {
+                                        v.push(s);
+                                        break;
+                                    }
                                 }
-                            } else { None };
-                            let rendered = render::render_template(self, &tpl, ctx_opt)?;
-                            self.stack.push(Value::Str(rendered));
+                                v
+                            };
+                            for p in pairs {
+                                if p.is_empty() {
+                                    map.insert(String::new(), Value::Str(String::new()));
+                                    continue;
+                                }
+                                if let Some(i) = p.find(&d2) {
+                                    let (k, rest) = p.split_at(i);
+                                    let v = &rest[d2.len()..];
+                                    map.insert(k.to_string(), Value::Str(v.to_string()));
+                                } else {
+                                    map.insert(p.to_string(), Value::Str(String::new()));
+                                }
+                            }
+                            self.stack.push(Value::Dict(Rc::new(RefCell::new(map))));
                         }
-                        #[cfg(feature = "obj-yore")]
-                        150 => { // YORE_INIT%([db_or_handle])
-                            if !(argc == 0 || argc == 1) { return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into())); }
-                            let db_opt = if argc == 1 { Some(args[0].clone()) } else { None };
-                            // Prefer detected domain/dir if it exists; otherwise, still
-                            // initialize Yore with an expected domain dir so follow‑up calls
-                            // can produce clearer errors/warnings instead of "not initialized".
-                            let (mut domain, base_dir) = self.yore_detect_domain_and_dir();
-                            let dir_exists = base_dir.is_some();
+                    }
+                    149 => {
+                        // RENDER$(template$ [, context@])
+                        if !(argc == 1 || argc == 2) {
+                            return Err(BasilError("RENDER$ expects 1 or 2 arguments".into()));
+                        }
+                        let tpl = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => {
+                                return Err(BasilError(
+                                    "RENDER$ arg 1 must be string (template$)".into(),
+                                ))
+                            }
+                        };
+                        let ctx_opt = if argc == 2 {
+                            match &args[1] {
+                                Value::Dict(rc) => Some(rc.clone()),
+                                _ => {
+                                    return Err(BasilError(
+                                        "RENDER$ arg 2 must be a Dictionary (context@)".into(),
+                                    ))
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        let rendered = render::render_template(self, &tpl, ctx_opt)?;
+                        self.stack.push(Value::Str(rendered));
+                    }
+                    #[cfg(feature = "obj-yore")]
+                    150 => {
+                        // YORE_INIT%([db_or_handle])
+                        if !(argc == 0 || argc == 1) {
+                            return Err(BasilError("YORE_INIT% expects 0 or 1 arguments".into()));
+                        }
+                        let db_opt = if argc == 1 {
+                            Some(args[0].clone())
+                        } else {
+                            None
+                        };
+                        // Prefer detected domain/dir if it exists; otherwise, still
+                        // initialize Yore with an expected domain dir so follow‑up calls
+                        // can produce clearer errors/warnings instead of "not initialized".
+                        let (mut domain, base_dir) = self.yore_detect_domain_and_dir();
+                        let dir_exists = base_dir.is_some();
 
-                            // Compute an expected directory even if missing, for better diagnostics.
-                            let dir: PathBuf = if let Some(d) = base_dir {
+                        // Compute an expected directory even if missing, for better diagnostics.
+                        let dir: PathBuf = if let Some(d) = base_dir {
+                            d
+                        } else {
+                            // Derive expected domain + path
+                            use std::env;
+                            let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
+                            if host.is_empty() {
+                                host = env::var("SERVER_NAME").ok().unwrap_or_default();
+                            }
+                            let host_l = host.to_ascii_lowercase();
+                            let host_norm = if let Some(i) = host_l.find(':') {
+                                host_l[..i].to_string()
+                            } else {
+                                host_l
+                            };
+                            let is_local = host_norm == "localhost"
+                                || host_norm == "127.0.0.1"
+                                || host_norm == "::1"
+                                || host_norm.is_empty();
+                            if is_local {
+                                domain = "_local".to_string();
+                            } else {
+                                domain = host_norm;
+                            }
+                            let root =
+                                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                            root.join("pages").join("_domains").join(&domain)
+                        };
+
+                        let env = if dir_exists {
+                            self.yore_load_json_if_exists(&dir.join("env.json"))
+                        } else {
+                            None
+                        };
+                        let mods = if dir_exists {
+                            self.yore_load_json_if_exists(&dir.join("modules.json"))
+                        } else {
+                            None
+                        };
+                        self.yore = Some(YoreCtx {
+                            domain,
+                            domain_dir: dir,
+                            env,
+                            modules: mods,
+                            db: db_opt,
+                            domain_dir_exists: dir_exists,
+                        });
+                        // Return 1 if the domain dir exists, otherwise 0 to signal setup needed.
+                        self.stack.push(Value::Int(if dir_exists { 1 } else { 0 }));
+                    }
+                    #[cfg(feature = "obj-yore")]
+                    151 => {
+                        // YORE_REQUEST()
+                        if argc != 0 {
+                            return Err(BasilError("YORE_REQUEST expects 0 arguments".into()));
+                        }
+                        let req = self.yore_build_request()?;
+                        self.stack.push(req);
+                    }
+                    #[cfg(feature = "obj-yore")]
+                    152 => {
+                        // YORE_RESOLVE_PAGE(req@)
+                        if argc != 1 {
+                            return Err(BasilError(
+                                "YORE_RESOLVE_PAGE expects 1 argument (req@)".into(),
+                            ));
+                        }
+                        let req = args[0].clone();
+                        let page = self.yore_resolve_page(&req)?;
+                        self.stack.push(page);
+                    }
+                    #[cfg(feature = "obj-yore")]
+                    153 => {
+                        // YORE_BUILD_CONTEXT(req@, page@)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "YORE_BUILD_CONTEXT expects 2 arguments (req@, page@)".into(),
+                            ));
+                        }
+                        let ctx = self.yore_build_context(&args[0], &args[1])?;
+                        self.stack.push(ctx);
+                    }
+                    #[cfg(feature = "obj-yore")]
+                    154 => {
+                        // YORE_RENDER_PAGE$(page@, ctx@)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "YORE_RENDER_PAGE$ expects 2 arguments (page@, ctx@)".into(),
+                            ));
+                        }
+                        let tpl = self.yore_render_page_template(&args[0], &args[1])?;
+                        self.stack.push(Value::Str(tpl));
+                    }
+                    #[cfg(feature = "obj-yore")]
+                    155 => {
+                        // YORE_HANDLE_REQUEST$()
+                        if argc != 0 {
+                            return Err(BasilError(
+                                "YORE_HANDLE_REQUEST$ expects 0 arguments".into(),
+                            ));
+                        }
+                        // lazy init if needed
+                        if self.yore.is_none() {
+                            let (mut dom, ddir) = self.yore_detect_domain_and_dir();
+                            let dir_exists = ddir.is_some();
+                            let dir: PathBuf = if let Some(d) = ddir {
                                 d
                             } else {
-                                // Derive expected domain + path
+                                // Derive expected domain + path for clearer diagnostics
                                 use std::env;
                                 let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
                                 if host.is_empty() {
                                     host = env::var("SERVER_NAME").ok().unwrap_or_default();
                                 }
                                 let host_l = host.to_ascii_lowercase();
-                                let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
-                                let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
-                                if is_local {
-                                    domain = "_local".to_string();
+                                let host_norm = if let Some(i) = host_l.find(':') {
+                                    host_l[..i].to_string()
                                 } else {
-                                    domain = host_norm;
-                                }
-                                let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                                root.join("pages").join("_domains").join(&domain)
-                            };
-
-                            let env = if dir_exists { self.yore_load_json_if_exists(&dir.join("env.json")) } else { None };
-                            let mods = if dir_exists { self.yore_load_json_if_exists(&dir.join("modules.json")) } else { None };
-                            self.yore = Some(YoreCtx { domain, domain_dir: dir, env, modules: mods, db: db_opt, domain_dir_exists: dir_exists });
-                            // Return 1 if the domain dir exists, otherwise 0 to signal setup needed.
-                            self.stack.push(Value::Int(if dir_exists { 1 } else { 0 }));
-                        }
-                        #[cfg(feature = "obj-yore")]
-                        151 => { // YORE_REQUEST()
-                            if argc != 0 { return Err(BasilError("YORE_REQUEST expects 0 arguments".into())); }
-                            let req = self.yore_build_request()?;
-                            self.stack.push(req);
-                        }
-                        #[cfg(feature = "obj-yore")]
-                        152 => { // YORE_RESOLVE_PAGE(req@)
-                            if argc != 1 { return Err(BasilError("YORE_RESOLVE_PAGE expects 1 argument (req@)".into())); }
-                            let req = args[0].clone();
-                            let page = self.yore_resolve_page(&req)?;
-                            self.stack.push(page);
-                        }
-                        #[cfg(feature = "obj-yore")]
-                        153 => { // YORE_BUILD_CONTEXT(req@, page@)
-                            if argc != 2 { return Err(BasilError("YORE_BUILD_CONTEXT expects 2 arguments (req@, page@)".into())); }
-                            let ctx = self.yore_build_context(&args[0], &args[1])?;
-                            self.stack.push(ctx);
-                        }
-                        #[cfg(feature = "obj-yore")]
-                        154 => { // YORE_RENDER_PAGE$(page@, ctx@)
-                            if argc != 2 { return Err(BasilError("YORE_RENDER_PAGE$ expects 2 arguments (page@, ctx@)".into())); }
-                            let tpl = self.yore_render_page_template(&args[0], &args[1])?;
-                            self.stack.push(Value::Str(tpl));
-                        }
-                        #[cfg(feature = "obj-yore")]
-                        155 => { // YORE_HANDLE_REQUEST$()
-                            if argc != 0 { return Err(BasilError("YORE_HANDLE_REQUEST$ expects 0 arguments".into())); }
-                            // lazy init if needed
-                            if self.yore.is_none() {
-                                let (mut dom, ddir) = self.yore_detect_domain_and_dir();
-                                let dir_exists = ddir.is_some();
-                                let dir: PathBuf = if let Some(d) = ddir {
-                                    d
-                                } else {
-                                    // Derive expected domain + path for clearer diagnostics
-                                    use std::env;
-                                    let mut host = env::var("HTTP_HOST").ok().unwrap_or_default();
-                                    if host.is_empty() { host = env::var("SERVER_NAME").ok().unwrap_or_default(); }
-                                    let host_l = host.to_ascii_lowercase();
-                                    let host_norm = if let Some(i) = host_l.find(':') { host_l[..i].to_string() } else { host_l };
-                                    let is_local = host_norm == "localhost" || host_norm == "127.0.0.1" || host_norm == "::1" || host_norm.is_empty();
-                                    if is_local { dom = "_local".to_string(); } else { dom = host_norm; }
-                                    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                                    root.join("pages").join("_domains").join(&dom)
+                                    host_l
                                 };
-                                self.yore = Some(YoreCtx { domain: dom, domain_dir: dir, env: None, modules: None, db: None, domain_dir_exists: dir_exists });
-                            }
-                            let req = self.yore_build_request()?;
-                            let page = self.yore_resolve_page(&req)?;
-                            let ctx = self.yore_build_context(&req, &page)?;
-                            let tpl = self.yore_render_page_template(&page, &ctx)?;
-                            let ctx_rc = match ctx { Value::Dict(rc)=>rc, _=> return Err(BasilError("YORE: internal error building context".into())) };
-                            let html = render::render_template(self, &tpl, Some(ctx_rc))?;
-                            self.stack.push(Value::Str(html));
+                                let is_local = host_norm == "localhost"
+                                    || host_norm == "127.0.0.1"
+                                    || host_norm == "::1"
+                                    || host_norm.is_empty();
+                                if is_local {
+                                    dom = "_local".to_string();
+                                } else {
+                                    dom = host_norm;
+                                }
+                                let root =
+                                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                                root.join("pages").join("_domains").join(&dom)
+                            };
+                            self.yore = Some(YoreCtx {
+                                domain: dom,
+                                domain_dir: dir,
+                                env: None,
+                                modules: None,
+                                db: None,
+                                domain_dir_exists: dir_exists,
+                            });
                         }
-                        148 => { // IMPLODE$(var, delim1$ [,delim2$])
-                            if !(argc == 2 || argc == 3) { return Err(BasilError("IMPLODE$ expects 2 or 3 arguments".into())); }
-                            let delim1 = match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("IMPLODE$ arg 2 must be string (delim1)".into())) };
-                            let delim2_opt: Option<String> = if argc==3 { match &args[2] { Value::Str(s)=>Some(s.clone()), _=> return Err(BasilError("IMPLODE$ arg 3 must be string (delim2)".into())) } } else { None };
-                            match &args[0] {
-                                Value::List(rc) => {
-                                    if argc != 2 { return Err(BasilError("IMPLODE$: list form expects 2 arguments".into())); }
-                                    let v = rc.borrow();
-                                    let s = v.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(&delim1);
-                                    self.stack.push(Value::Str(s));
+                        let req = self.yore_build_request()?;
+                        let page = self.yore_resolve_page(&req)?;
+                        let ctx = self.yore_build_context(&req, &page)?;
+                        let tpl = self.yore_render_page_template(&page, &ctx)?;
+                        let ctx_rc = match ctx {
+                            Value::Dict(rc) => rc,
+                            _ => {
+                                return Err(BasilError(
+                                    "YORE: internal error building context".into(),
+                                ))
+                            }
+                        };
+                        let html = render::render_template(self, &tpl, Some(ctx_rc))?;
+                        self.stack.push(Value::Str(html));
+                    }
+                    148 => {
+                        // IMPLODE$(var, delim1$ [,delim2$])
+                        if !(argc == 2 || argc == 3) {
+                            return Err(BasilError("IMPLODE$ expects 2 or 3 arguments".into()));
+                        }
+                        let delim1 = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            _ => {
+                                return Err(BasilError(
+                                    "IMPLODE$ arg 2 must be string (delim1)".into(),
+                                ))
+                            }
+                        };
+                        let delim2_opt: Option<String> = if argc == 3 {
+                            match &args[2] {
+                                Value::Str(s) => Some(s.clone()),
+                                _ => {
+                                    return Err(BasilError(
+                                        "IMPLODE$ arg 3 must be string (delim2)".into(),
+                                    ))
                                 }
-                                Value::Array(arr_rc) => {
-                                    let arr = arr_rc.as_ref();
-                                    if arr.dims.len() == 1 {
-                                        if argc != 2 { return Err(BasilError("IMPLODE$: 1-D array form expects 2 arguments".into())); }
-                                        let data = arr.data.borrow();
-                                        let s = data.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(&delim1);
-                                        self.stack.push(Value::Str(s));
-                                    } else if arr.dims.len() == 2 {
-                                        if argc != 3 { return Err(BasilError("IMPLODE$: 2-D array form expects 3 arguments (need delim2)".into())); }
-                                        let d2 = delim2_opt.as_ref().unwrap();
-                                        if arr.dims[1] != 2 { return Err(BasilError("IMPLODE$: array must have exactly 2 columns".into())); }
-                                        let rows = arr.dims[0];
-                                        let data = arr.data.borrow();
-                                        let mut parts: Vec<String> = Vec::with_capacity(rows);
-                                        for r in 0..rows {
-                                            let k = format!("{}", data[r*2].clone());
-                                            let v = format!("{}", data[r*2+1].clone());
-                                            parts.push(format!("{}{}{}", k, d2, v));
-                                        }
-                                        self.stack.push(Value::Str(parts.join(&delim1)));
-                                    } else {
-                                        return Err(BasilError("IMPLODE$: array must be 1-D or 2-D (2 columns)".into()));
+                            }
+                        } else {
+                            None
+                        };
+                        match &args[0] {
+                            Value::List(rc) => {
+                                if argc != 2 {
+                                    return Err(BasilError(
+                                        "IMPLODE$: list form expects 2 arguments".into(),
+                                    ));
+                                }
+                                let v = rc.borrow();
+                                let s = v
+                                    .iter()
+                                    .map(|x| format!("{}", x))
+                                    .collect::<Vec<_>>()
+                                    .join(&delim1);
+                                self.stack.push(Value::Str(s));
+                            }
+                            Value::Array(arr_rc) => {
+                                let arr = arr_rc.as_ref();
+                                if arr.dims.len() == 1 {
+                                    if argc != 2 {
+                                        return Err(BasilError(
+                                            "IMPLODE$: 1-D array form expects 2 arguments".into(),
+                                        ));
                                     }
-                                }
-                                Value::Dict(rc) => {
-                                    if argc != 3 { return Err(BasilError("IMPLODE$: dict form expects 3 arguments (need delim2)".into())); }
+                                    let data = arr.data.borrow();
+                                    let s = data
+                                        .iter()
+                                        .map(|x| format!("{}", x))
+                                        .collect::<Vec<_>>()
+                                        .join(&delim1);
+                                    self.stack.push(Value::Str(s));
+                                } else if arr.dims.len() == 2 {
+                                    if argc != 3 {
+                                        return Err(BasilError("IMPLODE$: 2-D array form expects 3 arguments (need delim2)".into()));
+                                    }
                                     let d2 = delim2_opt.as_ref().unwrap();
-                                    let m = rc.borrow();
-                                    let mut parts: Vec<String> = Vec::with_capacity(m.len());
-                                    for (k, v) in m.iter() {
+                                    if arr.dims[1] != 2 {
+                                        return Err(BasilError(
+                                            "IMPLODE$: array must have exactly 2 columns".into(),
+                                        ));
+                                    }
+                                    let rows = arr.dims[0];
+                                    let data = arr.data.borrow();
+                                    let mut parts: Vec<String> = Vec::with_capacity(rows);
+                                    for r in 0..rows {
+                                        let k = format!("{}", data[r * 2].clone());
+                                        let v = format!("{}", data[r * 2 + 1].clone());
                                         parts.push(format!("{}{}{}", k, d2, v));
                                     }
                                     self.stack.push(Value::Str(parts.join(&delim1)));
-                                }
-                                other => {
-                                    return Err(BasilError(format!("IMPLODE$: unsupported type {}", self.type_of(other))));
+                                } else {
+                                    return Err(BasilError(
+                                        "IMPLODE$: array must be 1-D or 2-D (2 columns)".into(),
+                                    ));
                                 }
                             }
+                            Value::Dict(rc) => {
+                                if argc != 3 {
+                                    return Err(BasilError(
+                                        "IMPLODE$: dict form expects 3 arguments (need delim2)"
+                                            .into(),
+                                    ));
+                                }
+                                let d2 = delim2_opt.as_ref().unwrap();
+                                let m = rc.borrow();
+                                let mut parts: Vec<String> = Vec::with_capacity(m.len());
+                                for (k, v) in m.iter() {
+                                    parts.push(format!("{}{}{}", k, d2, v));
+                                }
+                                self.stack.push(Value::Str(parts.join(&delim1)));
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "IMPLODE$: unsupported type {}",
+                                    self.type_of(other)
+                                )));
+                            }
                         }
-                        156 => { // SPLIT$(src$ [, delim$])
-                            if !(argc == 1 || argc == 2) { return Err(BasilError("SPLIT$ expects 1 or 2 arguments".into())); }
-                            let src = match &args[0] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("SPLIT$ arg 1 must be string".into())) };
-                            let delim = if argc == 2 {
-                                match &args[1] { Value::Str(s)=>s.clone(), _=> return Err(BasilError("SPLIT$ arg 2 must be string".into())) }
-                            } else {
-                                ",".to_string()
-                            };
+                    }
+                    156 => {
+                        // SPLIT$(src$ [, delim$])
+                        if !(argc == 1 || argc == 2) {
+                            return Err(BasilError("SPLIT$ expects 1 or 2 arguments".into()));
+                        }
+                        let src = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("SPLIT$ arg 1 must be string".into())),
+                        };
+                        let delim = if argc == 2 {
+                            match &args[1] {
+                                Value::Str(s) => s.clone(),
+                                _ => return Err(BasilError("SPLIT$ arg 2 must be string".into())),
+                            }
+                        } else {
+                            ",".to_string()
+                        };
 
-                            let mut items: Vec<String> = Vec::new();
-                            if delim.is_empty() {
-                                items.push(src);
-                            } else {
-                                let mut s = src.as_str();
-                                loop {
-                                    if let Some(i) = s.find(&delim) {
-                                        let (a,b) = s.split_at(i);
-                                        items.push(a.to_string());
-                                        s = &b[delim.len()..];
-                                    } else {
-                                        items.push(s.to_string());
-                                        break;
-                                    }
-                                }
-                            }
-                            self.stack.push(VM::make_string_array(items));
-                        }
-                        64 => { // EXEPATH$()
-                            if argc != 0 { return Err(BasilError("EXEPATH$ expects 0 arguments".into())); }
-                            let s = match std::env::current_exe() {
-                                Ok(p) => match p.parent() {
-                                    Some(dir) => dir.to_string_lossy().to_string(),
-                                    None => String::new(),
-                                },
-                                Err(_) => String::new(),
-                            };
-                            self.stack.push(Value::Str(s));
-                        }
-                        65 => { // NET_DOWNLOAD_FILE%(url$, destPath$) -> Int status code
-                            if argc != 2 { return Err(BasilError("NET_DOWNLOAD_FILE% expects 2 arguments (url$, destPath$)".into())); }
-                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=> format!("{}", other) };
-                            let dest = match &args[1] { Value::Str(s)=>s.clone(), other=> format!("{}", other) };
-                            let rc = net_download_file(&url, &dest);
-                            self.stack.push(Value::Int(rc as i64));
-                        }
-                        1 => { // LEN(arg)
-                            if argc != 1 { return Err(BasilError("LEN expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::Str(s) => {
-                                    let n = s.chars().count() as i64;
-                                    self.stack.push(Value::Int(n));
-                                }
-                                Value::Array(arr_rc) => {
-                                    let arr = arr_rc.as_ref();
-                                    let mut total: usize = 1;
-                                    for d in &arr.dims { total = total.saturating_mul(*d); }
-                                    self.stack.push(Value::Int(total as i64));
-                                }
-                                Value::List(rc) => {
-                                    let n = rc.borrow().len() as i64;
-                                    self.stack.push(Value::Int(n));
-                                }
-                                Value::Dict(rc) => {
-                                    let n = rc.borrow().len() as i64;
-                                    self.stack.push(Value::Int(n));
-                                }
-                                other => {
-                                    // Fallback: coerce to string via Display and count chars
-                                    let s = format!("{}", other);
-                                    let n = s.chars().count() as i64;
-                                    self.stack.push(Value::Int(n));
-                                }
-                            }
-                        }
-                        160 => { // FIXSTR_ENFORCE(value, n)
-                            if argc != 2 { return Err(BasilError("FIXSTR_ENFORCE expects 2 arguments (value, N)".into())); }
-                            // Coerce first arg to string if not already
-                            let s0 = match &args[0] {
-                                Value::Str(s) => s.clone(),
-                                other => format!("{}", other),
-                            };
-                            // N as integer
-                            let mut n_i: i64 = match &args[1] {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => n.trunc() as i64,
-                                other => return Err(BasilError(format!("FIXSTR_ENFORCE: N must be numeric, got {}", self.type_of(other)))),
-                            };
-                            if n_i < 0 { n_i = 0; }
-                            let n = n_i as usize;
-                            let bytes = s0.as_bytes();
-                            let res = if bytes.len() == n {
-                                s0
-                            } else if bytes.len() > n {
-                                // Truncate at last UTF-8 boundary <= n
-                                let mut cut = n;
-                                while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 { cut -= 1; }
-                                let slice = &bytes[..cut];
-                                match std::str::from_utf8(slice) {
-                                    Ok(s) => s.to_string(),
-                                    Err(_) => String::new(),
-                                }
-                            } else {
-                                // Pad with ASCII spaces to reach exactly n bytes
-                                let pad = n - bytes.len();
-                                let mut s = s0.clone();
-                                if pad > 0 { s.push_str(&" ".repeat(pad)); }
-                                s
-                            };
-                            self.stack.push(Value::Str(res));
-                        }
-                        161 => { // STRUCT_REG(name$, spec$)
-                            if argc != 2 { return Err(BasilError("STRUCT_REG expects 2 arguments (name$, spec$)".into())); }
-                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_REG: name must be string, got {}", self.type_of(other)))) };
-                            let spec = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_REG: spec must be string, got {}", self.type_of(other)))) };
-                            self.struct_reg(&name, &spec)?;
-                            self.stack.push(Value::Null);
-                        }
-                        162 => { // STRUCT_SIZEOF(name$)
-                            if argc != 1 { return Err(BasilError("STRUCT_SIZEOF expects 1 argument (name$)".into())); }
-                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_SIZEOF: name must be string, got {}", self.type_of(other)))) };
-                            let sz = self.sizeof_struct(&name).unwrap_or(0);
-                            self.stack.push(Value::Int(sz as i64));
-                        }
-                        163 => { // STRUCT_PACK(value, type$)
-                            if argc != 2 { return Err(BasilError("STRUCT_PACK expects 2 arguments (value, typeName)".into())); }
-                            let tname = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_PACK: type name must be string, got {}", self.type_of(other)))) };
-                            let dict_rc = match &args[0] { Value::Dict(rc) => rc.clone(), _ => return Err(BasilError("STRUCT_PACK: value must be a struct/dict".into())) };
-                            let bytes = self.pack_struct_bytes(&dict_rc, &tname)?;
-                            let s = String::from_utf8_lossy(&bytes).to_string();
-                            self.stack.push(Value::Str(s));
-                        }
-                        164 => { // STRUCT_UNPACK(str, type$)
-                            if argc != 2 { return Err(BasilError("STRUCT_UNPACK expects 2 arguments (buffer$, typeName)".into())); }
-                            let tname = match &args[1] { Value::Str(s)=>s.clone(), other=> return Err(BasilError(format!("STRUCT_UNPACK: type name must be string, got {}", self.type_of(other)))) };
-                            let buf = match &args[0] { Value::Str(s)=> s.as_bytes().to_vec(), other=> return Err(BasilError(format!("STRUCT_UNPACK: buffer must be string, got {}", self.type_of(other)))) };
-                            let v = self.unpack_struct_from(&buf, &tname)?;
-                            self.stack.push(v);
-                        }
-                        2 => { // MID$(s, start [,len]) -- start is 1-based
-                            if !(argc == 2 || argc == 3) { return Err(BasilError("MID$ expects 2 or 3 arguments".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("MID$ arg 1 must be string".into())) };
-                            // convert numeric args to i64 via truncation
-                            let start_i = match &args[1] {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => n.trunc() as i64,
-                                _ => return Err(BasilError("MID$ start must be numeric".into())),
-                            };
-                            let start_idx0 = if start_i <= 1 { 0usize } else { (start_i as usize) - 1 };
-                            let mut iter = s.chars();
-                            // drop start_idx0 chars
-                            for _ in 0..start_idx0 { if iter.next().is_none() { break; } }
-                            let res = if argc == 2 {
-                                iter.collect::<String>()
-                            } else {
-                                let len_i = match &args[2] {
-                                    Value::Int(i) => *i,
-                                    Value::Num(n) => n.trunc() as i64,
-                                    _ => return Err(BasilError("MID$ length must be numeric".into())),
-                                };
-                                if len_i <= 0 { String::new() } else { iter.take(len_i as usize).collect::<String>() }
-                            };
-                            self.stack.push(Value::Str(res));
-                        }
-                        3 => { // LEFT$(s, n)
-                            if argc != 2 { return Err(BasilError("LEFT$ expects 2 arguments".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("LEFT$ arg 1 must be string".into())) };
-                            let n = match &args[1] {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => n.trunc() as i64,
-                                _ => return Err(BasilError("LEFT$ count must be numeric".into())),
-                            };
-                            if n <= 0 { self.stack.push(Value::Str(String::new())); }
-                            else {
-                                let res: String = s.chars().take(n as usize).collect();
-                                self.stack.push(Value::Str(res));
-                            }
-                        }
-                        4 => { // RIGHT$(s, n)
-                            if argc != 2 { return Err(BasilError("RIGHT$ expects 2 arguments".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("RIGHT$ arg 1 must be string".into())) };
-                            let n = match &args[1] {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => n.trunc() as i64,
-                                _ => return Err(BasilError("RIGHT$ count must be numeric".into())),
-                            };
-                            if n <= 0 { self.stack.push(Value::Str(String::new())); }
-                            else {
-                                let total = s.chars().count() as i64;
-                                let take_n = if n > total { total } else { n } as usize;
-                                let skip_n = (total - take_n as i64) as usize;
-                                let res: String = s.chars().skip(skip_n).take(take_n).collect();
-                                self.stack.push(Value::Str(res));
-                            }
-                        }
-                        5 => { // INSTR(hay, needle [,start]) -- returns 0-based index or 0 if not found
-                            if !(argc == 2 || argc == 3) { return Err(BasilError("INSTR expects 2 or 3 arguments".into())); }
-                            let hay = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("INSTR arg 1 must be string".into())) };
-                            let needle = match &args[1] { Value::Str(s) => s.clone(), _ => return Err(BasilError("INSTR arg 2 must be string".into())) };
-                            let start = if argc == 3 {
-                                match &args[2] { Value::Int(i) => *i, Value::Num(n) => n.trunc() as i64, _ => return Err(BasilError("INSTR start must be numeric".into())) }
-                            } else { 0 };
-                            if needle.is_empty() {
-                                // empty needle: return start (already 0-based)
-                                let start_nonneg = if start < 0 { 0 } else { start as usize };
-                                let total_chars = hay.chars().count();
-                                let idx = if start_nonneg > total_chars { total_chars } else { start_nonneg };
-                                self.stack.push(Value::Int(idx as i64));
-                            } else {
-                                // map start (char) to byte index
-                                let start_nonneg = if start < 0 { 0 } else { start as usize };
-                                let mut byte_idx = 0usize;
-                                let mut seen = 0usize;
-                                for (bidx, _) in hay.char_indices() {
-                                    if seen == start_nonneg { byte_idx = bidx; break; }
-                                    seen += 1;
-                                    byte_idx = hay.len();
-                                }
-                                if start_nonneg == 0 { byte_idx = 0; }
-                                if start_nonneg > hay.chars().count() { self.stack.push(Value::Int(0)); }
-                                else {
-                                    let slice = &hay[byte_idx..];
-                                    if let Some(rel) = slice.find(&needle) {
-                                        let abs_byte = byte_idx + rel;
-                                        // convert abs_byte to char index
-                                        let idx = hay[..abs_byte].chars().count();
-                                        self.stack.push(Value::Int(idx as i64));
-                                    } else {
-                                        self.stack.push(Value::Int(0));
-                                    }
-                                }
-                            }
-                        }
-                        6 => { // INPUT$([prompt])
-                            if !(argc == 0 || argc == 1) { return Err(BasilError("INPUT$ expects 0 or 1 argument".into())); }
-                            if argc == 1 {
-                                let prompt = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
-                                print!("{}", prompt);
-                                let _ = io::stdout().flush();
-                            }
-                            if self.test_mode {
-                                // enforce max inputs
-                                self.mocked_inputs += 1;
-                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
-                                let val = if let Some(mock) = &mut self.mock { mock.read_line() } else { String::new() };
-                                let shown = if val.is_empty() { "<BLANK+ENTER>".to_string() } else { val.clone() };
-                                let mut msg = format!("Mock input to INPUT given as {}", shown);
-                                if self.trace {
-                                    if let Some(p) = &self.script_path { if self.current_line > 0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } }
-                                }
-                                println!("{}", msg);
-                                self.stack.push(Value::Str(val));
-                            } else {
-                                let mut input = String::new();
-                                io::stdin().read_line(&mut input).map_err(|e| BasilError(format!("INPUT$ read error: {}", e)))?;
-                                while input.ends_with('\n') || input.ends_with('\r') { input.pop(); }
-                                self.stack.push(Value::Str(input));
-                            }
-                        }
-                        7 => { // INKEY$() — non-blocking, returns "" if no key available
-                            if argc != 0 { return Err(BasilError("INKEY$ expects 0 arguments".into())); }
-                            if self.test_mode {
-                                self.mocked_inputs += 1;
-                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
-                                let ch = if let Some(mock) = &mut self.mock { mock.read_char() } else { None };
-                                let s = match ch { Some('\r') => "\r".to_string(), Some(c) => c.to_string(), None => String::new() };
-                                let shown = match ch { Some('\r') => "<ENTER>".to_string(), Some(c) => c.to_string(), None => String::new() };
-                                let mut msg = format!("Mock input to INKEY$ given as {}", shown);
-                                if self.trace { if let Some(p) = &self.script_path { if self.current_line>0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } } }
-                                println!("{}", msg);
-                                self.stack.push(Value::Str(s));
-                            } else {
-                                enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                                let s = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
-                                    match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                        Event::Key(KeyEvent { code, .. }) => match code {
-                                            KeyCode::Char(c) => c.to_string(),
-                                            KeyCode::Enter => "\r".to_string(),
-                                            KeyCode::Backspace => "\u{0008}".to_string(),
-                                            KeyCode::Tab => "\t".to_string(),
-                                            KeyCode::Esc => "\u{001B}".to_string(),
-                                            _ => String::new(),
-                                        },
-                                        _ => String::new(),
-                                    }
-                                } else { String::new() };
-                                let _ = disable_raw_mode();
-                                self.stack.push(Value::Str(s));
-                            }
-                        }
-                        8 => { // INKEY%() — non-blocking, returns 0 if no key available
-                            if argc != 0 { return Err(BasilError("INKEY% expects 0 arguments".into())); }
-                            if self.test_mode {
-                                self.mocked_inputs += 1;
-                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
-                                let ch = if let Some(mock) = &mut self.mock { mock.read_char() } else { None };
-                                let code_i: i64 = match ch { Some('\r') => 13, Some(c) => c as i64, None => 0 };
-                                let shown = match ch { Some('\r') => "<ENTER>".to_string(), Some(c) => c.to_string(), None => String::new() };
-                                let mut msg = format!("Mock input to INKEY% given as {}", shown);
-                                if self.trace { if let Some(p) = &self.script_path { if self.current_line>0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } } }
-                                println!("{}", msg);
-                                self.stack.push(Value::Int(code_i));
-                            } else {
-                                enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                                let code_i: i64 = if poll(Duration::from_millis(0)).map_err(|e| BasilError(format!("poll: {}", e)))? {
-                                    match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                        Event::Key(KeyEvent { code, .. }) => {
-                                            match code {
-                                                KeyCode::Char(c) => c as i64,
-                                                KeyCode::Enter => 13,
-                                                KeyCode::Backspace => 8,
-                                                KeyCode::Tab => 9,
-                                                KeyCode::Esc => 27,
-                                                KeyCode::Up => 1000,
-                                                KeyCode::Down => 1001,
-                                                KeyCode::Left => 1002,
-                                                KeyCode::Right => 1003,
-                                                KeyCode::Home => 1004,
-                                                KeyCode::End => 1005,
-                                                KeyCode::PageUp => 1006,
-                                                KeyCode::PageDown => 1007,
-                                                KeyCode::Insert => 1008,
-                                                KeyCode::Delete => 1009,
-                                                KeyCode::F(n) => 1100 + n as i64,
-                                                _ => 0,
-                                            }
-                                        }
-                                        _ => 0,
-                                    }
-                                } else { 0 };
-                                let _ = disable_raw_mode();
-                                self.stack.push(Value::Int(code_i));
-                            }
-                        }
-                        9 => { // TYPE$(value)
-                            if argc != 1 { return Err(BasilError("TYPE$ expects 1 argument".into())); }
-                            let s = self.type_of(&args[0]);
-                            self.stack.push(Value::Str(s));
-                        }
-                        10 => { // HTML/HTML$(x)
-                            if argc != 1 { return Err(BasilError("HTML expects 1 argument".into())); }
-                            let s = format!("{}", args[0]);
-                            let mut out = String::with_capacity(s.len());
-                            for ch in s.chars() {
-                                match ch {
-                                    '&' => out.push_str("&amp;"),
-                                    '<' => out.push_str("&lt;"),
-                                    '>' => out.push_str("&gt;"),
-                                    '"' => out.push_str("&quot;"),
-                                    '\'' => out.push_str("&#39;"),
-                                    _ => out.push(ch),
-                                }
-                            }
-                            self.stack.push(Value::Str(out));
-                        },
-                        11 => { // GET$()
-                            if argc != 0 { return Err(BasilError("GET$ expects 0 arguments".into())); }
-                            self.ensure_get_params();
-                            let vals = self.get_params_cache.clone().unwrap_or_default();
-                            let arr = VM::make_string_array(vals);
-                            self.stack.push(arr);
-                        }
-                        12 => { // POST$()
-                            if argc != 0 { return Err(BasilError("POST$ expects 0 arguments".into())); }
-                            self.ensure_post_params();
-                            let vals = self.post_params_cache.clone().unwrap_or_default();
-                            let arr = VM::make_string_array(vals);
-                            self.stack.push(arr);
-                        }
-                        13 => { // REQUEST$()
-                            if argc != 0 { return Err(BasilError("REQUEST$ expects 0 arguments".into())); }
-                            self.ensure_get_params();
-                            self.ensure_post_params();
-                            let mut vals = self.get_params_cache.clone().unwrap_or_default();
-                            if let Some(mut p) = self.post_params_cache.clone() { vals.append(&mut p); }
-                            let arr = VM::make_string_array(vals);
-                            self.stack.push(arr);
-                        }
-                        14 => { // UCASE$(s)
-                            if argc != 1 { return Err(BasilError("UCASE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("UCASE$ arg must be string".into())) };
-                            self.stack.push(Value::Str(s.to_uppercase()));
-                        }
-                        15 => { // LCASE$(s)
-                            if argc != 1 { return Err(BasilError("LCASE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("LCASE$ arg must be string".into())) };
-                            self.stack.push(Value::Str(s.to_lowercase()));
-                        }
-                        16 => { // TRIM$(s)
-                            if argc != 1 { return Err(BasilError("TRIM$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("TRIM$ arg must be string".into())) };
-                            self.stack.push(Value::Str(s.trim().to_string()));
-                        }
-                        17 => { // CHR$(n)
-                            if argc != 1 { return Err(BasilError("CHR$ expects 1 argument".into())); }
-                            let n = match &args[0] {
-                                Value::Int(i) => *i,
-                                Value::Num(f) => f.trunc() as i64,
-                                _ => return Err(BasilError("CHR$ arg must be numeric".into())),
-                            };
-                            let out = if n < 0 || n > 0x10FFFF { String::new() } else { std::char::from_u32(n as u32).map(|c| c.to_string()).unwrap_or_default() };
-                            self.stack.push(Value::Str(out));
-                        }
-                        18 => { // ASC%(s)
-                            if argc != 1 { return Err(BasilError("ASC% expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s, _ => return Err(BasilError("ASC% arg must be string".into())) };
-                            let code: i64 = s.chars().next().map(|c| c as u32 as i64).unwrap_or(0);
-                            self.stack.push(Value::Int(code));
-                        }
-                        19 => { // INPUTC$([prompt])
-                            if !(argc == 0 || argc == 1) { return Err(BasilError("INPUTC$ expects 0 or 1 argument".into())); }
-                            if argc == 1 {
-                                let prompt = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
-                                print!("{}", prompt);
-                                let _ = io::stdout().flush();
-                            }
-                            if self.test_mode {
-                                self.mocked_inputs += 1;
-                                if let Some(maxn) = self.max_mocked_inputs { if self.mocked_inputs > maxn { let loc = if let Some(p) = &self.script_path { if self.current_line>0 { format!(" at {}:{}", std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p), self.current_line) } else { String::new() } } else { String::new() }; return Err(BasilError(format!("Hit --max-inputs={}{}", maxn, loc))); } }
-                                let ch = if let Some(mock) = &mut self.mock { mock.read_char() } else { None };
-                                let s = match ch { Some('\r') => String::new(), Some(c) => c.to_string(), None => String::new() };
-                                if let Some(c) = ch { if c != '\r' { print!("{}", c); let _ = io::stdout().flush(); } }
-                                let shown = match ch { Some('\r') => "<ENTER>".to_string(), Some(c) => c.to_string(), None => String::new() };
-                                let mut msg = format!("Mock input to INPUTC$ given as {}", shown);
-                                if self.trace { if let Some(p) = &self.script_path { if self.current_line>0 { let fname = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p); msg.push_str(&format!(" (at {}:{})", fname, self.current_line)); } } }
-                                println!("{}", msg);
-                                self.stack.push(Value::Str(s));
-                            } else {
-                                // Enable raw mode and ensure we only capture a single key (no echo from console)
-                                enable_raw_mode().map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
-                                // Drain any pending events (typeahead) to avoid consuming earlier keys
-                                loop {
-                                    match poll(Duration::from_millis(0)) {
-                                        Ok(true) => { let _ = read(); }
-                                        Ok(false) => break,
-                                        Err(e) => { let _ = disable_raw_mode(); return Err(BasilError(format!("poll: {}", e))); }
-                                    }
-                                }
-                                // Wait for the next key event (any kind). Capture only ASCII chars; others => "".
-                                let s = loop {
-                                    match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
-                                        Event::Key(KeyEvent { code, .. }) => {
-                                            let out = match code {
-                                                KeyCode::Char(c) if c.is_ascii() => c.to_string(),
-                                                _ => String::new(),
-                                            };
-                                            break out;
-                                        }
-                                        _ => { /* ignore non-key events */ }
-                                    }
-                                };
-                                // Echo the captured ASCII character exactly once
-                                if !s.is_empty() { print!("{}", s); let _ = io::stdout().flush(); }
-                                let _ = disable_raw_mode();
-                                self.stack.push(Value::Str(s));
-                            }
-                        }
-                        20 => { // ESCAPE$(s) - SQL string literal escape (single quotes doubled)
-                            if argc != 1 { return Err(BasilError("ESCAPE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), _ => return Err(BasilError("ESCAPE$ arg must be string".into())) };
-                            let out = s.replace("'", "''");
-                            self.stack.push(Value::Str(out));
-                        }
-                        21 => { // UNESCAPE$(s) - reverse SQL string literal escaping ('' -> ')
-                            if argc != 1 { return Err(BasilError("UNESCAPE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("UNESCAPE$ arg must be string".into())) };
-                            let mut out = String::with_capacity(s.len());
-                            let mut it = s.chars().peekable();
-                            while let Some(c) = it.next() {
-                                if c == '\'' {
-                                    if let Some('\'') = it.peek().copied() { it.next(); out.push('\''); } else { out.push('\''); }
-                                } else { out.push(c); }
-                            }
-                            self.stack.push(Value::Str(out));
-                        }
-                        22 => { // URLENCODE$(s) - application/x-www-form-urlencoded encode (spaces -> '+')
-                            if argc != 1 { return Err(BasilError("URLENCODE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("URLENCODE$ arg must be string".into())) };
-                            let out = self.url_encode_form(s);
-                            self.stack.push(Value::Str(out));
-                        }
-                        23 => { // URLDECODE$(s) - application/x-www-form-urlencoded decode ('+' -> space)
-                            if argc != 1 { return Err(BasilError("URLDECODE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.as_str(), _ => return Err(BasilError("URLDECODE$ arg must be string".into())) };
-                            let out = self.url_decode_form(s);
-                            self.stack.push(Value::Str(out));
-                        }
-                        24 => { // SLEEP(ms)
-                            if argc != 1 { return Err(BasilError("SLEEP expects 1 argument".into())); }
-                            let ms = self.to_i64(&args[0])?;
-                            let msu = if ms < 0 { 0 } else { ms as u64 };
-                            std::thread::sleep(std::time::Duration::from_millis(msu));
-                            self.stack.push(Value::Int(0));
-                        }
-                        25 => { // STR$(x)
-                            if argc != 1 { return Err(BasilError("STR$ expects 1 argument".into())); }
-                            let s = format!("{}", args[0]);
-                            self.stack.push(Value::Str(s));
-                        }
-                        26 => { // STRING$(n, ch$ or code%)
-                            if argc != 2 { return Err(BasilError("STRING$ expects 2 arguments".into())); }
-                            let n = self.to_i64(&args[0])?;
-                            let n = if n <= 0 { 0usize } else { (n as usize).min(1_000_000) };
-                            let unit = match &args[1] {
-                                Value::Str(s) => s.clone(),
-                                other => {
-                                    let code = self.to_i64(other)?;
-                                    let ch = std::char::from_u32((code as u32) & 0xFF).unwrap_or('\u{0000}');
-                                    ch.to_string()
-                                }
-                            };
-                            let out = if unit.is_empty() || n == 0 { String::new() } else { unit.repeat(n) };
-                            self.stack.push(Value::Str(out));
-                        }
-                        27 => { // VAL(s$)
-                            if argc != 1 { return Err(BasilError("VAL expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.trim(), other => return Err(BasilError(format!("VAL: expected string, got {}", self.type_of(other)))) };
-                            if let Ok(i) = s.parse::<i64>() { self.stack.push(Value::Int(i)); }
-                            else if let Ok(f) = s.parse::<f64>() { self.stack.push(Value::Num(f)); }
-                            else { self.stack.push(Value::Num(0.0)); }
-                        }
-                        28 => { // REQUEST_BODY$()
-                            if argc != 0 { return Err(BasilError("REQUEST_BODY$ expects 0 arguments".into())); }
-                            self.ensure_request_body();
-                            let s = self.request_body_cache.clone().unwrap_or_default();
-                            self.stack.push(Value::Str(s));
-                        }
-                        // --- Math intrinsics ---
-                        70 => { // ABS(x)
-                            if argc != 1 { return Err(BasilError("ABS expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::Int(i) => {
-                                    if *i >= 0 { self.stack.push(Value::Int(*i)); }
-                                    else if *i == i64::MIN { self.stack.push(Value::Num((-(i64::MIN as f64)).abs())); }
-                                    else { self.stack.push(Value::Int(-*i)); }
-                                }
-                                Value::Num(n) => { self.stack.push(Value::Num(n.abs())); }
-                                other => return Err(BasilError(format!("ABS: expected numeric, got {}", self.type_of(other)))),
-                            }
-                        }
-                        71 => { // ATN(x) -> radians
-                            if argc != 1 { return Err(BasilError("ATN expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.atan()));
-                        }
-                        72 => { // COS(x)
-                            if argc != 1 { return Err(BasilError("COS expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.cos()));
-                        }
-                        73 => { // EXP(x)
-                            if argc != 1 { return Err(BasilError("EXP expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.exp()));
-                        }
-                        74 => { // INT(x) -> floor for floats, identity for ints; returns integer
-                            if argc != 1 { return Err(BasilError("INT expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::Int(i) => self.stack.push(Value::Int(*i)),
-                                Value::Num(n) => self.stack.push(Value::Int(n.floor() as i64)),
-                                other => return Err(BasilError(format!("INT: expected numeric, got {}", self.type_of(other)))),
-                            }
-                        }
-                        75 => { // LOG(x) natural log
-                            if argc != 1 { return Err(BasilError("LOG expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; if x <= 0.0 { return Err(BasilError("LOG domain error (x must be > 0)".into())); } self.stack.push(Value::Num(x.ln()));
-                        }
-                        76 => { // RND() or RND(n)
-                            fn xorshift64star(state: &mut u64) -> u64 {
-                                let mut x = *state;
-                                if x == 0 { x = 0x9E3779B97F4A7C15; }
-                                x ^= x >> 12;
-                                x ^= x << 25;
-                                x ^= x >> 27;
-                                *state = x;
-                                x.wrapping_mul(2685821657736338717)
-                            }
-                            if argc == 0 {
-                                let r = xorshift64star(&mut self.rnd_state);
-                                let f = (r as f64) / ((u64::MAX as f64) + 1.0);
-                                self.stack.push(Value::Num(f));
-                            } else if argc == 1 {
-                                let n = self.to_i64(&args[0])?;
-                                if n <= 0 { self.stack.push(Value::Int(0)); }
-                                else {
-                                    let r = xorshift64star(&mut self.rnd_state);
-                                    let v = (r % (n as u64)) as i64;
-                                    self.stack.push(Value::Int(v));
-                                }
-                            } else {
-                                return Err(BasilError("RND expects 0 or 1 argument".into()));
-                            }
-                        }
-                        77 => { // SIN(x)
-                            if argc != 1 { return Err(BasilError("SIN expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.sin()));
-                        }
-                        78 => { // SQR(x)
-                            if argc != 1 { return Err(BasilError("SQR expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; if x < 0.0 { return Err(BasilError("SQR domain error (x must be >= 0)".into())); } self.stack.push(Value::Num(x.sqrt()));
-                        }
-                        79 => { // TAN(x)
-                            if argc != 1 { return Err(BasilError("TAN expects 1 argument".into())); }
-                            let x = self.to_f64(&args[0])?; self.stack.push(Value::Num(x.tan()));
-                        }
-                        // --- PRINT helpers ---
-                        80 => { // SPC(n) -> string of spaces
-                            if argc != 1 { return Err(BasilError("SPC expects 1 argument".into())); }
-                            let n = self.to_i64(&args[0])?; let n = if n <= 0 { 0usize } else { (n as usize).min(1_000_000) }; self.stack.push(Value::Str(" ".repeat(n)));
-                        }
-                        81 => { // TAB(n) -> spaces to reach column n (1-based)
-                            if argc != 1 { return Err(BasilError("TAB expects 1 argument".into())); }
-                            let target = self.to_i64(&args[0])?; let target = if target < 1 { 1 } else { target } as usize;
-                            let cur = self.out_col + 1; let spaces = if target > cur { target - cur } else { 0 };
-                            self.stack.push(Value::Str(" ".repeat(spaces.min(1_000_000))));
-                        }
-                        82 => { // AT(n) -> alias for TAB(n)
-                            if argc != 1 { return Err(BasilError("AT expects 1 argument".into())); }
-                            let target = self.to_i64(&args[0])?; let target = if target < 1 { 1 } else { target } as usize;
-                            let cur = self.out_col + 1; let spaces = if target > cur { target - cur } else { 0 };
-                            self.stack.push(Value::Str(" ".repeat(spaces.min(1_000_000))));
-                        }
-                        83 => { // USING$(fmt$, args...)
-                            if argc < 1 { return Err(BasilError("USING$ expects at least a format string".into())); }
-                            let fmt = match &args[0] { Value::Str(s)=>s.as_str(), other=> return Err(BasilError(format!("USING$: first arg must be string, got {}", self.type_of(other)))) };
-                            // Simple printf-like formatter: %d, %f, %s with optional width and precision (e.g. %8.2f). Supports %% for literal percent.
-                            let mut out = String::new();
-                            let mut i = 0usize; let mut ai = 1usize;
-                            let chars: Vec<char> = fmt.chars().collect();
-                            while i < chars.len() {
-                                if chars[i] != '%' { out.push(chars[i]); i += 1; continue; }
-                                i += 1; if i >= chars.len() { out.push('%'); break; }
-                                if chars[i] == '%' { out.push('%'); i += 1; continue; }
-                                // flags
-                                let mut left = false; let mut zero = false;
-                                loop {
-                                    if i < chars.len() && (chars[i] == '-' || chars[i] == '0') {
-                                        if chars[i] == '-' { left = true; } else { zero = true; }
-                                        i += 1; continue;
-                                    }
+                        let mut items: Vec<String> = Vec::new();
+                        if delim.is_empty() {
+                            items.push(src);
+                        } else {
+                            let mut s = src.as_str();
+                            loop {
+                                if let Some(i) = s.find(&delim) {
+                                    let (a, b) = s.split_at(i);
+                                    items.push(a.to_string());
+                                    s = &b[delim.len()..];
+                                } else {
+                                    items.push(s.to_string());
                                     break;
                                 }
-                                // width
-                                let mut width: Option<usize> = None; let mut wv = 0usize; let mut saw_w = false;
-                                while i < chars.len() && chars[i].is_ascii_digit() {
-                                    saw_w = true; wv = wv * 10 + (chars[i] as u8 - b'0') as usize; i += 1;
+                            }
+                        }
+                        self.stack.push(VM::make_string_array(items));
+                    }
+                    64 => {
+                        // EXEPATH$()
+                        if argc != 0 {
+                            return Err(BasilError("EXEPATH$ expects 0 arguments".into()));
+                        }
+                        let s = match std::env::current_exe() {
+                            Ok(p) => match p.parent() {
+                                Some(dir) => dir.to_string_lossy().to_string(),
+                                None => String::new(),
+                            },
+                            Err(_) => String::new(),
+                        };
+                        self.stack.push(Value::Str(s));
+                    }
+                    65 => {
+                        // NET_DOWNLOAD_FILE%(url$, destPath$) -> Int status code
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "NET_DOWNLOAD_FILE% expects 2 arguments (url$, destPath$)".into(),
+                            ));
+                        }
+                        let url = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let dest = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let rc = net_download_file(&url, &dest);
+                        self.stack.push(Value::Int(rc as i64));
+                    }
+                    1 => {
+                        // LEN(arg)
+                        if argc != 1 {
+                            return Err(BasilError("LEN expects 1 argument".into()));
+                        }
+                        match &args[0] {
+                            Value::Str(s) => {
+                                let n = s.chars().count() as i64;
+                                self.stack.push(Value::Int(n));
+                            }
+                            Value::Array(arr_rc) => {
+                                let arr = arr_rc.as_ref();
+                                let mut total: usize = 1;
+                                for d in &arr.dims {
+                                    total = total.saturating_mul(*d);
                                 }
-                                if saw_w { width = Some(wv.min(1_000_000)); }
-                                // precision
-                                let mut prec: Option<usize> = None;
-                                if i < chars.len() && chars[i] == '.' { i += 1; let mut pv = 0usize; let mut saw_p=false; while i < chars.len() && chars[i].is_ascii_digit() { saw_p=true; pv = pv*10 + (chars[i] as u8 - b'0') as usize; i += 1; } if saw_p { prec = Some(pv.min(20)); } }
-                                if i >= chars.len() { break; }
-                                let ty = chars[i]; i += 1;
-                                if ai >= args.len() { return Err(BasilError("USING$: not enough arguments for format".into())); }
-                                let s = match ty {
-                                    'd' | 'i' => {
-                                        let v = self.to_i64(&args[ai])?; format!("{}", v)
-                                    }
-                                    'f' => {
-                                        let v = self.to_f64(&args[ai])?; let p = prec.unwrap_or(6); format!("{:.*}", p, v)
-                                    }
-                                    's' => {
-                                        match &args[ai] { Value::Str(s)=>s.clone(), other=> format!("{}", other) }
-                                    }
-                                    c => return Err(BasilError(format!("USING$: unsupported format type '%{}'", c))),
-                                };
-                                ai += 1;
-                                // apply width/padding/alignment
-                                if let Some(w) = width { if s.len() < w { let padc = if zero && !left { '0' } else { ' ' }; if left { let mut t=s.clone(); t.push_str(&padc.to_string().repeat(w - s.len())); out.push_str(&t); } else { out.push_str(&padc.to_string().repeat(w - s.len())); out.push_str(&s); } } else { out.push_str(&s); } } else { out.push_str(&s); }
+                                self.stack.push(Value::Int(total as i64));
                             }
-                            self.stack.push(Value::Str(out));
-                        }
-                        40 => { // FOPEN(path$, mode$) -> fh%
-                            if argc != 2 { return Err(BasilError("FOPEN expects 2 arguments".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let mode = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            if path.contains('\u{0000}') { return Err(BasilError("FOPEN: invalid NUL in path".into())); }
-                            let m = mode.to_ascii_lowercase();
-                            let text = !m.contains('b');
-                            let plus = m.contains('+');
-                            let mut opts = OpenOptions::new();
-                            let (mut readable, mut writable) = (false, false);
-                            if m.starts_with('r') { readable = true; opts.read(true); if plus { writable = true; opts.write(true); } }
-                            else if m.starts_with('w') { writable = true; opts.write(true).create(true).truncate(true); if plus { readable = true; opts.read(true); } }
-                            else if m.starts_with('a') { writable = true; opts.append(true).create(true); if plus { readable = true; opts.read(true); opts.write(true); } }
-                            else { return Err(BasilError(format!("FOPEN: invalid mode '{}'; expected r/w/a variants", mode))); }
-                            match opts.open(&path) {
-                                Ok(file) => {
-                                    let fh = self.next_fh; self.next_fh += 1;
-                                    let entry = FileHandleEntry { file, text, readable, writable, owner_depth: self.frames.len() };
-                                    self.file_table.insert(fh, entry);
-                                    self.stack.push(Value::Int(fh));
-                                }
-                                Err(_e) => {
-                                    // Non-throwing failure: return -1 to signal open error
-                                    self.stack.push(Value::Int(-1));
-                                }
+                            Value::List(rc) => {
+                                let n = rc.borrow().len() as i64;
+                                self.stack.push(Value::Int(n));
+                            }
+                            Value::Dict(rc) => {
+                                let n = rc.borrow().len() as i64;
+                                self.stack.push(Value::Int(n));
+                            }
+                            other => {
+                                // Fallback: coerce to string via Display and count chars
+                                let s = format!("{}", other);
+                                let n = s.chars().count() as i64;
+                                self.stack.push(Value::Int(n));
                             }
                         }
-                        41 => { // FCLOSE fh%
-                            if argc != 1 { return Err(BasilError("FCLOSE expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?; let _ = self.fh_close(h); self.stack.push(Value::Bool(true));
+                    }
+                    160 => {
+                        // FIXSTR_ENFORCE(value, n)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "FIXSTR_ENFORCE expects 2 arguments (value, N)".into(),
+                            ));
                         }
-                        42 => { // FFLUSH fh%
-                            if argc != 1 { return Err(BasilError("FFLUSH expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; e.file.flush().map_err(|er| BasilError(format!("FFLUSH error: {}", er)))?; self.stack.push(Value::Bool(true));
-                        }
-                        43 => { // FEOF(fh%) -> BOOL
-                            if argc != 1 { return Err(BasilError("FEOF expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; let cur = e.file.stream_position().map_err(|er| BasilError(format!("FEOF tell: {}", er)))?; let mut b=[0u8;1]; let n = e.file.read(&mut b).map_err(|er| BasilError(format!("FEOF read: {}", er)))?; if n>0 { let _ = e.file.seek(SeekFrom::Start(cur)); }
-                            self.stack.push(Value::Bool(n==0));
-                        }
-                        44 => { // FTELL&(fh%) -> LONG
-                            if argc != 1 { return Err(BasilError("FTELL& expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; let pos = e.file.stream_position().map_err(|er| BasilError(format!("FTELL: {}", er)))?; self.stack.push(Value::Int(pos as i64));
-                        }
-                        45 => { // FSEEK fh%, offset&, whence%
-                            if argc != 3 { return Err(BasilError("FSEEK expects 3 arguments".into())); }
-                            let h = self.to_i64(&args[0])?; let off = self.to_i64(&args[1])?; let wh = self.to_i64(&args[2])?; let e = self.fh_get_mut(h)?;
-                            let whence = match wh { 0 => SeekFrom::Start(off as u64), 1 => SeekFrom::Current(off), 2 => SeekFrom::End(off), _ => return Err(BasilError("FSEEK: whence must be 0,1,2".into())) };
-                            let _ = e.file.seek(whence).map_err(|er| BasilError(format!("FSEEK: {}", er)))?; self.stack.push(Value::Bool(true));
-                        }
-                        46 => { // FREAD$(fh%, n&) -> STRING
-                            if argc != 2 { return Err(BasilError("FREAD$ expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?; let n = self.to_i64(&args[1])?; if n <= 0 { self.stack.push(Value::Str(String::new())); }
-                            else { let e = self.fh_get_mut(h)?; if !e.readable { return Err(BasilError("FREAD$: handle not opened for reading".into())); } let mut buf = vec![0u8; n as usize]; let got = e.file.read(&mut buf).map_err(|er| BasilError(format!("FREAD$: {}", er)))?; buf.truncate(got); let s = if e.text { String::from_utf8_lossy(&buf).to_string() } else { String::from_utf8_lossy(&buf).to_string() }; self.stack.push(Value::Str(s)); }
-                        }
-                        47 => { // FREADLINE$(fh%) -> STRING
-                            if argc != 1 { return Err(BasilError("FREADLINE$ expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; if !e.readable { return Err(BasilError("FREADLINE$: handle not opened for reading".into())); }
-                            let mut out: Vec<u8> = Vec::new();
-                            let mut buf = [0u8;1];
-                            loop {
-                                let n = e.file.read(&mut buf).map_err(|er| BasilError(format!("FREADLINE$: {}", er)))?;
-                                if n == 0 { break; }
-                                if buf[0] == b'\n' { break; }
-                                out.push(buf[0]);
+                        // Coerce first arg to string if not already
+                        let s0 = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        // N as integer
+                        let mut n_i: i64 = match &args[1] {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => n.trunc() as i64,
+                            other => {
+                                return Err(BasilError(format!(
+                                    "FIXSTR_ENFORCE: N must be numeric, got {}",
+                                    self.type_of(other)
+                                )))
                             }
-                            if out.ends_with(&[b'\r']) { out.pop(); }
-                            let s = if e.text { String::from_utf8_lossy(&out).to_string() } else { String::from_utf8_lossy(&out).to_string() };
-                            self.stack.push(Value::Str(s));
+                        };
+                        if n_i < 0 {
+                            n_i = 0;
                         }
-                        48 => { // FWRITE fh%, s$
-                            if argc != 2 { return Err(BasilError("FWRITE expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; if !e.writable { return Err(BasilError("FWRITE: handle not opened for writing".into())); }
-                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            e.file.write_all(s.as_bytes()).map_err(|er| BasilError(format!("FWRITE: {}", er)))?; self.stack.push(Value::Bool(true));
-                        }
-                        49 => { // FWRITELN fh%, s$
-                            if argc != 2 { return Err(BasilError("FWRITELN expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?; let e = self.fh_get_mut(h)?; if !e.writable { return Err(BasilError("FWRITELN: handle not opened for writing".into())); }
-                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            e.file.write_all(s.as_bytes()).map_err(|er| BasilError(format!("FWRITELN: {}", er)))?; e.file.write_all(b"\n").map_err(|er| BasilError(format!("FWRITELN: {}", er)))?; self.stack.push(Value::Bool(true));
-                        }
-                        50 => { // READFILE$(path$)
-                            if argc != 1 { return Err(BasilError("READFILE$ expects 1 argument".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let data = fs::read(&path).map_err(|e| BasilError(format!("READFILE$ {}: {}", path, e)))?; let s = String::from_utf8_lossy(&data).to_string(); self.stack.push(Value::Str(s));
-                        }
-                        51 => { // WRITEFILE path$, data$
-                            if argc != 2 { return Err(BasilError("WRITEFILE expects 2 arguments".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let mut f = OpenOptions::new().write(true).create(true).truncate(true).open(&path).map_err(|e| BasilError(format!("WRITEFILE {}: {}", path, e)))?; f.write_all(s.as_bytes()).map_err(|e| BasilError(format!("WRITEFILE {}: {}", path, e)))?; f.flush().ok(); self.stack.push(Value::Null);
-                        }
-                        52 => { // APPENDFILE path$, data$
-                            if argc != 2 { return Err(BasilError("APPENDFILE expects 2 arguments".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let s = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let mut f = OpenOptions::new().write(true).create(true).append(true).open(&path).map_err(|e| BasilError(format!("APPENDFILE {}: {}", path, e)))?; f.write_all(s.as_bytes()).map_err(|e| BasilError(format!("APPENDFILE {}: {}", path, e)))?; f.flush().ok(); self.stack.push(Value::Null);
-                        }
-                        53 => { // COPY src$, dst$
-                            if argc != 2 { return Err(BasilError("COPY expects 2 arguments".into())); }
-                            let src = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let dst = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let _ = fs::copy(&src, &dst).map_err(|e| BasilError(format!("COPY {} -> {}: {}", src, dst, e)))?; self.stack.push(Value::Null);
-                        }
-                        54 => { // MOVE src$, dst$
-                            if argc != 2 { return Err(BasilError("MOVE expects 2 arguments".into())); }
-                            let src = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let dst = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            fs::rename(&src, &dst).map_err(|e| BasilError(format!("MOVE {} -> {}: {}", src, dst, e)))?; self.stack.push(Value::Null);
-                        }
-                        55 => { // RENAME path$, newname$
-                            if argc != 2 { return Err(BasilError("RENAME expects 2 arguments".into())); }
-                            let src = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let newname = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let p = Path::new(&src); let dir = p.parent().unwrap_or(Path::new(".")); let dst = dir.join(newname);
-                            fs::rename(&src, &dst).map_err(|e| BasilError(format!("RENAME {} -> {}: {}", src, dst.display(), e)))?; self.stack.push(Value::Null);
-                        }
-                        56 => { // DELETE path$
-                            if argc != 1 { return Err(BasilError("DELETE expects 1 argument".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            fs::remove_file(&path).map_err(|e| BasilError(format!("DELETE {}: {}", path, e)))?; self.stack.push(Value::Null);
-                        }
-                        57 => { // DIR$(pattern$) -> STRING[]
-                            if argc != 1 { return Err(BasilError("DIR$ expects 1 argument".into())); }
-                            let patt = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let p = Path::new(&patt);
-                            let (dir, patstr): (PathBuf, String) = if p.components().count() > 1 {
-                                (p.parent().unwrap_or(Path::new(".")).to_path_buf(), p.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string())
-                            } else { (PathBuf::from("."), patt.clone()) };
-                            let mut names: Vec<String> = Vec::new();
-                            for ent in fs::read_dir(&dir).map_err(|e| BasilError(format!("DIR$: {}: {}", dir.display(), e)))? {
-                                let ent = ent.map_err(|e| BasilError(format!("DIR$: {}", e)))?;
-                                let md = ent.metadata().map_err(|e| BasilError(format!("DIR$: {}", e)))?;
-                                if !md.is_file() { continue; }
-                                let name = ent.file_name().to_string_lossy().to_string();
-                                if self.glob_match_simple(&patstr, &name) { names.push(name); }
+                        let n = n_i as usize;
+                        let bytes = s0.as_bytes();
+                        let res = if bytes.len() == n {
+                            s0
+                        } else if bytes.len() > n {
+                            // Truncate at last UTF-8 boundary <= n
+                            let mut cut = n;
+                            while cut > 0 && (bytes[cut - 1] & 0b1100_0000) == 0b1000_0000 {
+                                cut -= 1;
                             }
-                            names.sort();
-                            self.stack.push(VM::make_string_array(names));
+                            let slice = &bytes[..cut];
+                            match std::str::from_utf8(slice) {
+                                Ok(s) => s.to_string(),
+                                Err(_) => String::new(),
+                            }
+                        } else {
+                            // Pad with ASCII spaces to reach exactly n bytes
+                            let pad = n - bytes.len();
+                            let mut s = s0.clone();
+                            if pad > 0 {
+                                s.push_str(&" ".repeat(pad));
+                            }
+                            s
+                        };
+                        self.stack.push(Value::Str(res));
+                    }
+                    161 => {
+                        // STRUCT_REG(name$, spec$)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "STRUCT_REG expects 2 arguments (name$, spec$)".into(),
+                            ));
                         }
-                        58 => { // ENV$(name$)
-                            if argc != 1 { return Err(BasilError("ENV$ expects 1 argument".into())); }
-                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let val = env::var(&name).unwrap_or_default();
-                            self.stack.push(Value::Str(val));
+                        let name = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "STRUCT_REG: name must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let spec = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "STRUCT_REG: spec must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        self.struct_reg(&name, &spec)?;
+                        self.stack.push(Value::Null);
+                    }
+                    162 => {
+                        // STRUCT_SIZEOF(name$)
+                        if argc != 1 {
+                            return Err(BasilError(
+                                "STRUCT_SIZEOF expects 1 argument (name$)".into(),
+                            ));
                         }
-                        59 => { // SETENV/EXPORTENV name$, value, exportFlag
-                            if argc != 3 { return Err(BasilError("SETENV expects 3 arguments (name$, value, exportFlag)".into())); }
-                            let name = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let value_str = match &args[1] {
-                                Value::Str(s) => s.clone(),
-                                Value::Int(i) => i.to_string(),
-                                Value::Num(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                other => format!("{}", other),
+                        let name = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "STRUCT_SIZEOF: name must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let sz = self.sizeof_struct(&name).unwrap_or(0);
+                        self.stack.push(Value::Int(sz as i64));
+                    }
+                    163 => {
+                        // STRUCT_PACK(value, type$)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "STRUCT_PACK expects 2 arguments (value, typeName)".into(),
+                            ));
+                        }
+                        let tname = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "STRUCT_PACK: type name must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let dict_rc = match &args[0] {
+                            Value::Dict(rc) => rc.clone(),
+                            _ => {
+                                return Err(BasilError(
+                                    "STRUCT_PACK: value must be a struct/dict".into(),
+                                ))
+                            }
+                        };
+                        let bytes = self.pack_struct_bytes(&dict_rc, &tname)?;
+                        let s = String::from_utf8_lossy(&bytes).to_string();
+                        self.stack.push(Value::Str(s));
+                    }
+                    164 => {
+                        // STRUCT_UNPACK(str, type$)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "STRUCT_UNPACK expects 2 arguments (buffer$, typeName)".into(),
+                            ));
+                        }
+                        let tname = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "STRUCT_UNPACK: type name must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let buf = match &args[0] {
+                            Value::Str(s) => s.as_bytes().to_vec(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "STRUCT_UNPACK: buffer must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let v = self.unpack_struct_from(&buf, &tname)?;
+                        self.stack.push(v);
+                    }
+                    2 => {
+                        // MID$(s, start [,len]) -- start is 1-based
+                        if !(argc == 2 || argc == 3) {
+                            return Err(BasilError("MID$ expects 2 or 3 arguments".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("MID$ arg 1 must be string".into())),
+                        };
+                        // convert numeric args to i64 via truncation
+                        let start_i = match &args[1] {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => n.trunc() as i64,
+                            _ => return Err(BasilError("MID$ start must be numeric".into())),
+                        };
+                        let start_idx0 = if start_i <= 1 {
+                            0usize
+                        } else {
+                            (start_i as usize) - 1
+                        };
+                        let mut iter = s.chars();
+                        // drop start_idx0 chars
+                        for _ in 0..start_idx0 {
+                            if iter.next().is_none() {
+                                break;
+                            }
+                        }
+                        let res = if argc == 2 {
+                            iter.collect::<String>()
+                        } else {
+                            let len_i = match &args[2] {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => n.trunc() as i64,
+                                _ => return Err(BasilError("MID$ length must be numeric".into())),
                             };
-                            let export = match &args[2] {
-                                Value::Bool(b) => *b,
-                                Value::Int(i) => *i != 0,
-                                Value::Num(n) => *n != 0.0,
-                                _ => false,
-                            };
-                            env::set_var(&name, &value_str);
-                            let mut ok = true;
-                            if export {
-                                #[cfg(windows)]
-                                {
-                                    use std::process::Command;
-                                    let status = Command::new("cmd").args(["/C", "setx", &name, &value_str]).status();
-                                    ok = status.map(|s| s.success()).unwrap_or(false);
-                                }
-                                #[cfg(not(windows))]
-                                {
-                                    // Cannot export to parent shell from child; consider process-local set sufficient
-                                    ok = true;
-                                }
-                            }
-                            self.stack.push(Value::Bool(ok));
-                        }
-                        60 => { // SHELL(cmd$) -> exit code
-                            if argc != 1 { return Err(BasilError("SHELL expects 1 argument".into())); }
-                            let cmd = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            #[cfg(windows)]
-                            let status = std::process::Command::new("cmd").args(["/C", &cmd]).status();
-                            #[cfg(not(windows))]
-                            let status = std::process::Command::new("sh").args(["-c", &cmd]).status();
-                            let code_i: i64 = match status {
-                                Ok(st) => st.code().unwrap_or(-1) as i64,
-                                Err(_) => -1,
-                            };
-                            self.stack.push(Value::Int(code_i));
-                        }
-                        61 => { // EXIT(code)
-                            if argc != 1 { return Err(BasilError("EXIT expects 1 argument".into())); }
-                            let code = self.to_i64(&args[0])? as i32;
-                            std::process::exit(code);
-                        }
-                        62 => { // MKDIRS%(path$) -> Int (1=ok,0=fail)
-                            if argc != 1 { return Err(BasilError("MKDIRS% expects 1 argument".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            match fs::create_dir_all(&path) {
-                                Ok(_) => self.stack.push(Value::Int(1)),
-                                Err(_e) => self.stack.push(Value::Int(0)),
-                            }
-                        }
-                        63 => { // LOADENV%(filename$?) -> Int (1=ok,0=fail)
-                            if !(argc == 0 || argc == 1) { return Err(BasilError("LOADENV% expects 0 or 1 argument".into())); }
-                            let default_name = ".env".to_string();
-                            let file = if argc == 0 {
-                                default_name
+                            if len_i <= 0 {
+                                String::new()
                             } else {
-                                let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                                let t = s.trim();
-                                if t.is_empty() { ".env".to_string() } else { t.to_string() }
+                                iter.take(len_i as usize).collect::<String>()
+                            }
+                        };
+                        self.stack.push(Value::Str(res));
+                    }
+                    3 => {
+                        // LEFT$(s, n)
+                        if argc != 2 {
+                            return Err(BasilError("LEFT$ expects 2 arguments".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("LEFT$ arg 1 must be string".into())),
+                        };
+                        let n = match &args[1] {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => n.trunc() as i64,
+                            _ => return Err(BasilError("LEFT$ count must be numeric".into())),
+                        };
+                        if n <= 0 {
+                            self.stack.push(Value::Str(String::new()));
+                        } else {
+                            let res: String = s.chars().take(n as usize).collect();
+                            self.stack.push(Value::Str(res));
+                        }
+                    }
+                    4 => {
+                        // RIGHT$(s, n)
+                        if argc != 2 {
+                            return Err(BasilError("RIGHT$ expects 2 arguments".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("RIGHT$ arg 1 must be string".into())),
+                        };
+                        let n = match &args[1] {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => n.trunc() as i64,
+                            _ => return Err(BasilError("RIGHT$ count must be numeric".into())),
+                        };
+                        if n <= 0 {
+                            self.stack.push(Value::Str(String::new()));
+                        } else {
+                            let total = s.chars().count() as i64;
+                            let take_n = if n > total { total } else { n } as usize;
+                            let skip_n = (total - take_n as i64) as usize;
+                            let res: String = s.chars().skip(skip_n).take(take_n).collect();
+                            self.stack.push(Value::Str(res));
+                        }
+                    }
+                    5 => {
+                        // INSTR(hay, needle [,start]) -- returns 0-based index or 0 if not found
+                        if !(argc == 2 || argc == 3) {
+                            return Err(BasilError("INSTR expects 2 or 3 arguments".into()));
+                        }
+                        let hay = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("INSTR arg 1 must be string".into())),
+                        };
+                        let needle = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("INSTR arg 2 must be string".into())),
+                        };
+                        let start = if argc == 3 {
+                            match &args[2] {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => n.trunc() as i64,
+                                _ => return Err(BasilError("INSTR start must be numeric".into())),
+                            }
+                        } else {
+                            0
+                        };
+                        if needle.is_empty() {
+                            // empty needle: return start (already 0-based)
+                            let start_nonneg = if start < 0 { 0 } else { start as usize };
+                            let total_chars = hay.chars().count();
+                            let idx = if start_nonneg > total_chars {
+                                total_chars
+                            } else {
+                                start_nonneg
                             };
-                            match fs::read_to_string(&file) {
-                                Ok(contents) => {
-                                    for (i, line) in contents.lines().enumerate() {
-                                        let trimmed = line.trim();
-                                        if trimmed.is_empty() { continue; }
-                                        if trimmed.starts_with('#') || trimmed.starts_with(';') { continue; }
-                                        match trimmed.find('=') {
-                                            Some(eq) => {
-                                                let key = trimmed[..eq].trim();
-                                                let val_raw = trimmed[eq+1..].trim();
-                                                if key.is_empty() {
-                                                    eprintln!("warning: LOADENV% {}:{}: missing key before '='", file, i + 1);
-                                                    continue;
-                                                }
-                                                let unquoted = if (val_raw.starts_with('"') && val_raw.ends_with('"') && val_raw.len() >= 2) ||
-                                                                (val_raw.starts_with('\'') && val_raw.ends_with('\'') && val_raw.len() >= 2) {
-                                                    val_raw[1..val_raw.len()-1].to_string()
-                                                } else { val_raw.to_string() };
-                                                env::set_var(key, unquoted);
-                                            }
-                                            None => {
-                                                eprintln!("warning: LOADENV% {}:{}: invalid line (expected name=value or comment)", file, i + 1);
-                                            }
-                                        }
-                                    }
-                                    self.stack.push(Value::Int(1));
+                            self.stack.push(Value::Int(idx as i64));
+                        } else {
+                            // map start (char) to byte index
+                            let start_nonneg = if start < 0 { 0 } else { start as usize };
+                            let mut byte_idx = 0usize;
+                            let mut seen = 0usize;
+                            for (bidx, _) in hay.char_indices() {
+                                if seen == start_nonneg {
+                                    byte_idx = bidx;
+                                    break;
                                 }
-                                Err(e) => {
-                                    eprintln!("warning: LOADENV% could not read {}: {}", file, e);
+                                seen += 1;
+                                byte_idx = hay.len();
+                            }
+                            if start_nonneg == 0 {
+                                byte_idx = 0;
+                            }
+                            if start_nonneg > hay.chars().count() {
+                                self.stack.push(Value::Int(0));
+                            } else {
+                                let slice = &hay[byte_idx..];
+                                if let Some(rel) = slice.find(&needle) {
+                                    let abs_byte = byte_idx + rel;
+                                    // convert abs_byte to char index
+                                    let idx = hay[..abs_byte].chars().count();
+                                    self.stack.push(Value::Int(idx as i64));
+                                } else {
                                     self.stack.push(Value::Int(0));
                                 }
                             }
                         }
-                        #[cfg(feature = "obj-base64")]
-                        90 => { // BASE64_ENCODE$(text$)
-                            if argc != 1 { return Err(BasilError("BASE64_ENCODE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let encoded = general_purpose::STANDARD.encode(s.as_bytes());
-                            self.stack.push(Value::Str(encoded));
+                    }
+                    6 => {
+                        // INPUT$([prompt])
+                        if !(argc == 0 || argc == 1) {
+                            return Err(BasilError("INPUT$ expects 0 or 1 argument".into()));
                         }
-                        #[cfg(feature = "obj-base64")]
-                        91 => { // BASE64_DECODE$(text$)
-                            if argc != 1 { return Err(BasilError("BASE64_DECODE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            match general_purpose::STANDARD.decode(s) {
-                                Ok(bytes) => match String::from_utf8(bytes) {
-                                    Ok(txt) => self.stack.push(Value::Str(txt)),
-                                    Err(_) => return Err(BasilError("BASE64_DECODE$: invalid UTF-8 in decoded data".into())),
-                                },
-                                Err(_) => return Err(BasilError("BASE64_DECODE$: invalid Base64 string".into())),
-                            }
+                        if argc == 1 {
+                            let prompt = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            };
+                            print!("{}", prompt);
+                            let _ = io::stdout().flush();
                         }
-                        #[cfg(feature = "obj-zip")]
-                        120 => { // ZIP_EXTRACT_ALL(zip_path$, dest_dir$)
-                            if argc != 2 { return Err(BasilError("ZIP_EXTRACT_ALL expects 2 arguments".into())); }
-                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let dest_dir = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            zip_utils::zip_extract_all(&zip_path, &dest_dir)?;
-                            self.stack.push(Value::Str(String::new()));
-                        }
-                        #[cfg(feature = "obj-zip")]
-                        121 => { // ZIP_COMPRESS_FILE(src_path$, zip_path$, entry_name$)
-                            if !(argc == 2 || argc == 3) { return Err(BasilError("ZIP_COMPRESS_FILE expects 2 or 3 arguments".into())); }
-                            let src_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let zip_path = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let entry_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
-                            zip_utils::zip_compress_file(&src_path, &zip_path, entry_opt.as_deref())?;
-                            self.stack.push(Value::Str(String::new()));
-                        }
-                        #[cfg(feature = "obj-zip")]
-                        122 => { // ZIP_COMPRESS_DIR(src_dir$, zip_path$)
-                            if argc != 2 { return Err(BasilError("ZIP_COMPRESS_DIR expects 2 arguments".into())); }
-                            let src_dir = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let zip_path = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            zip_utils::zip_compress_dir(&src_dir, &zip_path)?;
-                            self.stack.push(Value::Str(String::new()));
-                        }
-                        #[cfg(feature = "obj-zip")]
-                        123 => { // ZIP_LIST$(zip_path$)
-                            if argc != 1 { return Err(BasilError("ZIP_LIST$ expects 1 argument".into())); }
-                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let listing = zip_utils::zip_list(&zip_path)?;
-                            self.stack.push(Value::Str(listing));
-                        }
-                        #[cfg(feature = "obj-zip")]
-                        135 => { // ZIP_ARRAY$(zip_path$)
-                            if argc != 1 { return Err(BasilError("ZIP_ARRAY$ expects 1 argument".into())); }
-                            let zip_path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let entries = zip_utils::zip_list_array(&zip_path)?;
-                            let arr = VM::make_string_array(entries);
-                            self.stack.push(arr);
-                        }
-                        #[cfg(feature = "obj-json")]
-                        136 => { // JSON_DECODE@(json$)
-                            if argc != 1 { return Err(BasilError("JSON_DECODE@ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s) => s.clone(), other => format!("{}", other) };
-                            let v: sj::Value = serde_json::from_str(&s).map_err(|e| BasilError(format!("JSON_DECODE@ error: {}", e)))?;
-                            let val = Self::json_to_value_static(&v);
-                            self.stack.push(val);
-                        }
-                        #[cfg(feature = "obj-curl")]
-                        124 => { // HTTP_GET$(url$)
-                            if argc != 1 { return Err(BasilError("HTTP_GET$ expects 1 argument".into())); }
-                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let body = curl_utils::http_get(&url)?;
-                            self.stack.push(Value::Str(body));
-                        }
-                        #[cfg(feature = "obj-curl")]
-                        125 => { // HTTP_POST$(url$, body$[, content_type$])
-                            if !(argc == 2 || argc == 3) { return Err(BasilError("HTTP_POST$ expects 2 or 3 arguments".into())); }
-                            let url = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let body = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let ct_opt: Option<String> = if argc == 3 { Some(match &args[2] { Value::Str(s)=>s.clone(), other=>format!("{}", other) }) } else { None };
-                            let resp = curl_utils::http_post(&url, &body, ct_opt.as_deref())?;
-                            self.stack.push(Value::Str(resp));
-                        }
-                        #[cfg(feature = "obj-json")]
-                        126 => { // JSON_PARSE$(text$)
-                            if argc != 1 { return Err(BasilError("JSON_PARSE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let v: JValue = serde_json::from_str(&s)
-                                .map_err(|e| BasilError(format!("JSON_PARSE$: invalid JSON: {}", e)))?;
-                            let out = serde_json::to_string(&v)
-                                .map_err(|e| BasilError(format!("JSON_PARSE$: serialize failed: {}", e)))?;
-                            self.stack.push(Value::Str(out));
-                        }
-                        #[cfg(feature = "obj-json")]
-                        127 => { // JSON_STRINGIFY$(value)
-                            if argc != 1 { return Err(BasilError("JSON_STRINGIFY$ expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::Str(s) => {
-                                    if let Ok(v) = serde_json::from_str::<JValue>(&s) {
-                                        let out = serde_json::to_string(&v)
-                                            .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
-                                        self.stack.push(Value::Str(out));
+                        if self.test_mode {
+                            // enforce max inputs
+                            self.mocked_inputs += 1;
+                            if let Some(maxn) = self.max_mocked_inputs {
+                                if self.mocked_inputs > maxn {
+                                    let loc = if let Some(p) = &self.script_path {
+                                        if self.current_line > 0 {
+                                            format!(
+                                                " at {}:{}",
+                                                std::path::Path::new(p)
+                                                    .file_name()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or(p),
+                                                self.current_line
+                                            )
+                                        } else {
+                                            String::new()
+                                        }
                                     } else {
-                                        let out = serde_json::to_string(&s)
-                                            .map_err(|e| BasilError(format!("JSON_STRINGIFY$: wrap failed: {}", e)))?;
-                                        self.stack.push(Value::Str(out));
+                                        String::new()
+                                    };
+                                    return Err(BasilError(format!(
+                                        "Hit --max-inputs={}{}",
+                                        maxn, loc
+                                    )));
+                                }
+                            }
+                            let val = if let Some(mock) = &mut self.mock {
+                                mock.read_line()
+                            } else {
+                                String::new()
+                            };
+                            let shown = if val.is_empty() {
+                                "<BLANK+ENTER>".to_string()
+                            } else {
+                                val.clone()
+                            };
+                            let mut msg = format!("Mock input to INPUT given as {}", shown);
+                            if self.trace {
+                                if let Some(p) = &self.script_path {
+                                    if self.current_line > 0 {
+                                        let fname = std::path::Path::new(p)
+                                            .file_name()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(p);
+                                        msg.push_str(&format!(
+                                            " (at {}:{})",
+                                            fname, self.current_line
+                                        ));
                                     }
                                 }
-                                other => {
-                                    let v = value_to_jvalue(other)?;
-                                    let out = serde_json::to_string(&v)
-                                        .map_err(|e| BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e)))?;
-                                    self.stack.push(Value::Str(out));
+                            }
+                            println!("{}", msg);
+                            self.stack.push(Value::Str(val));
+                        } else {
+                            let mut input = String::new();
+                            io::stdin()
+                                .read_line(&mut input)
+                                .map_err(|e| BasilError(format!("INPUT$ read error: {}", e)))?;
+                            while input.ends_with('\n') || input.ends_with('\r') {
+                                input.pop();
+                            }
+                            self.stack.push(Value::Str(input));
+                        }
+                    }
+                    7 => {
+                        // INKEY$() — non-blocking, returns "" if no key available
+                        if argc != 0 {
+                            return Err(BasilError("INKEY$ expects 0 arguments".into()));
+                        }
+                        if self.test_mode {
+                            self.mocked_inputs += 1;
+                            if let Some(maxn) = self.max_mocked_inputs {
+                                if self.mocked_inputs > maxn {
+                                    let loc = if let Some(p) = &self.script_path {
+                                        if self.current_line > 0 {
+                                            format!(
+                                                " at {}:{}",
+                                                std::path::Path::new(p)
+                                                    .file_name()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or(p),
+                                                self.current_line
+                                            )
+                                        } else {
+                                            String::new()
+                                        }
+                                    } else {
+                                        String::new()
+                                    };
+                                    return Err(BasilError(format!(
+                                        "Hit --max-inputs={}{}",
+                                        maxn, loc
+                                    )));
                                 }
+                            }
+                            let ch = if let Some(mock) = &mut self.mock {
+                                mock.read_char()
+                            } else {
+                                None
+                            };
+                            let s = match ch {
+                                Some('\r') => "\r".to_string(),
+                                Some(c) => c.to_string(),
+                                None => String::new(),
+                            };
+                            let shown = match ch {
+                                Some('\r') => "<ENTER>".to_string(),
+                                Some(c) => c.to_string(),
+                                None => String::new(),
+                            };
+                            let mut msg = format!("Mock input to INKEY$ given as {}", shown);
+                            if self.trace {
+                                if let Some(p) = &self.script_path {
+                                    if self.current_line > 0 {
+                                        let fname = std::path::Path::new(p)
+                                            .file_name()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(p);
+                                        msg.push_str(&format!(
+                                            " (at {}:{})",
+                                            fname, self.current_line
+                                        ));
+                                    }
+                                }
+                            }
+                            println!("{}", msg);
+                            self.stack.push(Value::Str(s));
+                        } else {
+                            enable_raw_mode()
+                                .map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            let s = if poll(Duration::from_millis(0))
+                                .map_err(|e| BasilError(format!("poll: {}", e)))?
+                            {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => match code {
+                                        KeyCode::Char(c) => c.to_string(),
+                                        KeyCode::Enter => "\r".to_string(),
+                                        KeyCode::Backspace => "\u{0008}".to_string(),
+                                        KeyCode::Tab => "\t".to_string(),
+                                        KeyCode::Esc => "\u{001B}".to_string(),
+                                        _ => String::new(),
+                                    },
+                                    _ => String::new(),
+                                }
+                            } else {
+                                String::new()
+                            };
+                            let _ = disable_raw_mode();
+                            self.stack.push(Value::Str(s));
+                        }
+                    }
+                    8 => {
+                        // INKEY%() — non-blocking, returns 0 if no key available
+                        if argc != 0 {
+                            return Err(BasilError("INKEY% expects 0 arguments".into()));
+                        }
+                        if self.test_mode {
+                            self.mocked_inputs += 1;
+                            if let Some(maxn) = self.max_mocked_inputs {
+                                if self.mocked_inputs > maxn {
+                                    let loc = if let Some(p) = &self.script_path {
+                                        if self.current_line > 0 {
+                                            format!(
+                                                " at {}:{}",
+                                                std::path::Path::new(p)
+                                                    .file_name()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or(p),
+                                                self.current_line
+                                            )
+                                        } else {
+                                            String::new()
+                                        }
+                                    } else {
+                                        String::new()
+                                    };
+                                    return Err(BasilError(format!(
+                                        "Hit --max-inputs={}{}",
+                                        maxn, loc
+                                    )));
+                                }
+                            }
+                            let ch = if let Some(mock) = &mut self.mock {
+                                mock.read_char()
+                            } else {
+                                None
+                            };
+                            let code_i: i64 = match ch {
+                                Some('\r') => 13,
+                                Some(c) => c as i64,
+                                None => 0,
+                            };
+                            let shown = match ch {
+                                Some('\r') => "<ENTER>".to_string(),
+                                Some(c) => c.to_string(),
+                                None => String::new(),
+                            };
+                            let mut msg = format!("Mock input to INKEY% given as {}", shown);
+                            if self.trace {
+                                if let Some(p) = &self.script_path {
+                                    if self.current_line > 0 {
+                                        let fname = std::path::Path::new(p)
+                                            .file_name()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(p);
+                                        msg.push_str(&format!(
+                                            " (at {}:{})",
+                                            fname, self.current_line
+                                        ));
+                                    }
+                                }
+                            }
+                            println!("{}", msg);
+                            self.stack.push(Value::Int(code_i));
+                        } else {
+                            enable_raw_mode()
+                                .map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            let code_i: i64 = if poll(Duration::from_millis(0))
+                                .map_err(|e| BasilError(format!("poll: {}", e)))?
+                            {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => match code {
+                                        KeyCode::Char(c) => c as i64,
+                                        KeyCode::Enter => 13,
+                                        KeyCode::Backspace => 8,
+                                        KeyCode::Tab => 9,
+                                        KeyCode::Esc => 27,
+                                        KeyCode::Up => 1000,
+                                        KeyCode::Down => 1001,
+                                        KeyCode::Left => 1002,
+                                        KeyCode::Right => 1003,
+                                        KeyCode::Home => 1004,
+                                        KeyCode::End => 1005,
+                                        KeyCode::PageUp => 1006,
+                                        KeyCode::PageDown => 1007,
+                                        KeyCode::Insert => 1008,
+                                        KeyCode::Delete => 1009,
+                                        KeyCode::F(n) => 1100 + n as i64,
+                                        _ => 0,
+                                    },
+                                    _ => 0,
+                                }
+                            } else {
+                                0
+                            };
+                            let _ = disable_raw_mode();
+                            self.stack.push(Value::Int(code_i));
+                        }
+                    }
+                    9 => {
+                        // TYPE$(value)
+                        if argc != 1 {
+                            return Err(BasilError("TYPE$ expects 1 argument".into()));
+                        }
+                        let s = self.type_of(&args[0]);
+                        self.stack.push(Value::Str(s));
+                    }
+                    10 => {
+                        // HTML/HTML$(x)
+                        if argc != 1 {
+                            return Err(BasilError("HTML expects 1 argument".into()));
+                        }
+                        let s = format!("{}", args[0]);
+                        let mut out = String::with_capacity(s.len());
+                        for ch in s.chars() {
+                            match ch {
+                                '&' => out.push_str("&amp;"),
+                                '<' => out.push_str("&lt;"),
+                                '>' => out.push_str("&gt;"),
+                                '"' => out.push_str("&quot;"),
+                                '\'' => out.push_str("&#39;"),
+                                _ => out.push(ch),
                             }
                         }
-                        #[cfg(feature = "obj-csv")]
-                        128 => { // CSV_PARSE$(csv_text$)
-                            if argc != 1 { return Err(BasilError("CSV_PARSE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let mut rdr = ReaderBuilder::new()
-                                .has_headers(true)
-                                .from_reader(s.as_bytes());
-                            let headers = rdr.headers()
-                                .map_err(|e| BasilError(format!("CSV_PARSE$: read headers failed: {}", e)))?
-                                .clone();
-                            let mut rows: Vec<JValue> = Vec::new();
-                            for rec in rdr.records() {
-                                let rec = rec.map_err(|e| BasilError(format!("CSV_PARSE$: read record failed: {}", e)))?;
-                                let mut obj = serde_json::Map::new();
-                                for (i, field) in rec.iter().enumerate() {
-                                    let key = headers.get(i).unwrap_or("").to_string();
-                                    obj.insert(key, JValue::String(field.to_string()));
-                                }
-                                rows.push(JValue::Object(obj));
-                            }
-                            let out = serde_json::to_string(&rows)
-                                .map_err(|e| BasilError(format!("CSV_PARSE$: serialize failed: {}", e)))?;
-                            self.stack.push(Value::Str(out));
+                        self.stack.push(Value::Str(out));
+                    }
+                    11 => {
+                        // GET$()
+                        if argc != 0 {
+                            return Err(BasilError("GET$ expects 0 arguments".into()));
                         }
-                        #[cfg(feature = "obj-csv")]
-                        129 => { // CSV_WRITE$(rows_json$)
-                            if argc != 1 { return Err(BasilError("CSV_WRITE$ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let rows: JValue = serde_json::from_str(&s)
-                                .map_err(|e| BasilError(format!("CSV_WRITE$: invalid JSON: {}", e)))?;
-                            let arr = rows.as_array().ok_or_else(|| BasilError("CSV_WRITE$: expected JSON array of objects".into()))?;
-                            let mut headers: Vec<String> = Vec::new();
-                            let mut seen = std::collections::HashSet::new();
-                            if let Some(first) = arr.first().and_then(|v| v.as_object()) {
-                                for k in first.keys() {
-                                    headers.push(k.clone());
-                                    seen.insert(k.clone());
+                        self.ensure_get_params();
+                        let vals = self.get_params_cache.clone().unwrap_or_default();
+                        let arr = VM::make_string_array(vals);
+                        self.stack.push(arr);
+                    }
+                    12 => {
+                        // POST$()
+                        if argc != 0 {
+                            return Err(BasilError("POST$ expects 0 arguments".into()));
+                        }
+                        self.ensure_post_params();
+                        let vals = self.post_params_cache.clone().unwrap_or_default();
+                        let arr = VM::make_string_array(vals);
+                        self.stack.push(arr);
+                    }
+                    13 => {
+                        // REQUEST$()
+                        if argc != 0 {
+                            return Err(BasilError("REQUEST$ expects 0 arguments".into()));
+                        }
+                        self.ensure_get_params();
+                        self.ensure_post_params();
+                        let mut vals = self.get_params_cache.clone().unwrap_or_default();
+                        if let Some(mut p) = self.post_params_cache.clone() {
+                            vals.append(&mut p);
+                        }
+                        let arr = VM::make_string_array(vals);
+                        self.stack.push(arr);
+                    }
+                    14 => {
+                        // UCASE$(s)
+                        if argc != 1 {
+                            return Err(BasilError("UCASE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("UCASE$ arg must be string".into())),
+                        };
+                        self.stack.push(Value::Str(s.to_uppercase()));
+                    }
+                    15 => {
+                        // LCASE$(s)
+                        if argc != 1 {
+                            return Err(BasilError("LCASE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("LCASE$ arg must be string".into())),
+                        };
+                        self.stack.push(Value::Str(s.to_lowercase()));
+                    }
+                    16 => {
+                        // TRIM$(s)
+                        if argc != 1 {
+                            return Err(BasilError("TRIM$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("TRIM$ arg must be string".into())),
+                        };
+                        self.stack.push(Value::Str(s.trim().to_string()));
+                    }
+                    17 => {
+                        // CHR$(n)
+                        if argc != 1 {
+                            return Err(BasilError("CHR$ expects 1 argument".into()));
+                        }
+                        let n = match &args[0] {
+                            Value::Int(i) => *i,
+                            Value::Num(f) => f.trunc() as i64,
+                            _ => return Err(BasilError("CHR$ arg must be numeric".into())),
+                        };
+                        let out = if n < 0 || n > 0x10FFFF {
+                            String::new()
+                        } else {
+                            std::char::from_u32(n as u32)
+                                .map(|c| c.to_string())
+                                .unwrap_or_default()
+                        };
+                        self.stack.push(Value::Str(out));
+                    }
+                    18 => {
+                        // ASC%(s)
+                        if argc != 1 {
+                            return Err(BasilError("ASC% expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s,
+                            _ => return Err(BasilError("ASC% arg must be string".into())),
+                        };
+                        let code: i64 = s.chars().next().map(|c| c as u32 as i64).unwrap_or(0);
+                        self.stack.push(Value::Int(code));
+                    }
+                    19 => {
+                        // INPUTC$([prompt])
+                        if !(argc == 0 || argc == 1) {
+                            return Err(BasilError("INPUTC$ expects 0 or 1 argument".into()));
+                        }
+                        if argc == 1 {
+                            let prompt = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            };
+                            print!("{}", prompt);
+                            let _ = io::stdout().flush();
+                        }
+                        if self.test_mode {
+                            self.mocked_inputs += 1;
+                            if let Some(maxn) = self.max_mocked_inputs {
+                                if self.mocked_inputs > maxn {
+                                    let loc = if let Some(p) = &self.script_path {
+                                        if self.current_line > 0 {
+                                            format!(
+                                                " at {}:{}",
+                                                std::path::Path::new(p)
+                                                    .file_name()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or(p),
+                                                self.current_line
+                                            )
+                                        } else {
+                                            String::new()
+                                        }
+                                    } else {
+                                        String::new()
+                                    };
+                                    return Err(BasilError(format!(
+                                        "Hit --max-inputs={}{}",
+                                        maxn, loc
+                                    )));
                                 }
                             }
-                            for v in arr.iter() {
-                                if let Some(obj) = v.as_object() {
-                                    for k in obj.keys() {
-                                        if !seen.contains(k) {
-                                            headers.push(k.clone());
-                                            seen.insert(k.clone());
+                            let ch = if let Some(mock) = &mut self.mock {
+                                mock.read_char()
+                            } else {
+                                None
+                            };
+                            let s = match ch {
+                                Some('\r') => String::new(),
+                                Some(c) => c.to_string(),
+                                None => String::new(),
+                            };
+                            if let Some(c) = ch {
+                                if c != '\r' {
+                                    print!("{}", c);
+                                    let _ = io::stdout().flush();
+                                }
+                            }
+                            let shown = match ch {
+                                Some('\r') => "<ENTER>".to_string(),
+                                Some(c) => c.to_string(),
+                                None => String::new(),
+                            };
+                            let mut msg = format!("Mock input to INPUTC$ given as {}", shown);
+                            if self.trace {
+                                if let Some(p) = &self.script_path {
+                                    if self.current_line > 0 {
+                                        let fname = std::path::Path::new(p)
+                                            .file_name()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(p);
+                                        msg.push_str(&format!(
+                                            " (at {}:{})",
+                                            fname, self.current_line
+                                        ));
+                                    }
+                                }
+                            }
+                            println!("{}", msg);
+                            self.stack.push(Value::Str(s));
+                        } else {
+                            // Enable raw mode and ensure we only capture a single key (no echo from console)
+                            enable_raw_mode()
+                                .map_err(|e| BasilError(format!("enable_raw_mode: {}", e)))?;
+                            // Drain any pending events (typeahead) to avoid consuming earlier keys
+                            loop {
+                                match poll(Duration::from_millis(0)) {
+                                    Ok(true) => {
+                                        let _ = read();
+                                    }
+                                    Ok(false) => break,
+                                    Err(e) => {
+                                        let _ = disable_raw_mode();
+                                        return Err(BasilError(format!("poll: {}", e)));
+                                    }
+                                }
+                            }
+                            // Wait for the next key event (any kind). Capture only ASCII chars; others => "".
+                            let s = loop {
+                                match read().map_err(|e| BasilError(format!("read key: {}", e)))? {
+                                    Event::Key(KeyEvent { code, .. }) => {
+                                        let out = match code {
+                                            KeyCode::Char(c) if c.is_ascii() => c.to_string(),
+                                            _ => String::new(),
+                                        };
+                                        break out;
+                                    }
+                                    _ => { /* ignore non-key events */ }
+                                }
+                            };
+                            // Echo the captured ASCII character exactly once
+                            if !s.is_empty() {
+                                print!("{}", s);
+                                let _ = io::stdout().flush();
+                            }
+                            let _ = disable_raw_mode();
+                            self.stack.push(Value::Str(s));
+                        }
+                    }
+                    20 => {
+                        // ESCAPE$(s) - SQL string literal escape (single quotes doubled)
+                        if argc != 1 {
+                            return Err(BasilError("ESCAPE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(BasilError("ESCAPE$ arg must be string".into())),
+                        };
+                        let out = s.replace("'", "''");
+                        self.stack.push(Value::Str(out));
+                    }
+                    21 => {
+                        // UNESCAPE$(s) - reverse SQL string literal escaping ('' -> ')
+                        if argc != 1 {
+                            return Err(BasilError("UNESCAPE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.as_str(),
+                            _ => return Err(BasilError("UNESCAPE$ arg must be string".into())),
+                        };
+                        let mut out = String::with_capacity(s.len());
+                        let mut it = s.chars().peekable();
+                        while let Some(c) = it.next() {
+                            if c == '\'' {
+                                if let Some('\'') = it.peek().copied() {
+                                    it.next();
+                                    out.push('\'');
+                                } else {
+                                    out.push('\'');
+                                }
+                            } else {
+                                out.push(c);
+                            }
+                        }
+                        self.stack.push(Value::Str(out));
+                    }
+                    22 => {
+                        // URLENCODE$(s) - application/x-www-form-urlencoded encode (spaces -> '+')
+                        if argc != 1 {
+                            return Err(BasilError("URLENCODE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.as_str(),
+                            _ => return Err(BasilError("URLENCODE$ arg must be string".into())),
+                        };
+                        let out = self.url_encode_form(s);
+                        self.stack.push(Value::Str(out));
+                    }
+                    23 => {
+                        // URLDECODE$(s) - application/x-www-form-urlencoded decode ('+' -> space)
+                        if argc != 1 {
+                            return Err(BasilError("URLDECODE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.as_str(),
+                            _ => return Err(BasilError("URLDECODE$ arg must be string".into())),
+                        };
+                        let out = self.url_decode_form(s);
+                        self.stack.push(Value::Str(out));
+                    }
+                    24 => {
+                        // SLEEP(ms)
+                        if argc != 1 {
+                            return Err(BasilError("SLEEP expects 1 argument".into()));
+                        }
+                        let ms = self.to_i64(&args[0])?;
+                        let msu = if ms < 0 { 0 } else { ms as u64 };
+                        std::thread::sleep(std::time::Duration::from_millis(msu));
+                        self.stack.push(Value::Int(0));
+                    }
+                    25 => {
+                        // STR$(x)
+                        if argc != 1 {
+                            return Err(BasilError("STR$ expects 1 argument".into()));
+                        }
+                        let s = format!("{}", args[0]);
+                        self.stack.push(Value::Str(s));
+                    }
+                    26 => {
+                        // STRING$(n, ch$ or code%)
+                        if argc != 2 {
+                            return Err(BasilError("STRING$ expects 2 arguments".into()));
+                        }
+                        let n = self.to_i64(&args[0])?;
+                        let n = if n <= 0 {
+                            0usize
+                        } else {
+                            (n as usize).min(1_000_000)
+                        };
+                        let unit = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => {
+                                let code = self.to_i64(other)?;
+                                let ch =
+                                    std::char::from_u32((code as u32) & 0xFF).unwrap_or('\u{0000}');
+                                ch.to_string()
+                            }
+                        };
+                        let out = if unit.is_empty() || n == 0 {
+                            String::new()
+                        } else {
+                            unit.repeat(n)
+                        };
+                        self.stack.push(Value::Str(out));
+                    }
+                    27 => {
+                        // VAL(s$)
+                        if argc != 1 {
+                            return Err(BasilError("VAL expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.trim(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "VAL: expected string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        if let Ok(i) = s.parse::<i64>() {
+                            self.stack.push(Value::Int(i));
+                        } else if let Ok(f) = s.parse::<f64>() {
+                            self.stack.push(Value::Num(f));
+                        } else {
+                            self.stack.push(Value::Num(0.0));
+                        }
+                    }
+                    28 => {
+                        // REQUEST_BODY$()
+                        if argc != 0 {
+                            return Err(BasilError("REQUEST_BODY$ expects 0 arguments".into()));
+                        }
+                        self.ensure_request_body();
+                        let s = self.request_body_cache.clone().unwrap_or_default();
+                        self.stack.push(Value::Str(s));
+                    }
+                    // --- Math intrinsics ---
+                    70 => {
+                        // ABS(x)
+                        if argc != 1 {
+                            return Err(BasilError("ABS expects 1 argument".into()));
+                        }
+                        match &args[0] {
+                            Value::Int(i) => {
+                                if *i >= 0 {
+                                    self.stack.push(Value::Int(*i));
+                                } else if *i == i64::MIN {
+                                    self.stack.push(Value::Num((-(i64::MIN as f64)).abs()));
+                                } else {
+                                    self.stack.push(Value::Int(-*i));
+                                }
+                            }
+                            Value::Num(n) => {
+                                self.stack.push(Value::Num(n.abs()));
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "ABS: expected numeric, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        }
+                    }
+                    71 => {
+                        // ATN(x) -> radians
+                        if argc != 1 {
+                            return Err(BasilError("ATN expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        self.stack.push(Value::Num(x.atan()));
+                    }
+                    72 => {
+                        // COS(x)
+                        if argc != 1 {
+                            return Err(BasilError("COS expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        self.stack.push(Value::Num(x.cos()));
+                    }
+                    73 => {
+                        // EXP(x)
+                        if argc != 1 {
+                            return Err(BasilError("EXP expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        self.stack.push(Value::Num(x.exp()));
+                    }
+                    74 => {
+                        // INT(x) -> floor for floats, identity for ints; returns integer
+                        if argc != 1 {
+                            return Err(BasilError("INT expects 1 argument".into()));
+                        }
+                        match &args[0] {
+                            Value::Int(i) => self.stack.push(Value::Int(*i)),
+                            Value::Num(n) => self.stack.push(Value::Int(n.floor() as i64)),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "INT: expected numeric, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        }
+                    }
+                    75 => {
+                        // LOG(x) natural log
+                        if argc != 1 {
+                            return Err(BasilError("LOG expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        if x <= 0.0 {
+                            return Err(BasilError("LOG domain error (x must be > 0)".into()));
+                        }
+                        self.stack.push(Value::Num(x.ln()));
+                    }
+                    76 => {
+                        // RND() or RND(n)
+                        fn xorshift64star(state: &mut u64) -> u64 {
+                            let mut x = *state;
+                            if x == 0 {
+                                x = 0x9E3779B97F4A7C15;
+                            }
+                            x ^= x >> 12;
+                            x ^= x << 25;
+                            x ^= x >> 27;
+                            *state = x;
+                            x.wrapping_mul(2685821657736338717)
+                        }
+                        if argc == 0 {
+                            let r = xorshift64star(&mut self.rnd_state);
+                            let f = (r as f64) / ((u64::MAX as f64) + 1.0);
+                            self.stack.push(Value::Num(f));
+                        } else if argc == 1 {
+                            let n = self.to_i64(&args[0])?;
+                            if n <= 0 {
+                                self.stack.push(Value::Int(0));
+                            } else {
+                                let r = xorshift64star(&mut self.rnd_state);
+                                let v = (r % (n as u64)) as i64;
+                                self.stack.push(Value::Int(v));
+                            }
+                        } else {
+                            return Err(BasilError("RND expects 0 or 1 argument".into()));
+                        }
+                    }
+                    77 => {
+                        // SIN(x)
+                        if argc != 1 {
+                            return Err(BasilError("SIN expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        self.stack.push(Value::Num(x.sin()));
+                    }
+                    78 => {
+                        // SQR(x)
+                        if argc != 1 {
+                            return Err(BasilError("SQR expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        if x < 0.0 {
+                            return Err(BasilError("SQR domain error (x must be >= 0)".into()));
+                        }
+                        self.stack.push(Value::Num(x.sqrt()));
+                    }
+                    79 => {
+                        // TAN(x)
+                        if argc != 1 {
+                            return Err(BasilError("TAN expects 1 argument".into()));
+                        }
+                        let x = self.to_f64(&args[0])?;
+                        self.stack.push(Value::Num(x.tan()));
+                    }
+                    // --- PRINT helpers ---
+                    80 => {
+                        // SPC(n) -> string of spaces
+                        if argc != 1 {
+                            return Err(BasilError("SPC expects 1 argument".into()));
+                        }
+                        let n = self.to_i64(&args[0])?;
+                        let n = if n <= 0 {
+                            0usize
+                        } else {
+                            (n as usize).min(1_000_000)
+                        };
+                        self.stack.push(Value::Str(" ".repeat(n)));
+                    }
+                    81 => {
+                        // TAB(n) -> spaces to reach column n (1-based)
+                        if argc != 1 {
+                            return Err(BasilError("TAB expects 1 argument".into()));
+                        }
+                        let target = self.to_i64(&args[0])?;
+                        let target = if target < 1 { 1 } else { target } as usize;
+                        let cur = self.out_col + 1;
+                        let spaces = if target > cur { target - cur } else { 0 };
+                        self.stack
+                            .push(Value::Str(" ".repeat(spaces.min(1_000_000))));
+                    }
+                    82 => {
+                        // AT(n) -> alias for TAB(n)
+                        if argc != 1 {
+                            return Err(BasilError("AT expects 1 argument".into()));
+                        }
+                        let target = self.to_i64(&args[0])?;
+                        let target = if target < 1 { 1 } else { target } as usize;
+                        let cur = self.out_col + 1;
+                        let spaces = if target > cur { target - cur } else { 0 };
+                        self.stack
+                            .push(Value::Str(" ".repeat(spaces.min(1_000_000))));
+                    }
+                    83 => {
+                        // USING$(fmt$, args...)
+                        if argc < 1 {
+                            return Err(BasilError(
+                                "USING$ expects at least a format string".into(),
+                            ));
+                        }
+                        let fmt = match &args[0] {
+                            Value::Str(s) => s.as_str(),
+                            other => {
+                                return Err(BasilError(format!(
+                                    "USING$: first arg must be string, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        // Simple printf-like formatter: %d, %f, %s with optional width and precision (e.g. %8.2f). Supports %% for literal percent.
+                        let mut out = String::new();
+                        let mut i = 0usize;
+                        let mut ai = 1usize;
+                        let chars: Vec<char> = fmt.chars().collect();
+                        while i < chars.len() {
+                            if chars[i] != '%' {
+                                out.push(chars[i]);
+                                i += 1;
+                                continue;
+                            }
+                            i += 1;
+                            if i >= chars.len() {
+                                out.push('%');
+                                break;
+                            }
+                            if chars[i] == '%' {
+                                out.push('%');
+                                i += 1;
+                                continue;
+                            }
+                            // flags
+                            let mut left = false;
+                            let mut zero = false;
+                            loop {
+                                if i < chars.len() && (chars[i] == '-' || chars[i] == '0') {
+                                    if chars[i] == '-' {
+                                        left = true;
+                                    } else {
+                                        zero = true;
+                                    }
+                                    i += 1;
+                                    continue;
+                                }
+                                break;
+                            }
+                            // width
+                            let mut width: Option<usize> = None;
+                            let mut wv = 0usize;
+                            let mut saw_w = false;
+                            while i < chars.len() && chars[i].is_ascii_digit() {
+                                saw_w = true;
+                                wv = wv * 10 + (chars[i] as u8 - b'0') as usize;
+                                i += 1;
+                            }
+                            if saw_w {
+                                width = Some(wv.min(1_000_000));
+                            }
+                            // precision
+                            let mut prec: Option<usize> = None;
+                            if i < chars.len() && chars[i] == '.' {
+                                i += 1;
+                                let mut pv = 0usize;
+                                let mut saw_p = false;
+                                while i < chars.len() && chars[i].is_ascii_digit() {
+                                    saw_p = true;
+                                    pv = pv * 10 + (chars[i] as u8 - b'0') as usize;
+                                    i += 1;
+                                }
+                                if saw_p {
+                                    prec = Some(pv.min(20));
+                                }
+                            }
+                            if i >= chars.len() {
+                                break;
+                            }
+                            let ty = chars[i];
+                            i += 1;
+                            if ai >= args.len() {
+                                return Err(BasilError(
+                                    "USING$: not enough arguments for format".into(),
+                                ));
+                            }
+                            let s = match ty {
+                                'd' | 'i' => {
+                                    let v = self.to_i64(&args[ai])?;
+                                    format!("{}", v)
+                                }
+                                'f' => {
+                                    let v = self.to_f64(&args[ai])?;
+                                    let p = prec.unwrap_or(6);
+                                    format!("{:.*}", p, v)
+                                }
+                                's' => match &args[ai] {
+                                    Value::Str(s) => s.clone(),
+                                    other => format!("{}", other),
+                                },
+                                c => {
+                                    return Err(BasilError(format!(
+                                        "USING$: unsupported format type '%{}'",
+                                        c
+                                    )))
+                                }
+                            };
+                            ai += 1;
+                            // apply width/padding/alignment
+                            if let Some(w) = width {
+                                if s.len() < w {
+                                    let padc = if zero && !left { '0' } else { ' ' };
+                                    if left {
+                                        let mut t = s.clone();
+                                        t.push_str(&padc.to_string().repeat(w - s.len()));
+                                        out.push_str(&t);
+                                    } else {
+                                        out.push_str(&padc.to_string().repeat(w - s.len()));
+                                        out.push_str(&s);
+                                    }
+                                } else {
+                                    out.push_str(&s);
+                                }
+                            } else {
+                                out.push_str(&s);
+                            }
+                        }
+                        self.stack.push(Value::Str(out));
+                    }
+                    40 => {
+                        // FOPEN(path$, mode$) -> fh%
+                        if argc != 2 {
+                            return Err(BasilError("FOPEN expects 2 arguments".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let mode = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        if path.contains('\u{0000}') {
+                            return Err(BasilError("FOPEN: invalid NUL in path".into()));
+                        }
+                        let m = mode.to_ascii_lowercase();
+                        let text = !m.contains('b');
+                        let plus = m.contains('+');
+                        let mut opts = OpenOptions::new();
+                        let (mut readable, mut writable) = (false, false);
+                        if m.starts_with('r') {
+                            readable = true;
+                            opts.read(true);
+                            if plus {
+                                writable = true;
+                                opts.write(true);
+                            }
+                        } else if m.starts_with('w') {
+                            writable = true;
+                            opts.write(true).create(true).truncate(true);
+                            if plus {
+                                readable = true;
+                                opts.read(true);
+                            }
+                        } else if m.starts_with('a') {
+                            writable = true;
+                            opts.append(true).create(true);
+                            if plus {
+                                readable = true;
+                                opts.read(true);
+                                opts.write(true);
+                            }
+                        } else {
+                            return Err(BasilError(format!(
+                                "FOPEN: invalid mode '{}'; expected r/w/a variants",
+                                mode
+                            )));
+                        }
+                        match opts.open(&path) {
+                            Ok(file) => {
+                                let fh = self.next_fh;
+                                self.next_fh += 1;
+                                let entry = FileHandleEntry {
+                                    file,
+                                    text,
+                                    readable,
+                                    writable,
+                                    owner_depth: self.frames.len(),
+                                };
+                                self.file_table.insert(fh, entry);
+                                self.stack.push(Value::Int(fh));
+                            }
+                            Err(_e) => {
+                                // Non-throwing failure: return -1 to signal open error
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    41 => {
+                        // FCLOSE fh%
+                        if argc != 1 {
+                            return Err(BasilError("FCLOSE expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let _ = self.fh_close(h);
+                        self.stack.push(Value::Bool(true));
+                    }
+                    42 => {
+                        // FFLUSH fh%
+                        if argc != 1 {
+                            return Err(BasilError("FFLUSH expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let e = self.fh_get_mut(h)?;
+                        e.file
+                            .flush()
+                            .map_err(|er| BasilError(format!("FFLUSH error: {}", er)))?;
+                        self.stack.push(Value::Bool(true));
+                    }
+                    43 => {
+                        // FEOF(fh%) -> BOOL
+                        if argc != 1 {
+                            return Err(BasilError("FEOF expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let e = self.fh_get_mut(h)?;
+                        let cur = e
+                            .file
+                            .stream_position()
+                            .map_err(|er| BasilError(format!("FEOF tell: {}", er)))?;
+                        let mut b = [0u8; 1];
+                        let n = e
+                            .file
+                            .read(&mut b)
+                            .map_err(|er| BasilError(format!("FEOF read: {}", er)))?;
+                        if n > 0 {
+                            let _ = e.file.seek(SeekFrom::Start(cur));
+                        }
+                        self.stack.push(Value::Bool(n == 0));
+                    }
+                    44 => {
+                        // FTELL&(fh%) -> LONG
+                        if argc != 1 {
+                            return Err(BasilError("FTELL& expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let e = self.fh_get_mut(h)?;
+                        let pos = e
+                            .file
+                            .stream_position()
+                            .map_err(|er| BasilError(format!("FTELL: {}", er)))?;
+                        self.stack.push(Value::Int(pos as i64));
+                    }
+                    45 => {
+                        // FSEEK fh%, offset&, whence%
+                        if argc != 3 {
+                            return Err(BasilError("FSEEK expects 3 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let off = self.to_i64(&args[1])?;
+                        let wh = self.to_i64(&args[2])?;
+                        let e = self.fh_get_mut(h)?;
+                        let whence = match wh {
+                            0 => SeekFrom::Start(off as u64),
+                            1 => SeekFrom::Current(off),
+                            2 => SeekFrom::End(off),
+                            _ => return Err(BasilError("FSEEK: whence must be 0,1,2".into())),
+                        };
+                        let _ = e
+                            .file
+                            .seek(whence)
+                            .map_err(|er| BasilError(format!("FSEEK: {}", er)))?;
+                        self.stack.push(Value::Bool(true));
+                    }
+                    46 => {
+                        // FREAD$(fh%, n&) -> STRING
+                        if argc != 2 {
+                            return Err(BasilError("FREAD$ expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let n = self.to_i64(&args[1])?;
+                        if n <= 0 {
+                            self.stack.push(Value::Str(String::new()));
+                        } else {
+                            let e = self.fh_get_mut(h)?;
+                            if !e.readable {
+                                return Err(BasilError(
+                                    "FREAD$: handle not opened for reading".into(),
+                                ));
+                            }
+                            let mut buf = vec![0u8; n as usize];
+                            let got = e
+                                .file
+                                .read(&mut buf)
+                                .map_err(|er| BasilError(format!("FREAD$: {}", er)))?;
+                            buf.truncate(got);
+                            let s = if e.text {
+                                String::from_utf8_lossy(&buf).to_string()
+                            } else {
+                                String::from_utf8_lossy(&buf).to_string()
+                            };
+                            self.stack.push(Value::Str(s));
+                        }
+                    }
+                    47 => {
+                        // FREADLINE$(fh%) -> STRING
+                        if argc != 1 {
+                            return Err(BasilError("FREADLINE$ expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let e = self.fh_get_mut(h)?;
+                        if !e.readable {
+                            return Err(BasilError(
+                                "FREADLINE$: handle not opened for reading".into(),
+                            ));
+                        }
+                        let mut out: Vec<u8> = Vec::new();
+                        let mut buf = [0u8; 1];
+                        loop {
+                            let n = e
+                                .file
+                                .read(&mut buf)
+                                .map_err(|er| BasilError(format!("FREADLINE$: {}", er)))?;
+                            if n == 0 {
+                                break;
+                            }
+                            if buf[0] == b'\n' {
+                                break;
+                            }
+                            out.push(buf[0]);
+                        }
+                        if out.ends_with(&[b'\r']) {
+                            out.pop();
+                        }
+                        let s = if e.text {
+                            String::from_utf8_lossy(&out).to_string()
+                        } else {
+                            String::from_utf8_lossy(&out).to_string()
+                        };
+                        self.stack.push(Value::Str(s));
+                    }
+                    48 => {
+                        // FWRITE fh%, s$
+                        if argc != 2 {
+                            return Err(BasilError("FWRITE expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let e = self.fh_get_mut(h)?;
+                        if !e.writable {
+                            return Err(BasilError("FWRITE: handle not opened for writing".into()));
+                        }
+                        let s = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        e.file
+                            .write_all(s.as_bytes())
+                            .map_err(|er| BasilError(format!("FWRITE: {}", er)))?;
+                        self.stack.push(Value::Bool(true));
+                    }
+                    49 => {
+                        // FWRITELN fh%, s$
+                        if argc != 2 {
+                            return Err(BasilError("FWRITELN expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let e = self.fh_get_mut(h)?;
+                        if !e.writable {
+                            return Err(BasilError(
+                                "FWRITELN: handle not opened for writing".into(),
+                            ));
+                        }
+                        let s = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        e.file
+                            .write_all(s.as_bytes())
+                            .map_err(|er| BasilError(format!("FWRITELN: {}", er)))?;
+                        e.file
+                            .write_all(b"\n")
+                            .map_err(|er| BasilError(format!("FWRITELN: {}", er)))?;
+                        self.stack.push(Value::Bool(true));
+                    }
+                    50 => {
+                        // READFILE$(path$)
+                        if argc != 1 {
+                            return Err(BasilError("READFILE$ expects 1 argument".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let data = fs::read(&path)
+                            .map_err(|e| BasilError(format!("READFILE$ {}: {}", path, e)))?;
+                        let s = String::from_utf8_lossy(&data).to_string();
+                        self.stack.push(Value::Str(s));
+                    }
+                    51 => {
+                        // WRITEFILE path$, data$
+                        if argc != 2 {
+                            return Err(BasilError("WRITEFILE expects 2 arguments".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let s = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let mut f = OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(&path)
+                            .map_err(|e| BasilError(format!("WRITEFILE {}: {}", path, e)))?;
+                        f.write_all(s.as_bytes())
+                            .map_err(|e| BasilError(format!("WRITEFILE {}: {}", path, e)))?;
+                        f.flush().ok();
+                        self.stack.push(Value::Null);
+                    }
+                    52 => {
+                        // APPENDFILE path$, data$
+                        if argc != 2 {
+                            return Err(BasilError("APPENDFILE expects 2 arguments".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let s = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let mut f = OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                            .map_err(|e| BasilError(format!("APPENDFILE {}: {}", path, e)))?;
+                        f.write_all(s.as_bytes())
+                            .map_err(|e| BasilError(format!("APPENDFILE {}: {}", path, e)))?;
+                        f.flush().ok();
+                        self.stack.push(Value::Null);
+                    }
+                    53 => {
+                        // COPY src$, dst$
+                        if argc != 2 {
+                            return Err(BasilError("COPY expects 2 arguments".into()));
+                        }
+                        let src = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let dst = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let _ = fs::copy(&src, &dst)
+                            .map_err(|e| BasilError(format!("COPY {} -> {}: {}", src, dst, e)))?;
+                        self.stack.push(Value::Null);
+                    }
+                    54 => {
+                        // MOVE src$, dst$
+                        if argc != 2 {
+                            return Err(BasilError("MOVE expects 2 arguments".into()));
+                        }
+                        let src = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let dst = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        fs::rename(&src, &dst)
+                            .map_err(|e| BasilError(format!("MOVE {} -> {}: {}", src, dst, e)))?;
+                        self.stack.push(Value::Null);
+                    }
+                    55 => {
+                        // RENAME path$, newname$
+                        if argc != 2 {
+                            return Err(BasilError("RENAME expects 2 arguments".into()));
+                        }
+                        let src = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let newname = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let p = Path::new(&src);
+                        let dir = p.parent().unwrap_or(Path::new("."));
+                        let dst = dir.join(newname);
+                        fs::rename(&src, &dst).map_err(|e| {
+                            BasilError(format!("RENAME {} -> {}: {}", src, dst.display(), e))
+                        })?;
+                        self.stack.push(Value::Null);
+                    }
+                    56 => {
+                        // DELETE path$
+                        if argc != 1 {
+                            return Err(BasilError("DELETE expects 1 argument".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        fs::remove_file(&path)
+                            .map_err(|e| BasilError(format!("DELETE {}: {}", path, e)))?;
+                        self.stack.push(Value::Null);
+                    }
+                    57 => {
+                        // DIR$(pattern$) -> STRING[]
+                        if argc != 1 {
+                            return Err(BasilError("DIR$ expects 1 argument".into()));
+                        }
+                        let patt = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let p = Path::new(&patt);
+                        let (dir, patstr): (PathBuf, String) = if p.components().count() > 1 {
+                            (
+                                p.parent().unwrap_or(Path::new(".")).to_path_buf(),
+                                p.file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            )
+                        } else {
+                            (PathBuf::from("."), patt.clone())
+                        };
+                        let mut names: Vec<String> = Vec::new();
+                        for ent in fs::read_dir(&dir)
+                            .map_err(|e| BasilError(format!("DIR$: {}: {}", dir.display(), e)))?
+                        {
+                            let ent = ent.map_err(|e| BasilError(format!("DIR$: {}", e)))?;
+                            let md = ent
+                                .metadata()
+                                .map_err(|e| BasilError(format!("DIR$: {}", e)))?;
+                            if !md.is_file() {
+                                continue;
+                            }
+                            let name = ent.file_name().to_string_lossy().to_string();
+                            if self.glob_match_simple(&patstr, &name) {
+                                names.push(name);
+                            }
+                        }
+                        names.sort();
+                        self.stack.push(VM::make_string_array(names));
+                    }
+                    58 => {
+                        // ENV$(name$)
+                        if argc != 1 {
+                            return Err(BasilError("ENV$ expects 1 argument".into()));
+                        }
+                        let name = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let val = env::var(&name).unwrap_or_default();
+                        self.stack.push(Value::Str(val));
+                    }
+                    59 => {
+                        // SETENV/EXPORTENV name$, value, exportFlag
+                        if argc != 3 {
+                            return Err(BasilError(
+                                "SETENV expects 3 arguments (name$, value, exportFlag)".into(),
+                            ));
+                        }
+                        let name = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let value_str = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            Value::Int(i) => i.to_string(),
+                            Value::Num(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            other => format!("{}", other),
+                        };
+                        let export = match &args[2] {
+                            Value::Bool(b) => *b,
+                            Value::Int(i) => *i != 0,
+                            Value::Num(n) => *n != 0.0,
+                            _ => false,
+                        };
+                        env::set_var(&name, &value_str);
+                        let mut ok = true;
+                        if export {
+                            #[cfg(windows)]
+                            {
+                                use std::process::Command;
+                                let status = Command::new("cmd")
+                                    .args(["/C", "setx", &name, &value_str])
+                                    .status();
+                                ok = status.map(|s| s.success()).unwrap_or(false);
+                            }
+                            #[cfg(not(windows))]
+                            {
+                                // Cannot export to parent shell from child; consider process-local set sufficient
+                                ok = true;
+                            }
+                        }
+                        self.stack.push(Value::Bool(ok));
+                    }
+                    60 => {
+                        // SHELL(cmd$) -> exit code
+                        if argc != 1 {
+                            return Err(BasilError("SHELL expects 1 argument".into()));
+                        }
+                        let cmd = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        #[cfg(windows)]
+                        let status = std::process::Command::new("cmd")
+                            .args(["/C", &cmd])
+                            .status();
+                        #[cfg(not(windows))]
+                        let status = std::process::Command::new("sh").args(["-c", &cmd]).status();
+                        let code_i: i64 = match status {
+                            Ok(st) => st.code().unwrap_or(-1) as i64,
+                            Err(_) => -1,
+                        };
+                        self.stack.push(Value::Int(code_i));
+                    }
+                    61 => {
+                        // EXIT(code)
+                        if argc != 1 {
+                            return Err(BasilError("EXIT expects 1 argument".into()));
+                        }
+                        let code = self.to_i64(&args[0])? as i32;
+                        std::process::exit(code);
+                    }
+                    62 => {
+                        // MKDIRS%(path$) -> Int (1=ok,0=fail)
+                        if argc != 1 {
+                            return Err(BasilError("MKDIRS% expects 1 argument".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        match fs::create_dir_all(&path) {
+                            Ok(_) => self.stack.push(Value::Int(1)),
+                            Err(_e) => self.stack.push(Value::Int(0)),
+                        }
+                    }
+                    63 => {
+                        // LOADENV%(filename$?) -> Int (1=ok,0=fail)
+                        if !(argc == 0 || argc == 1) {
+                            return Err(BasilError("LOADENV% expects 0 or 1 argument".into()));
+                        }
+                        let default_name = ".env".to_string();
+                        let file = if argc == 0 {
+                            default_name
+                        } else {
+                            let s = match &args[0] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            };
+                            let t = s.trim();
+                            if t.is_empty() {
+                                ".env".to_string()
+                            } else {
+                                t.to_string()
+                            }
+                        };
+                        match fs::read_to_string(&file) {
+                            Ok(contents) => {
+                                for (i, line) in contents.lines().enumerate() {
+                                    let trimmed = line.trim();
+                                    if trimmed.is_empty() {
+                                        continue;
+                                    }
+                                    if trimmed.starts_with('#') || trimmed.starts_with(';') {
+                                        continue;
+                                    }
+                                    match trimmed.find('=') {
+                                        Some(eq) => {
+                                            let key = trimmed[..eq].trim();
+                                            let val_raw = trimmed[eq + 1..].trim();
+                                            if key.is_empty() {
+                                                eprintln!("warning: LOADENV% {}:{}: missing key before '='", file, i + 1);
+                                                continue;
+                                            }
+                                            let unquoted = if (val_raw.starts_with('"')
+                                                && val_raw.ends_with('"')
+                                                && val_raw.len() >= 2)
+                                                || (val_raw.starts_with('\'')
+                                                    && val_raw.ends_with('\'')
+                                                    && val_raw.len() >= 2)
+                                            {
+                                                val_raw[1..val_raw.len() - 1].to_string()
+                                            } else {
+                                                val_raw.to_string()
+                                            };
+                                            env::set_var(key, unquoted);
+                                        }
+                                        None => {
+                                            eprintln!("warning: LOADENV% {}:{}: invalid line (expected name=value or comment)", file, i + 1);
                                         }
                                     }
                                 }
+                                self.stack.push(Value::Int(1));
                             }
-                            let mut wtr = WriterBuilder::new().from_writer(vec![]);
-                            wtr.write_record(headers.iter())
-                                .map_err(|e| BasilError(format!("CSV_WRITE$: write headers failed: {}", e)))?;
-                            for v in arr.iter() {
-                                let obj = v.as_object().ok_or_else(|| BasilError("CSV_WRITE$: array items must be objects".into()))?;
-                                let mut row: Vec<String> = Vec::with_capacity(headers.len());
-                                for h in headers.iter() {
-                                    let cell = match obj.get(h) {
-                                        Some(JValue::String(s)) => s.clone(),
-                                        Some(JValue::Number(n)) => n.to_string(),
-                                        Some(JValue::Bool(b)) => if *b { "true".to_string() } else { "false".to_string() },
-                                        Some(JValue::Null) => String::new(),
-                                        Some(other) => serde_json::to_string(other).unwrap_or_default(),
-                                        None => String::new(),
-                                    };
-                                    row.push(cell);
-                                }
-                                wtr.write_record(&row)
-                                    .map_err(|e| BasilError(format!("CSV_WRITE$: write row failed: {}", e)))?;
-                            }
-                            let bytes = wtr.into_inner().map_err(|e| BasilError(format!("CSV_WRITE$: finalize failed: {}", e)))?;
-                            let out = String::from_utf8(bytes).map_err(|e| BasilError(format!("CSV_WRITE$: utf8 failed: {}", e)))?;
-                            self.stack.push(Value::Str(out));
-                        }
-                        #[cfg(feature = "obj-sqlite")]
-                        130 => { // SQLITE_OPEN%(path$)
-                            if argc != 1 { return Err(BasilError("SQLITE_OPEN% expects 1 argument".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let h = sqlite_utils::sqlite_open(&path);
-                            self.stack.push(Value::Int(h));
-                        }
-                        #[cfg(feature = "obj-sqlite")]
-                        131 => { // SQLITE_CLOSE(handle%)
-                            if argc != 1 { return Err(BasilError("SQLITE_CLOSE expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            sqlite_utils::sqlite_close(h);
-                            self.stack.push(Value::Null);
-                        }
-                        #[cfg(feature = "obj-sqlite")]
-                        132 => { // SQLITE_EXEC%(handle%, sql$)
-                            if argc != 2 { return Err(BasilError("SQLITE_EXEC% expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let sql = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let n = sqlite_utils::sqlite_exec(h, &sql);
-                            self.stack.push(Value::Int(n));
-                        }
-                        #[cfg(feature = "obj-sqlite")]
-                        133 => { // SQLITE_QUERY2D$(handle%, sql$)
-                            if argc != 2 { return Err(BasilError("SQLITE_QUERY2D$ expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let sql = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other) };
-                            let v = sqlite_utils::sqlite_query2d(h, &sql)?;
-                            self.stack.push(v);
-                        }
-                        #[cfg(feature = "obj-sqlite")]
-                        134 => { // SQLITE_LAST_INSERT_ID%(handle%)
-                            if argc != 1 { return Err(BasilError("SQLITE_LAST_INSERT_ID% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let id = sqlite_utils::sqlite_last_insert_id(h);
-                            self.stack.push(Value::Int(id));
-                        }
-                        // --- DAW helpers ---
-                        #[cfg(feature = "obj-daw")]
-                        180 => { // DAW_STOP()
-                            if argc != 0 { return Err(BasilError("DAW_STOP expects 0 arguments".into())); }
-                            daw_utils::stop();
-                            self.stack.push(Value::Str(String::new()));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        181 => { // DAW_ERR$()
-                            if argc != 0 { return Err(BasilError("DAW_ERR$ expects 0 arguments".into())); }
-                            let s = daw_utils::get_err();
-                            self.stack.push(Value::Str(s));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        182 => { // AUDIO_RECORD%(inputSubstr$, outPath$, seconds%)
-                            if argc != 3 { return Err(BasilError("AUDIO_RECORD% expects 3 arguments".into())); }
-                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let secs = self.to_i64(&args[2])?;
-                            let rc = daw_utils::audio_record(&a, &b, secs);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        183 => { // AUDIO_PLAY%(outputSubstr$, filePath$)
-                            if argc != 2 { return Err(BasilError("AUDIO_PLAY% expects 2 arguments".into())); }
-                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let rc = daw_utils::audio_play(&a, &b);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        184 => { // AUDIO_MONITOR%(inputSubstr$, outputSubstr$)
-                            if argc != 2 { return Err(BasilError("AUDIO_MONITOR% expects 2 arguments".into())); }
-                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let rc = daw_utils::audio_monitor(&a, &b);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        185 => { // MIDI_CAPTURE%(portSubstr$, outJsonlPath$)
-                            if argc != 2 { return Err(BasilError("MIDI_CAPTURE% expects 2 arguments".into())); }
-                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let rc = daw_utils::midi_capture(&a, &b);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        186 => { // SYNTH_LIVE%(midiPortSubstr$, outputSubstr$, poly%)
-                            if argc != 3 { return Err(BasilError("SYNTH_LIVE% expects 3 arguments".into())); }
-                            let a = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let b = match &args[1] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let poly = self.to_i64(&args[2])?;
-                            let rc = daw_utils::synth_live(&a, &b, poly);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-daw")]
-                        187 => { // DAW_RESET
-                            if argc != 0 { return Err(BasilError("DAW_RESET expects 0 arguments".into())); }
-                            daw_utils::reset();
-                            self.stack.push(Value::Str(String::new()));
-                        }
-                        // --- Audio low-level ---
-                        #[cfg(feature = "obj-audio")]
-                        190 => { // AUDIO_OUTPUTS$[]
-                            if argc != 0 { return Err(BasilError("AUDIO_OUTPUTS$ expects 0 arguments".into())); }
-                            let v = audio_utils::audio_outputs();
-                            let arr = VM::make_string_array(v);
-                            self.stack.push(arr);
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        191 => { // AUDIO_INPUTS$[]
-                            if argc != 0 { return Err(BasilError("AUDIO_INPUTS$ expects 0 arguments".into())); }
-                            let v = audio_utils::audio_inputs();
-                            let arr = VM::make_string_array(v);
-                            self.stack.push(arr);
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        192 => { // AUDIO_DEFAULT_RATE%()
-                            if argc != 0 { return Err(BasilError("AUDIO_DEFAULT_RATE% expects 0 arguments".into())); }
-                            self.stack.push(Value::Int(audio_utils::audio_default_rate()));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        193 => { // AUDIO_DEFAULT_CHANS%()
-                            if argc != 0 { return Err(BasilError("AUDIO_DEFAULT_CHANS% expects 0 arguments".into())); }
-                            self.stack.push(Value::Int(audio_utils::audio_default_chans()));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        194 => { // AUDIO_OPEN_IN@(deviceSubstr$)
-                            if argc != 1 { return Err(BasilError("AUDIO_OPEN_IN@ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            match audio_utils::audio_open_in(&s) {
-                                Ok(h) => self.stack.push(Value::Int(h)),
-                                Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); }
+                            Err(e) => {
+                                eprintln!("warning: LOADENV% could not read {}: {}", file, e);
+                                self.stack.push(Value::Int(0));
                             }
                         }
-                        #[cfg(feature = "obj-audio")]
-                        195 => { // AUDIO_OPEN_OUT@(deviceSubstr$)
-                            if argc != 1 { return Err(BasilError("AUDIO_OPEN_OUT@ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            match audio_utils::audio_open_out(&s) {
-                                Ok(h) => self.stack.push(Value::Int(h)),
-                                Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); }
-                            }
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        196 => { // AUDIO_START%(handle@)
-                            if argc != 1 { return Err(BasilError("AUDIO_START% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let rc = match audio_utils::audio_start(h) { Ok(_) => 0, Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        197 => { // AUDIO_STOP%(handle@)
-                            if argc != 1 { return Err(BasilError("AUDIO_STOP% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let rc = match audio_utils::audio_stop(h) { Ok(_) => 0, Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        198 => { // AUDIO_CLOSE%(handle@)
-                            if argc != 1 { return Err(BasilError("AUDIO_CLOSE% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let rc = match audio_utils::audio_close(h) { Ok(_) => 0, Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        199 => { // AUDIO_RING_CREATE@(frames%)
-                            if argc != 1 { return Err(BasilError("AUDIO_RING_CREATE@ expects 1 argument".into())); }
-                            let n = self.to_i64(&args[0])?;
-                            match audio_utils::ring_create(n) { Ok(h) => self.stack.push(Value::Int(h)), Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); } }
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        200 => { // AUDIO_RING_PUSH%(ring@, frames![])
-                            if argc != 2 { return Err(BasilError("AUDIO_RING_PUSH% expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let data: Vec<f32> = match &args[1] {
-                                Value::Array(arr_rc) => {
-                                    let arr = arr_rc.as_ref();
-                                    let v = arr.data.borrow();
-                                    let mut out = Vec::with_capacity(v.len());
-                                    for e in v.iter() { match e { Value::Num(f)=> out.push(*f as f32), Value::Int(i)=> out.push(*i as f32), _=> out.push(0.0) } }
-                                    out
-                                }
-                                other => return Err(BasilError(format!("AUDIO_RING_PUSH% expects array, got {}", self.type_of(other))))
-                            };
-                            let rc = match audio_utils::ring_push(h, &data) { Ok(n)=> n, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } -1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        201 => { // AUDIO_RING_POP%(ring@, OUT frames![])
-                            if argc != 2 { return Err(BasilError("AUDIO_RING_POP% expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let (len, arr_rc) = match &args[1] {
-                                Value::Array(arr_rc) => { let len = arr_rc.data.borrow().len(); (len, Rc::clone(arr_rc)) },
-                                other => return Err(BasilError(format!("AUDIO_RING_POP% expects array, got {}", self.type_of(other))))
-                            };
-                            let mut tmp = vec![0.0f32; len];
-                            let n = match audio_utils::ring_pop(h, &mut tmp) { Ok(n)=> n as usize, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 0 } };
-                            // fill array with popped values (remaining unchanged)
-                            {
-                                let mut data = arr_rc.data.borrow_mut();
-                                for i in 0..n { data[i] = Value::Num(tmp[i] as f64); }
-                            }
-                            self.stack.push(Value::Int(n as i64));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        202 => { // WAV_WRITER_OPEN@(path$, rate%, chans%)
-                            if argc != 3 { return Err(BasilError("WAV_WRITER_OPEN@ expects 3 arguments".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let rate = self.to_i64(&args[1])?;
-                            let chans = self.to_i64(&args[2])?;
-                            match audio_utils::wav_writer_open(&path, rate, chans) { Ok(h)=> self.stack.push(Value::Int(h)), Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); } }
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        203 => { // WAV_WRITER_WRITE%(writer@, frames![])
-                            if argc != 2 { return Err(BasilError("WAV_WRITER_WRITE% expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let data: Vec<f32> = match &args[1] {
-                                Value::Array(arr_rc) => {
-                                    let arr = arr_rc.as_ref();
-                                    let v = arr.data.borrow();
-                                    let mut out = Vec::with_capacity(v.len());
-                                    for e in v.iter() { match e { Value::Num(f)=> out.push(*f as f32), Value::Int(i)=> out.push(*i as f32), _=> out.push(0.0) } }
-                                    out
-                                }
-                                other => return Err(BasilError(format!("WAV_WRITER_WRITE% expects array, got {}", self.type_of(other))))
-                            };
-                            let rc = match audio_utils::wav_writer_write(h, &data) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        204 => { // WAV_WRITER_CLOSE%(writer@)
-                            if argc != 1 { return Err(BasilError("WAV_WRITER_CLOSE% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let rc = match audio_utils::wav_writer_close(h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        205 => { // WAV_READ_ALL![](path$)
-                            if argc != 1 { return Err(BasilError("WAV_READ_ALL![] expects 1 argument".into())); }
-                            let path = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            let frames = audio_utils::wav_read_all(&path)?;
-                            let mut data: Vec<Value> = Vec::with_capacity(frames.len());
-                            for f in frames { data.push(Value::Num(f as f64)); }
-                            let arr = Rc::new(ArrayObj { elem: ElemType::Num, dims: vec![data.len()], data: std::cell::RefCell::new(data) });
-                            self.stack.push(Value::Array(arr));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        206 => { // AUDIO_CONNECT_IN_TO_RING%(in@, ring@)
-                            if argc != 2 { return Err(BasilError("AUDIO_CONNECT_IN_TO_RING% expects 2 arguments".into())); }
-                            let in_h = self.to_i64(&args[0])?;
-                            let ring_h = self.to_i64(&args[1])?;
-                            let rc = match audio_utils::audio_connect_in_to_ring(in_h, ring_h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        207 => { // AUDIO_CONNECT_RING_TO_OUT%(ring@, out@)
-                            if argc != 2 { return Err(BasilError("AUDIO_CONNECT_RING_TO_OUT% expects 2 arguments".into())); }
-                            let ring_h = self.to_i64(&args[0])?;
-                            let out_h = self.to_i64(&args[1])?;
-                            let rc = match audio_utils::audio_connect_ring_to_out(ring_h, out_h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        220 => { // SYNTH_NEW@(rate%, poly%)
-                            if argc != 2 { return Err(BasilError("SYNTH_NEW@ expects 2 arguments".into())); }
-                            let rate = self.to_i64(&args[0])?;
-                            let poly = self.to_i64(&args[1])?;
-                            match audio_utils::synth_new(rate, poly) {
-                                Ok(h) => self.stack.push(Value::Int(h)),
-                                Err(e) => { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); }
-                            }
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        221 => { // SYNTH_NOTE_ON%(synth@, note%, vel%)
-                            if argc != 3 { return Err(BasilError("SYNTH_NOTE_ON% expects 3 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let note = self.to_i64(&args[1])?;
-                            let vel = self.to_i64(&args[2])?;
-                            let rc = match audio_utils::synth_note_on(h, note, vel) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        222 => { // SYNTH_NOTE_OFF%(synth@, note%)
-                            if argc != 2 { return Err(BasilError("SYNTH_NOTE_OFF% expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let note = self.to_i64(&args[1])?;
-                            let rc = match audio_utils::synth_note_off(h, note) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        223 => { // SYNTH_RENDER%(synth@, OUT frames![])
-                            if argc != 2 { return Err(BasilError("SYNTH_RENDER% expects 2 arguments".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let (len, arr_rc) = match &args[1] {
-                                Value::Array(arr_rc) => { let len = arr_rc.data.borrow().len(); (len, Rc::clone(arr_rc)) },
-                                other => return Err(BasilError(format!("SYNTH_RENDER% expects array, got {}", self.type_of(other))))
-                            };
-                            let mut tmp = vec![0.0f32; len];
-                            let n = match audio_utils::synth_render(h, &mut tmp) { Ok(n)=> n as usize, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 0 } };
-                            {
-                                let mut data = arr_rc.data.borrow_mut();
-                                for i in 0..n { data[i] = Value::Num(tmp[i] as f64); }
-                            }
-                            self.stack.push(Value::Int(n as i64));
-                        }
-                        #[cfg(feature = "obj-audio")]
-                        224 => { // SYNTH_DELETE%(synth@)
-                            if argc != 1 { return Err(BasilError("SYNTH_DELETE% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let rc = match audio_utils::synth_delete(h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        // --- MIDI ---
-                        #[cfg(feature = "obj-midi")]
-                        210 => { // MIDI_PORTS$[]
-                            if argc != 0 { return Err(BasilError("MIDI_PORTS$ expects 0 arguments".into())); }
-                            let v = midi_utils::midi_ports();
-                            let arr = VM::make_string_array(v);
-                            self.stack.push(arr);
-                        }
-                        #[cfg(feature = "obj-midi")]
-                        211 => { // MIDI_OPEN_IN@(portSubstr$)
-                            if argc != 1 { return Err(BasilError("MIDI_OPEN_IN@ expects 1 argument".into())); }
-                            let s = match &args[0] { Value::Str(s)=>s.clone(), other=>format!("{}", other)};
-                            match midi_utils::midi_open_in(&s) { Ok(h)=> self.stack.push(Value::Int(h)), Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } self.stack.push(Value::Int(-1)); } }
-                        }
-                        #[cfg(feature = "obj-midi")]
-                        212 => { // MIDI_POLL%(in@)
-                            if argc != 1 { return Err(BasilError("MIDI_POLL% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let n = match midi_utils::midi_poll(h) { Ok(n)=>n, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } -1 } };
-                            self.stack.push(Value::Int(n));
-                        }
-                        #[cfg(feature = "obj-midi")]
-                        213 => { // MIDI_GET_EVENT$[](in@)
-                            if argc != 1 { return Err(BasilError("MIDI_GET_EVENT$[] expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let (s, d1, d2) = midi_utils::midi_get_event(h)?;
-                            let arr = VM::make_string_array(vec![s.to_string(), d1.to_string(), d2.to_string()]);
-                            self.stack.push(arr);
-                        }
-                        #[cfg(feature = "obj-midi")]
-                        214 => { // MIDI_CLOSE%(in@)
-                            if argc != 1 { return Err(BasilError("MIDI_CLOSE% expects 1 argument".into())); }
-                            let h = self.to_i64(&args[0])?;
-                            let rc = match midi_utils::midi_close(h) { Ok(_)=>0, Err(e)=> { #[cfg(feature="obj-daw")] { daw_utils::set_err(format!("{}", e)); } 1 } };
-                            self.stack.push(Value::Int(rc));
-                        }
-                        138 => { // INTERNAL: STR2D_TO_ARRAY$(rowsxcols)
-                            if argc != 1 { return Err(BasilError("internal builtin 138 expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::StrArray2D { rows, cols, data } => {
-                                    // build 2D string array with dims [rows, cols]
-                                    let dims = vec![*rows, *cols];
-                                    let mut arr_data: Vec<Value> = Vec::with_capacity(data.len());
-                                    for s in data.iter() { arr_data.push(Value::Str(s.clone())); }
-                                    let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: std::cell::RefCell::new(arr_data) });
-                                    self.stack.push(Value::Array(arr));
-                                }
-                                other => return Err(BasilError(format!("builtin 138 expects StrArray2D, got {}", self.type_of(other)))),
-                            }
-                        }
-                        139 => { // ARRAY_ROWS%(arr$())
-                            if argc != 1 { return Err(BasilError("ARRAY_ROWS% expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::Array(rc) => {
-                                    let a = rc.as_ref();
-                                    if a.dims.len() != 2 { return Err(BasilError("ARRAY_ROWS%: expected 2-D array".into())); }
-                                    self.stack.push(Value::Int(a.dims[0] as i64));
-                                }
-                                _ => return Err(BasilError("ARRAY_ROWS%: expected array".into())),
-                            }
-                        }
-                        140 => { // ARRAY_COLS%(arr$())
-                            if argc != 1 { return Err(BasilError("ARRAY_COLS% expects 1 argument".into())); }
-                            match &args[0] {
-                                Value::Array(rc) => {
-                                    let a = rc.as_ref();
-                                    if a.dims.len() != 2 { return Err(BasilError("ARRAY_COLS%: expected 2-D array".into())); }
-                                    self.stack.push(Value::Int(a.dims[1] as i64));
-                                }
-                                _ => return Err(BasilError("ARRAY_COLS%: expected array".into())),
-                            }
-                        }
-                        #[cfg(feature = "obj-term")]
-                        230 => { // CLS / CLEAR / HOME
-                            if argc != 0 { return Err(BasilError("CLS expects 0 arguments".into())); }
-                            let rc = basil_objects::term::cls();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        231 => { // LOCATE(x%, y%)
-                            if argc != 2 { return Err(BasilError("LOCATE expects 2 arguments".into())); }
-                            let rc = basil_objects::term::locate(&args[0], &args[1]);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        232 => { // COLOR(fg, bg)
-                            if argc != 2 { return Err(BasilError("COLOR expects 2 arguments".into())); }
-                            let rc = basil_objects::term::color(&args[0], &args[1]);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        233 => { // COLOR_RESET
-                            if argc != 0 { return Err(BasilError("COLOR_RESET expects 0 arguments".into())); }
-                            let rc = basil_objects::term::color_reset();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        234 => { // ATTR(bold%, underline%, reverse%)
-                            if argc != 3 { return Err(BasilError("ATTR expects 3 arguments".into())); }
-                            let rc = basil_objects::term::attr(&args[0], &args[1], &args[2]);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        235 => { // ATTR_RESET
-                            if argc != 0 { return Err(BasilError("ATTR_RESET expects 0 arguments".into())); }
-                            let rc = basil_objects::term::attr_reset();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        236 => { // CURSOR_SAVE
-                            if argc != 0 { return Err(BasilError("CURSOR_SAVE expects 0 arguments".into())); }
-                            let rc = basil_objects::term::cursor_save();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        237 => { // CURSOR_RESTORE
-                            if argc != 0 { return Err(BasilError("CURSOR_RESTORE expects 0 arguments".into())); }
-                            let rc = basil_objects::term::cursor_restore();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        238 => { // TERM_COLS%()
-                            if argc != 0 { return Err(BasilError("TERM_COLS% expects 0 arguments".into())); }
-                            let n = basil_objects::term::term_cols();
-                            self.stack.push(Value::Int(n));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        239 => { // TERM_ROWS%()
-                            if argc != 0 { return Err(BasilError("TERM_ROWS% expects 0 arguments".into())); }
-                            let n = basil_objects::term::term_rows();
-                            self.stack.push(Value::Int(n));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        241 => { // CURSOR_HIDE
-                            if argc != 0 { return Err(BasilError("CURSOR_HIDE expects 0 arguments".into())); }
-                            let rc = basil_objects::term::cursor_hide();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        242 => { // CURSOR_SHOW
-                            if argc != 0 { return Err(BasilError("CURSOR_SHOW expects 0 arguments".into())); }
-                            let rc = basil_objects::term::cursor_show();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        243 => { // TERM_ERR$()
-                            if argc != 0 { return Err(BasilError("TERM_ERR$ expects 0 arguments".into())); }
-                            let s = basil_objects::term::term_err();
-                            self.stack.push(Value::Str(s));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        244 => { // TERM.INIT
-                            if argc != 0 { return Err(BasilError("TERM.INIT expects 0 arguments".into())); }
-                            let rc = basil_objects::term::term_init();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        245 => { // TERM.END
-                            if argc != 0 { return Err(BasilError("TERM.END expects 0 arguments".into())); }
-                            let rc = basil_objects::term::term_end();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        246 => { // TERM.RAW ON|OFF
-                            if argc != 1 { return Err(BasilError("TERM.RAW expects 1 argument (ON/OFF or 0/1)".into())); }
-                            let rc = basil_objects::term::term_raw(&args[0]);
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        247 => { // ALTSCREEN_ON
-                            if argc != 0 { return Err(BasilError("ALTSCREEN_ON expects 0 arguments".into())); }
-                            let rc = basil_objects::term::altscreen_on();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        248 => { // ALTSCREEN_OFF
-                            if argc != 0 { return Err(BasilError("ALTSCREEN_OFF expects 0 arguments".into())); }
-                            let rc = basil_objects::term::altscreen_off();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        249 => { // TERM.FLUSH
-                            if argc != 0 { return Err(BasilError("TERM.FLUSH expects 0 arguments".into())); }
-                            let rc = basil_objects::term::term_flush();
-                            self.stack.push(Value::Int(rc));
-                        }
-                        #[cfg(feature = "obj-term")]
-                        250 => { // TERM.POLLKEY$()
-                            if argc != 0 { return Err(BasilError("TERM.POLLKEY$ expects 0 arguments".into())); }
-                            let s = basil_objects::term::term_pollkey_s();
-                            self.stack.push(Value::Str(s));
-                        }
-                        251 => { // MAKE_LIST([...])
-                            // args are already in call order
-                            let list = Rc::new(std::cell::RefCell::new(args));
-                            self.stack.push(Value::List(list));
-                        }
-                        252 => { // MAKE_DICT({key: val, ...})
-                            if argc % 2 != 0 { return Err(BasilError("MAKE_DICT expects an even number of arguments (key,value pairs)".into())); }
-                            let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
-                            let mut i = 0usize;
-                            while i < args.len() {
-                                let key = match &args[i] { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
-                                let val = args[i+1].clone();
-                                map.insert(key, val);
-                                i += 2;
-                            }
-                            self.stack.push(Value::Dict(Rc::new(std::cell::RefCell::new(map))));
-                        }
-                        253 => { // INDEX GET: obj[idx]
-                            if argc != 2 { return Err(BasilError("INDEX[] get expects 2 arguments".into())); }
-                            let target = &args[0];
-                            let index = &args[1];
-                            match target {
-                                Value::List(rc) => {
-                                    let idx = self.to_i64(index)?;
-                                    if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
-                                    let idx0 = (idx - 1) as usize;
-                                    let v = rc.borrow();
-                                    if idx0 >= v.len() { return Err(BasilError(format!("List index out of range: {}", idx))); }
-                                    self.stack.push(v[idx0].clone());
-                                }
-                                Value::Array(arr_rc) => {
-                                    // Support [] for 1-D arrays as well; arrays are 0-based.
-                                    let idx = self.to_i64(index)?;
-                                    let arr = arr_rc.as_ref();
-                                    if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
-                                    if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
-                                    let val = arr.data.borrow()[idx as usize].clone();
-                                    self.stack.push(val);
-                                }
-                                Value::Dict(rc) => {
-                                    let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
-                                    let m = rc.borrow();
-                                    if let Some(v) = m.get(&key) { self.stack.push(v.clone()); }
-                                    else { self.stack.push(Value::Null); }
-                                }
-                                _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
-                            }
-                        }
-                        254 => { // INDEX SET: obj[idx] = value
-                            if argc != 3 { return Err(BasilError("INDEX[] set expects 3 arguments".into())); }
-                            let target = &args[0];
-                            let index = &args[1];
-                            let value = args[2].clone();
-                            match target {
-                                Value::List(rc) => {
-                                    let idx = self.to_i64(index)?;
-                                    if idx <= 0 { return Err(BasilError(format!("List index out of range: {}", idx))); }
-                                    let idx0 = (idx - 1) as usize;
-                                    let mut v = rc.borrow_mut();
-                                    // Auto-extend with Nulls to accommodate gaps (gap-fill always on)
-                                    if idx0 >= v.len() {
-                                        while v.len() <= idx0 { v.push(Value::Null); }
-                                    }
-                                    v[idx0] = value;
-                                    self.stack.push(Value::Null);
-                                }
-                                Value::Array(arr_rc) => {
-                                    // Support [] for 1-D arrays as well; arrays are fixed-size, 0-based.
-                                    let idx = self.to_i64(index)?;
-                                    let arr = arr_rc.as_ref();
-                                    if arr.dims.len() != 1 { return Err(BasilError("array rank mismatch".into())); }
-                                    if idx < 0 || (idx as usize) >= arr.dims[0] { return Err(BasilError("array index out of bounds".into())); }
-                                    let coerced = match &arr.elem {
-                                        ElemType::Num => match value { Value::Num(n)=>Value::Num(n), Value::Int(i)=>Value::Num(i as f64), other=>return Err(BasilError(format!("cannot store non-numeric {} into numeric array", self.type_of(&other)))) },
-                                        ElemType::Int => match value { Value::Int(i)=>Value::Int(i), Value::Num(n)=>Value::Int(n.trunc() as i64), other=>return Err(BasilError(format!("cannot store non-numeric {} into integer array", self.type_of(&other)))) },
-                                        ElemType::Str => match value { Value::Str(s)=>Value::Str(s), other=>Value::Str(format!("{}", other)) },
-                                        ElemType::Obj(Some(tname)) => match value {
-                                            Value::Object(rc) => {
-                                                let got = rc.borrow().type_name().to_string();
-                                                if got.eq_ignore_ascii_case(tname) { Value::Object(rc) }
-                                                else { return Err(BasilError(format!("Expected {} in typed object array, got {}.", tname, got))); }
-                                            }
-                                            Value::Null => Value::Null,
-                                            other => return Err(BasilError(format!("cannot store non-object {} into typed OBJECT[] array", self.type_of(&other)))),
-                                        },
-                                        ElemType::Obj(None) => match value {
-                                            Value::Object(_) | Value::Null => value,
-                                            other => return Err(BasilError(format!("cannot store non-object {} into OBJECT[] array", self.type_of(&other)))),
-                                        },
-                                    };
-                                    arr.data.borrow_mut()[idx as usize] = coerced;
-                                    self.stack.push(Value::Null);
-                                }
-                                Value::Dict(rc) => {
-                                    let key = match index { Value::Str(s) => s.clone(), other => return Err(BasilError(format!("Dictionary key must be string, got {}", self.type_of(other)))) };
-                                    rc.borrow_mut().insert(key, value);
-                                    self.stack.push(Value::Null);
-                                }
-                                _ => { return Err(BasilError("Attempted [] on a non-list/dict value.".into())); }
-                            }
-                        }
-                        _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                     }
-                }
-
-                Op::Halt => {
-                    if self.frames.len() == 1 { return Ok(true); }
-                    else { return Err(BasilError("HALT inside function".into())); }
+                    #[cfg(feature = "obj-base64")]
+                    90 => {
+                        // BASE64_ENCODE$(text$)
+                        if argc != 1 {
+                            return Err(BasilError("BASE64_ENCODE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let encoded = general_purpose::STANDARD.encode(s.as_bytes());
+                        self.stack.push(Value::Str(encoded));
+                    }
+                    #[cfg(feature = "obj-base64")]
+                    91 => {
+                        // BASE64_DECODE$(text$)
+                        if argc != 1 {
+                            return Err(BasilError("BASE64_DECODE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        match general_purpose::STANDARD.decode(s) {
+                            Ok(bytes) => match String::from_utf8(bytes) {
+                                Ok(txt) => self.stack.push(Value::Str(txt)),
+                                Err(_) => {
+                                    return Err(BasilError(
+                                        "BASE64_DECODE$: invalid UTF-8 in decoded data".into(),
+                                    ))
+                                }
+                            },
+                            Err(_) => {
+                                return Err(BasilError(
+                                    "BASE64_DECODE$: invalid Base64 string".into(),
+                                ))
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-zip")]
+                    120 => {
+                        // ZIP_EXTRACT_ALL(zip_path$, dest_dir$)
+                        if argc != 2 {
+                            return Err(BasilError("ZIP_EXTRACT_ALL expects 2 arguments".into()));
+                        }
+                        let zip_path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let dest_dir = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        zip_utils::zip_extract_all(&zip_path, &dest_dir)?;
+                        self.stack.push(Value::Str(String::new()));
+                    }
+                    #[cfg(feature = "obj-zip")]
+                    121 => {
+                        // ZIP_COMPRESS_FILE(src_path$, zip_path$, entry_name$)
+                        if !(argc == 2 || argc == 3) {
+                            return Err(BasilError(
+                                "ZIP_COMPRESS_FILE expects 2 or 3 arguments".into(),
+                            ));
+                        }
+                        let src_path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let zip_path = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let entry_opt: Option<String> = if argc == 3 {
+                            Some(match &args[2] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            })
+                        } else {
+                            None
+                        };
+                        zip_utils::zip_compress_file(&src_path, &zip_path, entry_opt.as_deref())?;
+                        self.stack.push(Value::Str(String::new()));
+                    }
+                    #[cfg(feature = "obj-zip")]
+                    122 => {
+                        // ZIP_COMPRESS_DIR(src_dir$, zip_path$)
+                        if argc != 2 {
+                            return Err(BasilError("ZIP_COMPRESS_DIR expects 2 arguments".into()));
+                        }
+                        let src_dir = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let zip_path = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        zip_utils::zip_compress_dir(&src_dir, &zip_path)?;
+                        self.stack.push(Value::Str(String::new()));
+                    }
+                    #[cfg(feature = "obj-zip")]
+                    123 => {
+                        // ZIP_LIST$(zip_path$)
+                        if argc != 1 {
+                            return Err(BasilError("ZIP_LIST$ expects 1 argument".into()));
+                        }
+                        let zip_path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let listing = zip_utils::zip_list(&zip_path)?;
+                        self.stack.push(Value::Str(listing));
+                    }
+                    #[cfg(feature = "obj-zip")]
+                    135 => {
+                        // ZIP_ARRAY$(zip_path$)
+                        if argc != 1 {
+                            return Err(BasilError("ZIP_ARRAY$ expects 1 argument".into()));
+                        }
+                        let zip_path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let entries = zip_utils::zip_list_array(&zip_path)?;
+                        let arr = VM::make_string_array(entries);
+                        self.stack.push(arr);
+                    }
+                    #[cfg(feature = "obj-json")]
+                    136 => {
+                        // JSON_DECODE@(json$)
+                        if argc != 1 {
+                            return Err(BasilError("JSON_DECODE@ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let v: sj::Value = serde_json::from_str(&s)
+                            .map_err(|e| BasilError(format!("JSON_DECODE@ error: {}", e)))?;
+                        let val = Self::json_to_value_static(&v);
+                        self.stack.push(val);
+                    }
+                    #[cfg(feature = "obj-curl")]
+                    124 => {
+                        // HTTP_GET$(url$)
+                        if argc != 1 {
+                            return Err(BasilError("HTTP_GET$ expects 1 argument".into()));
+                        }
+                        let url = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let body = curl_utils::http_get(&url)?;
+                        self.stack.push(Value::Str(body));
+                    }
+                    #[cfg(feature = "obj-curl")]
+                    125 => {
+                        // HTTP_POST$(url$, body$[, content_type$])
+                        if !(argc == 2 || argc == 3) {
+                            return Err(BasilError("HTTP_POST$ expects 2 or 3 arguments".into()));
+                        }
+                        let url = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let body = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let ct_opt: Option<String> = if argc == 3 {
+                            Some(match &args[2] {
+                                Value::Str(s) => s.clone(),
+                                other => format!("{}", other),
+                            })
+                        } else {
+                            None
+                        };
+                        let resp = curl_utils::http_post(&url, &body, ct_opt.as_deref())?;
+                        self.stack.push(Value::Str(resp));
+                    }
+                    #[cfg(feature = "obj-json")]
+                    126 => {
+                        // JSON_PARSE$(text$)
+                        if argc != 1 {
+                            return Err(BasilError("JSON_PARSE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let v: JValue = serde_json::from_str(&s)
+                            .map_err(|e| BasilError(format!("JSON_PARSE$: invalid JSON: {}", e)))?;
+                        let out = serde_json::to_string(&v).map_err(|e| {
+                            BasilError(format!("JSON_PARSE$: serialize failed: {}", e))
+                        })?;
+                        self.stack.push(Value::Str(out));
+                    }
+                    #[cfg(feature = "obj-json")]
+                    127 => {
+                        // JSON_STRINGIFY$(value)
+                        if argc != 1 {
+                            return Err(BasilError("JSON_STRINGIFY$ expects 1 argument".into()));
+                        }
+                        match &args[0] {
+                            Value::Str(s) => {
+                                if let Ok(v) = serde_json::from_str::<JValue>(&s) {
+                                    let out = serde_json::to_string(&v).map_err(|e| {
+                                        BasilError(format!(
+                                            "JSON_STRINGIFY$: serialize failed: {}",
+                                            e
+                                        ))
+                                    })?;
+                                    self.stack.push(Value::Str(out));
+                                } else {
+                                    let out = serde_json::to_string(&s).map_err(|e| {
+                                        BasilError(format!("JSON_STRINGIFY$: wrap failed: {}", e))
+                                    })?;
+                                    self.stack.push(Value::Str(out));
+                                }
+                            }
+                            other => {
+                                let v = value_to_jvalue(other)?;
+                                let out = serde_json::to_string(&v).map_err(|e| {
+                                    BasilError(format!("JSON_STRINGIFY$: serialize failed: {}", e))
+                                })?;
+                                self.stack.push(Value::Str(out));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-csv")]
+                    128 => {
+                        // CSV_PARSE$(csv_text$)
+                        if argc != 1 {
+                            return Err(BasilError("CSV_PARSE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let mut rdr = ReaderBuilder::new()
+                            .has_headers(true)
+                            .from_reader(s.as_bytes());
+                        let headers = rdr
+                            .headers()
+                            .map_err(|e| {
+                                BasilError(format!("CSV_PARSE$: read headers failed: {}", e))
+                            })?
+                            .clone();
+                        let mut rows: Vec<JValue> = Vec::new();
+                        for rec in rdr.records() {
+                            let rec = rec.map_err(|e| {
+                                BasilError(format!("CSV_PARSE$: read record failed: {}", e))
+                            })?;
+                            let mut obj = serde_json::Map::new();
+                            for (i, field) in rec.iter().enumerate() {
+                                let key = headers.get(i).unwrap_or("").to_string();
+                                obj.insert(key, JValue::String(field.to_string()));
+                            }
+                            rows.push(JValue::Object(obj));
+                        }
+                        let out = serde_json::to_string(&rows).map_err(|e| {
+                            BasilError(format!("CSV_PARSE$: serialize failed: {}", e))
+                        })?;
+                        self.stack.push(Value::Str(out));
+                    }
+                    #[cfg(feature = "obj-csv")]
+                    129 => {
+                        // CSV_WRITE$(rows_json$)
+                        if argc != 1 {
+                            return Err(BasilError("CSV_WRITE$ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let rows: JValue = serde_json::from_str(&s)
+                            .map_err(|e| BasilError(format!("CSV_WRITE$: invalid JSON: {}", e)))?;
+                        let arr = rows.as_array().ok_or_else(|| {
+                            BasilError("CSV_WRITE$: expected JSON array of objects".into())
+                        })?;
+                        let mut headers: Vec<String> = Vec::new();
+                        let mut seen = std::collections::HashSet::new();
+                        if let Some(first) = arr.first().and_then(|v| v.as_object()) {
+                            for k in first.keys() {
+                                headers.push(k.clone());
+                                seen.insert(k.clone());
+                            }
+                        }
+                        for v in arr.iter() {
+                            if let Some(obj) = v.as_object() {
+                                for k in obj.keys() {
+                                    if !seen.contains(k) {
+                                        headers.push(k.clone());
+                                        seen.insert(k.clone());
+                                    }
+                                }
+                            }
+                        }
+                        let mut wtr = WriterBuilder::new().from_writer(vec![]);
+                        wtr.write_record(headers.iter()).map_err(|e| {
+                            BasilError(format!("CSV_WRITE$: write headers failed: {}", e))
+                        })?;
+                        for v in arr.iter() {
+                            let obj = v.as_object().ok_or_else(|| {
+                                BasilError("CSV_WRITE$: array items must be objects".into())
+                            })?;
+                            let mut row: Vec<String> = Vec::with_capacity(headers.len());
+                            for h in headers.iter() {
+                                let cell = match obj.get(h) {
+                                    Some(JValue::String(s)) => s.clone(),
+                                    Some(JValue::Number(n)) => n.to_string(),
+                                    Some(JValue::Bool(b)) => {
+                                        if *b {
+                                            "true".to_string()
+                                        } else {
+                                            "false".to_string()
+                                        }
+                                    }
+                                    Some(JValue::Null) => String::new(),
+                                    Some(other) => serde_json::to_string(other).unwrap_or_default(),
+                                    None => String::new(),
+                                };
+                                row.push(cell);
+                            }
+                            wtr.write_record(&row).map_err(|e| {
+                                BasilError(format!("CSV_WRITE$: write row failed: {}", e))
+                            })?;
+                        }
+                        let bytes = wtr.into_inner().map_err(|e| {
+                            BasilError(format!("CSV_WRITE$: finalize failed: {}", e))
+                        })?;
+                        let out = String::from_utf8(bytes)
+                            .map_err(|e| BasilError(format!("CSV_WRITE$: utf8 failed: {}", e)))?;
+                        self.stack.push(Value::Str(out));
+                    }
+                    #[cfg(feature = "obj-sqlite")]
+                    130 => {
+                        // SQLITE_OPEN%(path$)
+                        if argc != 1 {
+                            return Err(BasilError("SQLITE_OPEN% expects 1 argument".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let h = sqlite_utils::sqlite_open(&path);
+                        self.stack.push(Value::Int(h));
+                    }
+                    #[cfg(feature = "obj-sqlite")]
+                    131 => {
+                        // SQLITE_CLOSE(handle%)
+                        if argc != 1 {
+                            return Err(BasilError("SQLITE_CLOSE expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        sqlite_utils::sqlite_close(h);
+                        self.stack.push(Value::Null);
+                    }
+                    #[cfg(feature = "obj-sqlite")]
+                    132 => {
+                        // SQLITE_EXEC%(handle%, sql$)
+                        if argc != 2 {
+                            return Err(BasilError("SQLITE_EXEC% expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let sql = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let n = sqlite_utils::sqlite_exec(h, &sql);
+                        self.stack.push(Value::Int(n));
+                    }
+                    #[cfg(feature = "obj-sqlite")]
+                    133 => {
+                        // SQLITE_QUERY2D$(handle%, sql$)
+                        if argc != 2 {
+                            return Err(BasilError("SQLITE_QUERY2D$ expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let sql = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let v = sqlite_utils::sqlite_query2d(h, &sql)?;
+                        self.stack.push(v);
+                    }
+                    #[cfg(feature = "obj-sqlite")]
+                    134 => {
+                        // SQLITE_LAST_INSERT_ID%(handle%)
+                        if argc != 1 {
+                            return Err(BasilError(
+                                "SQLITE_LAST_INSERT_ID% expects 1 argument".into(),
+                            ));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let id = sqlite_utils::sqlite_last_insert_id(h);
+                        self.stack.push(Value::Int(id));
+                    }
+                    // --- DAW helpers ---
+                    #[cfg(feature = "obj-daw")]
+                    180 => {
+                        // DAW_STOP()
+                        if argc != 0 {
+                            return Err(BasilError("DAW_STOP expects 0 arguments".into()));
+                        }
+                        daw_utils::stop();
+                        self.stack.push(Value::Str(String::new()));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    181 => {
+                        // DAW_ERR$()
+                        if argc != 0 {
+                            return Err(BasilError("DAW_ERR$ expects 0 arguments".into()));
+                        }
+                        let s = daw_utils::get_err();
+                        self.stack.push(Value::Str(s));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    182 => {
+                        // AUDIO_RECORD%(inputSubstr$, outPath$, seconds%)
+                        if argc != 3 {
+                            return Err(BasilError("AUDIO_RECORD% expects 3 arguments".into()));
+                        }
+                        let a = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let b = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let secs = self.to_i64(&args[2])?;
+                        let rc = daw_utils::audio_record(&a, &b, secs);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    183 => {
+                        // AUDIO_PLAY%(outputSubstr$, filePath$)
+                        if argc != 2 {
+                            return Err(BasilError("AUDIO_PLAY% expects 2 arguments".into()));
+                        }
+                        let a = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let b = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let rc = daw_utils::audio_play(&a, &b);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    184 => {
+                        // AUDIO_MONITOR%(inputSubstr$, outputSubstr$)
+                        if argc != 2 {
+                            return Err(BasilError("AUDIO_MONITOR% expects 2 arguments".into()));
+                        }
+                        let a = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let b = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let rc = daw_utils::audio_monitor(&a, &b);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    185 => {
+                        // MIDI_CAPTURE%(portSubstr$, outJsonlPath$)
+                        if argc != 2 {
+                            return Err(BasilError("MIDI_CAPTURE% expects 2 arguments".into()));
+                        }
+                        let a = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let b = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let rc = daw_utils::midi_capture(&a, &b);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    186 => {
+                        // SYNTH_LIVE%(midiPortSubstr$, outputSubstr$, poly%)
+                        if argc != 3 {
+                            return Err(BasilError("SYNTH_LIVE% expects 3 arguments".into()));
+                        }
+                        let a = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let b = match &args[1] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let poly = self.to_i64(&args[2])?;
+                        let rc = daw_utils::synth_live(&a, &b, poly);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-daw")]
+                    187 => {
+                        // DAW_RESET
+                        if argc != 0 {
+                            return Err(BasilError("DAW_RESET expects 0 arguments".into()));
+                        }
+                        daw_utils::reset();
+                        self.stack.push(Value::Str(String::new()));
+                    }
+                    // --- Audio low-level ---
+                    #[cfg(feature = "obj-audio")]
+                    190 => {
+                        // AUDIO_OUTPUTS$[]
+                        if argc != 0 {
+                            return Err(BasilError("AUDIO_OUTPUTS$ expects 0 arguments".into()));
+                        }
+                        let v = audio_utils::audio_outputs();
+                        let arr = VM::make_string_array(v);
+                        self.stack.push(arr);
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    191 => {
+                        // AUDIO_INPUTS$[]
+                        if argc != 0 {
+                            return Err(BasilError("AUDIO_INPUTS$ expects 0 arguments".into()));
+                        }
+                        let v = audio_utils::audio_inputs();
+                        let arr = VM::make_string_array(v);
+                        self.stack.push(arr);
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    192 => {
+                        // AUDIO_DEFAULT_RATE%()
+                        if argc != 0 {
+                            return Err(BasilError(
+                                "AUDIO_DEFAULT_RATE% expects 0 arguments".into(),
+                            ));
+                        }
+                        self.stack
+                            .push(Value::Int(audio_utils::audio_default_rate()));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    193 => {
+                        // AUDIO_DEFAULT_CHANS%()
+                        if argc != 0 {
+                            return Err(BasilError(
+                                "AUDIO_DEFAULT_CHANS% expects 0 arguments".into(),
+                            ));
+                        }
+                        self.stack
+                            .push(Value::Int(audio_utils::audio_default_chans()));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    194 => {
+                        // AUDIO_OPEN_IN@(deviceSubstr$)
+                        if argc != 1 {
+                            return Err(BasilError("AUDIO_OPEN_IN@ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        match audio_utils::audio_open_in(&s) {
+                            Ok(h) => self.stack.push(Value::Int(h)),
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    195 => {
+                        // AUDIO_OPEN_OUT@(deviceSubstr$)
+                        if argc != 1 {
+                            return Err(BasilError("AUDIO_OPEN_OUT@ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        match audio_utils::audio_open_out(&s) {
+                            Ok(h) => self.stack.push(Value::Int(h)),
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    196 => {
+                        // AUDIO_START%(handle@)
+                        if argc != 1 {
+                            return Err(BasilError("AUDIO_START% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let rc = match audio_utils::audio_start(h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    197 => {
+                        // AUDIO_STOP%(handle@)
+                        if argc != 1 {
+                            return Err(BasilError("AUDIO_STOP% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let rc = match audio_utils::audio_stop(h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    198 => {
+                        // AUDIO_CLOSE%(handle@)
+                        if argc != 1 {
+                            return Err(BasilError("AUDIO_CLOSE% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let rc = match audio_utils::audio_close(h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    199 => {
+                        // AUDIO_RING_CREATE@(frames%)
+                        if argc != 1 {
+                            return Err(BasilError("AUDIO_RING_CREATE@ expects 1 argument".into()));
+                        }
+                        let n = self.to_i64(&args[0])?;
+                        match audio_utils::ring_create(n) {
+                            Ok(h) => self.stack.push(Value::Int(h)),
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    200 => {
+                        // AUDIO_RING_PUSH%(ring@, frames![])
+                        if argc != 2 {
+                            return Err(BasilError("AUDIO_RING_PUSH% expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let data: Vec<f32> = match &args[1] {
+                            Value::Array(arr_rc) => {
+                                let arr = arr_rc.as_ref();
+                                let v = arr.data.borrow();
+                                let mut out = Vec::with_capacity(v.len());
+                                for e in v.iter() {
+                                    match e {
+                                        Value::Num(f) => out.push(*f as f32),
+                                        Value::Int(i) => out.push(*i as f32),
+                                        _ => out.push(0.0),
+                                    }
+                                }
+                                out
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "AUDIO_RING_PUSH% expects array, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let rc = match audio_utils::ring_push(h, &data) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                -1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    201 => {
+                        // AUDIO_RING_POP%(ring@, OUT frames![])
+                        if argc != 2 {
+                            return Err(BasilError("AUDIO_RING_POP% expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let (len, arr_rc) = match &args[1] {
+                            Value::Array(arr_rc) => {
+                                let len = arr_rc.data.borrow().len();
+                                (len, Rc::clone(arr_rc))
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "AUDIO_RING_POP% expects array, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let mut tmp = vec![0.0f32; len];
+                        let n = match audio_utils::ring_pop(h, &mut tmp) {
+                            Ok(n) => n as usize,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                0
+                            }
+                        };
+                        // fill array with popped values (remaining unchanged)
+                        {
+                            let mut data = arr_rc.data.borrow_mut();
+                            for i in 0..n {
+                                data[i] = Value::Num(tmp[i] as f64);
+                            }
+                        }
+                        self.stack.push(Value::Int(n as i64));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    202 => {
+                        // WAV_WRITER_OPEN@(path$, rate%, chans%)
+                        if argc != 3 {
+                            return Err(BasilError("WAV_WRITER_OPEN@ expects 3 arguments".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let rate = self.to_i64(&args[1])?;
+                        let chans = self.to_i64(&args[2])?;
+                        match audio_utils::wav_writer_open(&path, rate, chans) {
+                            Ok(h) => self.stack.push(Value::Int(h)),
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    203 => {
+                        // WAV_WRITER_WRITE%(writer@, frames![])
+                        if argc != 2 {
+                            return Err(BasilError("WAV_WRITER_WRITE% expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let data: Vec<f32> = match &args[1] {
+                            Value::Array(arr_rc) => {
+                                let arr = arr_rc.as_ref();
+                                let v = arr.data.borrow();
+                                let mut out = Vec::with_capacity(v.len());
+                                for e in v.iter() {
+                                    match e {
+                                        Value::Num(f) => out.push(*f as f32),
+                                        Value::Int(i) => out.push(*i as f32),
+                                        _ => out.push(0.0),
+                                    }
+                                }
+                                out
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "WAV_WRITER_WRITE% expects array, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let rc = match audio_utils::wav_writer_write(h, &data) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    204 => {
+                        // WAV_WRITER_CLOSE%(writer@)
+                        if argc != 1 {
+                            return Err(BasilError("WAV_WRITER_CLOSE% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let rc = match audio_utils::wav_writer_close(h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    205 => {
+                        // WAV_READ_ALL![](path$)
+                        if argc != 1 {
+                            return Err(BasilError("WAV_READ_ALL![] expects 1 argument".into()));
+                        }
+                        let path = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let frames = audio_utils::wav_read_all(&path)?;
+                        let mut data: Vec<Value> = Vec::with_capacity(frames.len());
+                        for f in frames {
+                            data.push(Value::Num(f as f64));
+                        }
+                        let arr = Rc::new(ArrayObj {
+                            elem: ElemType::Num,
+                            dims: vec![data.len()],
+                            data: std::cell::RefCell::new(data),
+                        });
+                        self.stack.push(Value::Array(arr));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    206 => {
+                        // AUDIO_CONNECT_IN_TO_RING%(in@, ring@)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "AUDIO_CONNECT_IN_TO_RING% expects 2 arguments".into(),
+                            ));
+                        }
+                        let in_h = self.to_i64(&args[0])?;
+                        let ring_h = self.to_i64(&args[1])?;
+                        let rc = match audio_utils::audio_connect_in_to_ring(in_h, ring_h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    207 => {
+                        // AUDIO_CONNECT_RING_TO_OUT%(ring@, out@)
+                        if argc != 2 {
+                            return Err(BasilError(
+                                "AUDIO_CONNECT_RING_TO_OUT% expects 2 arguments".into(),
+                            ));
+                        }
+                        let ring_h = self.to_i64(&args[0])?;
+                        let out_h = self.to_i64(&args[1])?;
+                        let rc = match audio_utils::audio_connect_ring_to_out(ring_h, out_h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    220 => {
+                        // SYNTH_NEW@(rate%, poly%)
+                        if argc != 2 {
+                            return Err(BasilError("SYNTH_NEW@ expects 2 arguments".into()));
+                        }
+                        let rate = self.to_i64(&args[0])?;
+                        let poly = self.to_i64(&args[1])?;
+                        match audio_utils::synth_new(rate, poly) {
+                            Ok(h) => self.stack.push(Value::Int(h)),
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    221 => {
+                        // SYNTH_NOTE_ON%(synth@, note%, vel%)
+                        if argc != 3 {
+                            return Err(BasilError("SYNTH_NOTE_ON% expects 3 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let note = self.to_i64(&args[1])?;
+                        let vel = self.to_i64(&args[2])?;
+                        let rc = match audio_utils::synth_note_on(h, note, vel) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    222 => {
+                        // SYNTH_NOTE_OFF%(synth@, note%)
+                        if argc != 2 {
+                            return Err(BasilError("SYNTH_NOTE_OFF% expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let note = self.to_i64(&args[1])?;
+                        let rc = match audio_utils::synth_note_off(h, note) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    223 => {
+                        // SYNTH_RENDER%(synth@, OUT frames![])
+                        if argc != 2 {
+                            return Err(BasilError("SYNTH_RENDER% expects 2 arguments".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let (len, arr_rc) = match &args[1] {
+                            Value::Array(arr_rc) => {
+                                let len = arr_rc.data.borrow().len();
+                                (len, Rc::clone(arr_rc))
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "SYNTH_RENDER% expects array, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        };
+                        let mut tmp = vec![0.0f32; len];
+                        let n = match audio_utils::synth_render(h, &mut tmp) {
+                            Ok(n) => n as usize,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                0
+                            }
+                        };
+                        {
+                            let mut data = arr_rc.data.borrow_mut();
+                            for i in 0..n {
+                                data[i] = Value::Num(tmp[i] as f64);
+                            }
+                        }
+                        self.stack.push(Value::Int(n as i64));
+                    }
+                    #[cfg(feature = "obj-audio")]
+                    224 => {
+                        // SYNTH_DELETE%(synth@)
+                        if argc != 1 {
+                            return Err(BasilError("SYNTH_DELETE% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let rc = match audio_utils::synth_delete(h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    // --- MIDI ---
+                    #[cfg(feature = "obj-midi")]
+                    210 => {
+                        // MIDI_PORTS$[]
+                        if argc != 0 {
+                            return Err(BasilError("MIDI_PORTS$ expects 0 arguments".into()));
+                        }
+                        let v = midi_utils::midi_ports();
+                        let arr = VM::make_string_array(v);
+                        self.stack.push(arr);
+                    }
+                    #[cfg(feature = "obj-midi")]
+                    211 => {
+                        // MIDI_OPEN_IN@(portSubstr$)
+                        if argc != 1 {
+                            return Err(BasilError("MIDI_OPEN_IN@ expects 1 argument".into()));
+                        }
+                        let s = match &args[0] {
+                            Value::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        match midi_utils::midi_open_in(&s) {
+                            Ok(h) => self.stack.push(Value::Int(h)),
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                self.stack.push(Value::Int(-1));
+                            }
+                        }
+                    }
+                    #[cfg(feature = "obj-midi")]
+                    212 => {
+                        // MIDI_POLL%(in@)
+                        if argc != 1 {
+                            return Err(BasilError("MIDI_POLL% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let n = match midi_utils::midi_poll(h) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                -1
+                            }
+                        };
+                        self.stack.push(Value::Int(n));
+                    }
+                    #[cfg(feature = "obj-midi")]
+                    213 => {
+                        // MIDI_GET_EVENT$[](in@)
+                        if argc != 1 {
+                            return Err(BasilError("MIDI_GET_EVENT$[] expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let (s, d1, d2) = midi_utils::midi_get_event(h)?;
+                        let arr = VM::make_string_array(vec![
+                            s.to_string(),
+                            d1.to_string(),
+                            d2.to_string(),
+                        ]);
+                        self.stack.push(arr);
+                    }
+                    #[cfg(feature = "obj-midi")]
+                    214 => {
+                        // MIDI_CLOSE%(in@)
+                        if argc != 1 {
+                            return Err(BasilError("MIDI_CLOSE% expects 1 argument".into()));
+                        }
+                        let h = self.to_i64(&args[0])?;
+                        let rc = match midi_utils::midi_close(h) {
+                            Ok(_) => 0,
+                            Err(e) => {
+                                #[cfg(feature = "obj-daw")]
+                                {
+                                    daw_utils::set_err(format!("{}", e));
+                                }
+                                1
+                            }
+                        };
+                        self.stack.push(Value::Int(rc));
+                    }
+                    138 => {
+                        // INTERNAL: STR2D_TO_ARRAY$(rowsxcols)
+                        if argc != 1 {
+                            return Err(BasilError(
+                                "internal builtin 138 expects 1 argument".into(),
+                            ));
+                        }
+                        match &args[0] {
+                            Value::StrArray2D { rows, cols, data } => {
+                                // build 2D string array with dims [rows, cols]
+                                let dims = vec![*rows, *cols];
+                                let mut arr_data: Vec<Value> = Vec::with_capacity(data.len());
+                                for s in data.iter() {
+                                    arr_data.push(Value::Str(s.clone()));
+                                }
+                                let arr = Rc::new(ArrayObj {
+                                    elem: ElemType::Str,
+                                    dims,
+                                    data: std::cell::RefCell::new(arr_data),
+                                });
+                                self.stack.push(Value::Array(arr));
+                            }
+                            other => {
+                                return Err(BasilError(format!(
+                                    "builtin 138 expects StrArray2D, got {}",
+                                    self.type_of(other)
+                                )))
+                            }
+                        }
+                    }
+                    139 => {
+                        // ARRAY_ROWS%(arr$())
+                        if argc != 1 {
+                            return Err(BasilError("ARRAY_ROWS% expects 1 argument".into()));
+                        }
+                        match &args[0] {
+                            Value::Array(rc) => {
+                                let a = rc.as_ref();
+                                if a.dims.len() != 2 {
+                                    return Err(BasilError(
+                                        "ARRAY_ROWS%: expected 2-D array".into(),
+                                    ));
+                                }
+                                self.stack.push(Value::Int(a.dims[0] as i64));
+                            }
+                            _ => return Err(BasilError("ARRAY_ROWS%: expected array".into())),
+                        }
+                    }
+                    140 => {
+                        // ARRAY_COLS%(arr$())
+                        if argc != 1 {
+                            return Err(BasilError("ARRAY_COLS% expects 1 argument".into()));
+                        }
+                        match &args[0] {
+                            Value::Array(rc) => {
+                                let a = rc.as_ref();
+                                if a.dims.len() != 2 {
+                                    return Err(BasilError(
+                                        "ARRAY_COLS%: expected 2-D array".into(),
+                                    ));
+                                }
+                                self.stack.push(Value::Int(a.dims[1] as i64));
+                            }
+                            _ => return Err(BasilError("ARRAY_COLS%: expected array".into())),
+                        }
+                    }
+                    #[cfg(feature = "obj-term")]
+                    230 => {
+                        // CLS / CLEAR / HOME
+                        if argc != 0 {
+                            return Err(BasilError("CLS expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::cls();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    231 => {
+                        // LOCATE(x%, y%)
+                        if argc != 2 {
+                            return Err(BasilError("LOCATE expects 2 arguments".into()));
+                        }
+                        let rc = basil_objects::term::locate(&args[0], &args[1]);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    232 => {
+                        // COLOR(fg, bg)
+                        if argc != 2 {
+                            return Err(BasilError("COLOR expects 2 arguments".into()));
+                        }
+                        let rc = basil_objects::term::color(&args[0], &args[1]);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    233 => {
+                        // COLOR_RESET
+                        if argc != 0 {
+                            return Err(BasilError("COLOR_RESET expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::color_reset();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    234 => {
+                        // ATTR(bold%, underline%, reverse%)
+                        if argc != 3 {
+                            return Err(BasilError("ATTR expects 3 arguments".into()));
+                        }
+                        let rc = basil_objects::term::attr(&args[0], &args[1], &args[2]);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    235 => {
+                        // ATTR_RESET
+                        if argc != 0 {
+                            return Err(BasilError("ATTR_RESET expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::attr_reset();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    236 => {
+                        // CURSOR_SAVE
+                        if argc != 0 {
+                            return Err(BasilError("CURSOR_SAVE expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::cursor_save();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    237 => {
+                        // CURSOR_RESTORE
+                        if argc != 0 {
+                            return Err(BasilError("CURSOR_RESTORE expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::cursor_restore();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    238 => {
+                        // TERM_COLS%()
+                        if argc != 0 {
+                            return Err(BasilError("TERM_COLS% expects 0 arguments".into()));
+                        }
+                        let n = basil_objects::term::term_cols();
+                        self.stack.push(Value::Int(n));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    239 => {
+                        // TERM_ROWS%()
+                        if argc != 0 {
+                            return Err(BasilError("TERM_ROWS% expects 0 arguments".into()));
+                        }
+                        let n = basil_objects::term::term_rows();
+                        self.stack.push(Value::Int(n));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    241 => {
+                        // CURSOR_HIDE
+                        if argc != 0 {
+                            return Err(BasilError("CURSOR_HIDE expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::cursor_hide();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    242 => {
+                        // CURSOR_SHOW
+                        if argc != 0 {
+                            return Err(BasilError("CURSOR_SHOW expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::cursor_show();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    243 => {
+                        // TERM_ERR$()
+                        if argc != 0 {
+                            return Err(BasilError("TERM_ERR$ expects 0 arguments".into()));
+                        }
+                        let s = basil_objects::term::term_err();
+                        self.stack.push(Value::Str(s));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    244 => {
+                        // TERM.INIT
+                        if argc != 0 {
+                            return Err(BasilError("TERM.INIT expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::term_init();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    245 => {
+                        // TERM.END
+                        if argc != 0 {
+                            return Err(BasilError("TERM.END expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::term_end();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    246 => {
+                        // TERM.RAW ON|OFF
+                        if argc != 1 {
+                            return Err(BasilError(
+                                "TERM.RAW expects 1 argument (ON/OFF or 0/1)".into(),
+                            ));
+                        }
+                        let rc = basil_objects::term::term_raw(&args[0]);
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    247 => {
+                        // ALTSCREEN_ON
+                        if argc != 0 {
+                            return Err(BasilError("ALTSCREEN_ON expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::altscreen_on();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    248 => {
+                        // ALTSCREEN_OFF
+                        if argc != 0 {
+                            return Err(BasilError("ALTSCREEN_OFF expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::altscreen_off();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    249 => {
+                        // TERM.FLUSH
+                        if argc != 0 {
+                            return Err(BasilError("TERM.FLUSH expects 0 arguments".into()));
+                        }
+                        let rc = basil_objects::term::term_flush();
+                        self.stack.push(Value::Int(rc));
+                    }
+                    #[cfg(feature = "obj-term")]
+                    250 => {
+                        // TERM.POLLKEY$()
+                        if argc != 0 {
+                            return Err(BasilError("TERM.POLLKEY$ expects 0 arguments".into()));
+                        }
+                        let s = basil_objects::term::term_pollkey_s();
+                        self.stack.push(Value::Str(s));
+                    }
+                    251 => {
+                        // MAKE_LIST([...])
+                        // args are already in call order
+                        let list = Rc::new(std::cell::RefCell::new(args));
+                        self.stack.push(Value::List(list));
+                    }
+                    252 => {
+                        // MAKE_DICT({key: val, ...})
+                        if argc % 2 != 0 {
+                            return Err(BasilError(
+                                "MAKE_DICT expects an even number of arguments (key,value pairs)"
+                                    .into(),
+                            ));
+                        }
+                        let mut map: std::collections::HashMap<String, Value> =
+                            std::collections::HashMap::new();
+                        let mut i = 0usize;
+                        while i < args.len() {
+                            let key = match &args[i] {
+                                Value::Str(s) => s.clone(),
+                                other => {
+                                    return Err(BasilError(format!(
+                                        "Dictionary key must be string, got {}",
+                                        self.type_of(other)
+                                    )))
+                                }
+                            };
+                            let val = args[i + 1].clone();
+                            map.insert(key, val);
+                            i += 2;
+                        }
+                        self.stack
+                            .push(Value::Dict(Rc::new(std::cell::RefCell::new(map))));
+                    }
+                    253 => {
+                        // INDEX GET: obj[idx]
+                        if argc != 2 {
+                            return Err(BasilError("INDEX[] get expects 2 arguments".into()));
+                        }
+                        let target = &args[0];
+                        let index = &args[1];
+                        match target {
+                            Value::List(rc) => {
+                                let idx = self.to_i64(index)?;
+                                if idx <= 0 {
+                                    return Err(BasilError(format!(
+                                        "List index out of range: {}",
+                                        idx
+                                    )));
+                                }
+                                let idx0 = (idx - 1) as usize;
+                                let v = rc.borrow();
+                                if idx0 >= v.len() {
+                                    return Err(BasilError(format!(
+                                        "List index out of range: {}",
+                                        idx
+                                    )));
+                                }
+                                self.stack.push(v[idx0].clone());
+                            }
+                            Value::Array(arr_rc) => {
+                                // Support [] for 1-D arrays as well; arrays are 0-based.
+                                let idx = self.to_i64(index)?;
+                                let arr = arr_rc.as_ref();
+                                if arr.dims.len() != 1 {
+                                    return Err(BasilError("array rank mismatch".into()));
+                                }
+                                if idx < 0 || (idx as usize) >= arr.dims[0] {
+                                    return Err(BasilError("array index out of bounds".into()));
+                                }
+                                let val = arr.data.borrow()[idx as usize].clone();
+                                self.stack.push(val);
+                            }
+                            Value::Dict(rc) => {
+                                let key = match index {
+                                    Value::Str(s) => s.clone(),
+                                    other => {
+                                        return Err(BasilError(format!(
+                                            "Dictionary key must be string, got {}",
+                                            self.type_of(other)
+                                        )))
+                                    }
+                                };
+                                let m = rc.borrow();
+                                if let Some(v) = m.get(&key) {
+                                    self.stack.push(v.clone());
+                                } else {
+                                    self.stack.push(Value::Null);
+                                }
+                            }
+                            _ => {
+                                return Err(BasilError(
+                                    "Attempted [] on a non-list/dict value.".into(),
+                                ));
+                            }
+                        }
+                    }
+                    254 => {
+                        // INDEX SET: obj[idx] = value
+                        if argc != 3 {
+                            return Err(BasilError("INDEX[] set expects 3 arguments".into()));
+                        }
+                        let target = &args[0];
+                        let index = &args[1];
+                        let value = args[2].clone();
+                        match target {
+                            Value::List(rc) => {
+                                let idx = self.to_i64(index)?;
+                                if idx <= 0 {
+                                    return Err(BasilError(format!(
+                                        "List index out of range: {}",
+                                        idx
+                                    )));
+                                }
+                                let idx0 = (idx - 1) as usize;
+                                let mut v = rc.borrow_mut();
+                                // Auto-extend with Nulls to accommodate gaps (gap-fill always on)
+                                if idx0 >= v.len() {
+                                    while v.len() <= idx0 {
+                                        v.push(Value::Null);
+                                    }
+                                }
+                                v[idx0] = value;
+                                self.stack.push(Value::Null);
+                            }
+                            Value::Array(arr_rc) => {
+                                // Support [] for 1-D arrays as well; arrays are fixed-size, 0-based.
+                                let idx = self.to_i64(index)?;
+                                let arr = arr_rc.as_ref();
+                                if arr.dims.len() != 1 {
+                                    return Err(BasilError("array rank mismatch".into()));
+                                }
+                                if idx < 0 || (idx as usize) >= arr.dims[0] {
+                                    return Err(BasilError("array index out of bounds".into()));
+                                }
+                                let coerced = match &arr.elem {
+                                    ElemType::Num => {
+                                        match value {
+                                            Value::Num(n) => Value::Num(n),
+                                            Value::Int(i) => Value::Num(i as f64),
+                                            other => return Err(BasilError(format!(
+                                                "cannot store non-numeric {} into numeric array",
+                                                self.type_of(&other)
+                                            ))),
+                                        }
+                                    }
+                                    ElemType::Int => {
+                                        match value {
+                                            Value::Int(i) => Value::Int(i),
+                                            Value::Num(n) => Value::Int(n.trunc() as i64),
+                                            other => return Err(BasilError(format!(
+                                                "cannot store non-numeric {} into integer array",
+                                                self.type_of(&other)
+                                            ))),
+                                        }
+                                    }
+                                    ElemType::Str => match value {
+                                        Value::Str(s) => Value::Str(s),
+                                        other => Value::Str(format!("{}", other)),
+                                    },
+                                    ElemType::Obj(Some(tname)) => match value {
+                                        Value::Object(rc) => {
+                                            let got = rc.borrow().type_name().to_string();
+                                            if got.eq_ignore_ascii_case(tname) {
+                                                Value::Object(rc)
+                                            } else {
+                                                return Err(BasilError(format!(
+                                                    "Expected {} in typed object array, got {}.",
+                                                    tname, got
+                                                )));
+                                            }
+                                        }
+                                        Value::Null => Value::Null,
+                                        other => return Err(BasilError(format!(
+                                            "cannot store non-object {} into typed OBJECT[] array",
+                                            self.type_of(&other)
+                                        ))),
+                                    },
+                                    ElemType::Obj(None) => {
+                                        match value {
+                                            Value::Object(_) | Value::Null => value,
+                                            other => return Err(BasilError(format!(
+                                                "cannot store non-object {} into OBJECT[] array",
+                                                self.type_of(&other)
+                                            ))),
+                                        }
+                                    }
+                                };
+                                arr.data.borrow_mut()[idx as usize] = coerced;
+                                self.stack.push(Value::Null);
+                            }
+                            Value::Dict(rc) => {
+                                let key = match index {
+                                    Value::Str(s) => s.clone(),
+                                    other => {
+                                        return Err(BasilError(format!(
+                                            "Dictionary key must be string, got {}",
+                                            self.type_of(other)
+                                        )))
+                                    }
+                                };
+                                rc.borrow_mut().insert(key, value);
+                                self.stack.push(Value::Null);
+                            }
+                            _ => {
+                                return Err(BasilError(
+                                    "Attempted [] on a non-list/dict value.".into(),
+                                ));
+                            }
+                        }
+                    }
+                    _ => return Err(BasilError(format!("unknown builtin id {}", bid))),
                 }
             }
+
+            Op::Halt => {
+                if self.frames.len() == 1 {
+                    return Ok(true);
+                } else {
+                    return Err(BasilError("HALT inside function".into()));
+                }
+            }
+        }
         Ok(false)
     }
 
     // Debugger integration API
-    pub fn set_debugger(&mut self, dbg: Arc<debug::Debugger>) { self.debugger = Some(dbg); }
-    pub fn with_debugger(mut self, dbg: Arc<debug::Debugger>) -> Self { self.debugger = Some(dbg); self }
+    pub fn set_debugger(&mut self, dbg: Arc<debug::Debugger>) {
+        self.debugger = Some(dbg);
+    }
+    pub fn with_debugger(mut self, dbg: Arc<debug::Debugger>) -> Self {
+        self.debugger = Some(dbg);
+        self
+    }
     pub fn get_call_stack(&self) -> Vec<debug::FrameInfo> {
-        let file = self.script_path.clone().unwrap_or_else(|| "<unknown>".into());
+        let file = self
+            .script_path
+            .clone()
+            .unwrap_or_else(|| "<unknown>".into());
         let line = self.current_line as usize;
-        vec![debug::FrameInfo { function: "<top>".into(), file, line }]
+        vec![debug::FrameInfo {
+            function: "<top>".into(),
+            file,
+            line,
+        }]
     }
     pub fn get_scopes(&self) -> Vec<debug::Scope> {
         let mut globals: Vec<debug::Variable> = Vec::new();
@@ -4061,9 +7041,16 @@ impl VM {
                 Value::Dict(_) => "DICT".to_string(),
                 Value::StrArray2D { .. } => "STRARRAY2D".to_string(),
             };
-            globals.push(debug::Variable { name: name.clone(), value: format!("{}", v), type_name: tn });
+            globals.push(debug::Variable {
+                name: name.clone(),
+                value: format!("{}", v),
+                type_name: tn,
+            });
         }
-        let scopes = vec![debug::Scope { name: "Globals".into(), vars: globals }];
+        let scopes = vec![debug::Scope {
+            name: "Globals".into(),
+            vars: globals,
+        }];
         scopes
     }
 
@@ -4071,40 +7058,103 @@ impl VM {
 
     fn read_op(&mut self) -> Result<Op> {
         let f = self.cur();
-        let byte = *f.chunk.code.get(f.ip).ok_or_else(|| BasilError("ip out of range".into()))?;
+        let byte = *f
+            .chunk
+            .code
+            .get(f.ip)
+            .ok_or_else(|| BasilError("ip out of range".into()))?;
         f.ip += 1;
         let op = match byte {
-            1=>Op::Const, 2=>Op::LoadGlobal, 3=>Op::StoreGlobal,
-            11=>Op::LoadLocal, 12=>Op::StoreLocal,
-            20=>Op::Add, 21=>Op::Sub, 22=>Op::Mul, 23=>Op::Div, 24=>Op::Neg, 25=>Op::Mod,
-            30=>Op::Eq, 31=>Op::Ne, 32=>Op::Lt, 33=>Op::Le, 34=>Op::Gt, 35=>Op::Ge,
-            40=>Op::Jump, 41=>Op::JumpIfFalse, 42=>Op::JumpBack,
-            50=>Op::Call, 51=>Op::Ret,
-            60=>Op::Print, 61=>Op::Pop, 62=>Op::ToInt, 63=>Op::Builtin, 64=>Op::SetLine,
-            70=>Op::ArrMake, 71=>Op::ArrGet, 72=>Op::ArrSet,
-            80=>Op::NewObj, 81=>Op::GetProp, 82=>Op::SetProp, 83=>Op::CallMethod, 84=>Op::DescribeObj,
-            90=>Op::EnumNew, 91=>Op::EnumMoveNext, 92=>Op::EnumCurrent, 93=>Op::EnumDispose,
-            100=>Op::NewClass, 101=>Op::GetMember, 102=>Op::SetMember, 103=>Op::CallMember, 104=>Op::DestroyInstance,
-            105=>Op::ExecString, 106=>Op::EvalString,
-            110=>Op::Gosub, 111=>Op::GosubBack, 112=>Op::GosubRet, 113=>Op::GosubPop,
-            120=>Op::TryPush, 121=>Op::TryPop, 122=>Op::Raise, 123=>Op::Reraise, 124=>Op::Stop,
-            255=>Op::Halt,
+            1 => Op::Const,
+            2 => Op::LoadGlobal,
+            3 => Op::StoreGlobal,
+            11 => Op::LoadLocal,
+            12 => Op::StoreLocal,
+            20 => Op::Add,
+            21 => Op::Sub,
+            22 => Op::Mul,
+            23 => Op::Div,
+            24 => Op::Neg,
+            25 => Op::Mod,
+            30 => Op::Eq,
+            31 => Op::Ne,
+            32 => Op::Lt,
+            33 => Op::Le,
+            34 => Op::Gt,
+            35 => Op::Ge,
+            40 => Op::Jump,
+            41 => Op::JumpIfFalse,
+            42 => Op::JumpBack,
+            50 => Op::Call,
+            51 => Op::Ret,
+            60 => Op::Print,
+            61 => Op::Pop,
+            62 => Op::ToInt,
+            63 => Op::Builtin,
+            64 => Op::SetLine,
+            70 => Op::ArrMake,
+            71 => Op::ArrGet,
+            72 => Op::ArrSet,
+            80 => Op::NewObj,
+            81 => Op::GetProp,
+            82 => Op::SetProp,
+            83 => Op::CallMethod,
+            84 => Op::DescribeObj,
+            90 => Op::EnumNew,
+            91 => Op::EnumMoveNext,
+            92 => Op::EnumCurrent,
+            93 => Op::EnumDispose,
+            100 => Op::NewClass,
+            101 => Op::GetMember,
+            102 => Op::SetMember,
+            103 => Op::CallMember,
+            104 => Op::DestroyInstance,
+            105 => Op::ExecString,
+            106 => Op::EvalString,
+            110 => Op::Gosub,
+            111 => Op::GosubBack,
+            112 => Op::GosubRet,
+            113 => Op::GosubPop,
+            120 => Op::TryPush,
+            121 => Op::TryPop,
+            122 => Op::Raise,
+            123 => Op::Reraise,
+            124 => Op::Stop,
+            255 => Op::Halt,
             _ => return Err(BasilError(format!("bad opcode {}", byte))),
         };
         Ok(op)
     }
     fn read_u8(&mut self) -> Result<u8> {
         let f = self.cur();
-        let b = *f.chunk.code.get(f.ip).ok_or_else(|| BasilError("ip out of range".into()))?;
-        f.ip += 1; Ok(b)
+        let b = *f
+            .chunk
+            .code
+            .get(f.ip)
+            .ok_or_else(|| BasilError("ip out of range".into()))?;
+        f.ip += 1;
+        Ok(b)
     }
     fn read_u16(&mut self) -> Result<u16> {
         let f = self.cur();
-        let lo = *f.chunk.code.get(f.ip).ok_or_else(|| BasilError("ip out of range".into()))? as u16;
-        let hi = *f.chunk.code.get(f.ip+1).ok_or_else(|| BasilError("ip out of range".into()))? as u16;
-        f.ip += 2; Ok(lo | (hi<<8))
+        let lo = *f
+            .chunk
+            .code
+            .get(f.ip)
+            .ok_or_else(|| BasilError("ip out of range".into()))? as u16;
+        let hi = *f
+            .chunk
+            .code
+            .get(f.ip + 1)
+            .ok_or_else(|| BasilError("ip out of range".into()))? as u16;
+        f.ip += 2;
+        Ok(lo | (hi << 8))
     }
-    fn pop(&mut self) -> Result<Value> { self.stack.pop().ok_or_else(|| BasilError("stack underflow".into())) }
+    fn pop(&mut self) -> Result<Value> {
+        self.stack
+            .pop()
+            .ok_or_else(|| BasilError("stack underflow".into()))
+    }
 
     fn as_num(&self, v: Value) -> Result<f64> {
         match v {
@@ -4114,23 +7164,35 @@ impl VM {
             _ => Err(BasilError("expected number".into())),
         }
     }
-    fn bin_num<F: Fn(f64,f64)->f64>(&mut self, f: F) -> Result<()> {
-        let b = self.pop()?; let a = self.pop()?;
-        let b = self.as_num(b)?; let a = self.as_num(a)?;
-        self.stack.push(Value::Num(f(a,b))); Ok(())
+    fn bin_num<F: Fn(f64, f64) -> f64>(&mut self, f: F) -> Result<()> {
+        let b = self.pop()?;
+        let a = self.pop()?;
+        let b = self.as_num(b)?;
+        let a = self.as_num(a)?;
+        self.stack.push(Value::Num(f(a, b)));
+        Ok(())
     }
-    fn bin_num_cmp<F: Fn(f64,f64)->bool>(&mut self, f: F) -> Result<()> {
-        let b = self.pop()?; let a = self.pop()?;
-        let b = self.as_num(b)?; let a = self.as_num(a)?;
-        self.stack.push(Value::Bool(f(a,b))); Ok(())
+    fn bin_num_cmp<F: Fn(f64, f64) -> bool>(&mut self, f: F) -> Result<()> {
+        let b = self.pop()?;
+        let a = self.pop()?;
+        let b = self.as_num(b)?;
+        let a = self.as_num(a)?;
+        self.stack.push(Value::Bool(f(a, b)));
+        Ok(())
     }
 
     fn bin_eq(&mut self) -> Result<()> {
-        let b = self.pop()?; let a = self.pop()?;
+        let b = self.pop()?;
+        let a = self.pop()?;
         // Numeric-aware equality for Int/Num/Bool; fall back to structural equality otherwise
         let res = match (&a, &b) {
-            (Value::Num(_)|Value::Int(_)|Value::Bool(_), Value::Num(_)|Value::Int(_)|Value::Bool(_)) => {
-                let an = self.as_num(a)?; let bn = self.as_num(b)?; an == bn
+            (
+                Value::Num(_) | Value::Int(_) | Value::Bool(_),
+                Value::Num(_) | Value::Int(_) | Value::Bool(_),
+            ) => {
+                let an = self.as_num(a)?;
+                let bn = self.as_num(b)?;
+                an == bn
             }
             _ => a == b,
         };
@@ -4139,11 +7201,17 @@ impl VM {
     }
 
     fn bin_ne(&mut self) -> Result<()> {
-        let b = self.pop()?; let a = self.pop()?;
+        let b = self.pop()?;
+        let a = self.pop()?;
         // Numeric-aware inequality for Int/Num/Bool; fall back to structural inequality otherwise
         let res = match (&a, &b) {
-            (Value::Num(_)|Value::Int(_)|Value::Bool(_), Value::Num(_)|Value::Int(_)|Value::Bool(_)) => {
-                let an = self.as_num(a)?; let bn = self.as_num(b)?; an != bn
+            (
+                Value::Num(_) | Value::Int(_) | Value::Bool(_),
+                Value::Num(_) | Value::Int(_) | Value::Bool(_),
+            ) => {
+                let an = self.as_num(a)?;
+                let bn = self.as_num(b)?;
+                an != bn
             }
             _ => a != b,
         };
@@ -4198,7 +7266,11 @@ impl VM {
                 out.push(b.with_extension("basil"));
                 out.push(b.with_extension("basilx"));
             } else {
-                let ext = b.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+                let ext = b
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
                 if ext == "basilx" {
                     out.push(b.clone());
                 } else if ext == "basil" {
@@ -4211,22 +7283,33 @@ impl VM {
         }
         // dedupe while preserving order
         let mut seen = std::collections::HashSet::new();
-        out.into_iter().filter(|pb| seen.insert(pb.clone())).collect()
+        out.into_iter()
+            .filter(|pb| seen.insert(pb.clone()))
+            .collect()
     }
 
     fn load_class_program(&self, fname: &str) -> Result<(BCProgram, String)> {
         use std::fs;
         for cand in self.resolve_class_candidates(fname) {
             let exists = fs::metadata(&cand).is_ok();
-            if !exists { continue; }
-            let ext = cand.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+            if !exists {
+                continue;
+            }
+            let ext = cand
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
             if ext == "basilx" {
-                let bytes = fs::read(&cand).map_err(|e| BasilError(format!("Failed to read {}: {}", cand.display(), e)))?;
-                let prog = deserialize_program(&bytes).map_err(|_| BasilError("Bad .basilx file".into()))?;
+                let bytes = fs::read(&cand)
+                    .map_err(|e| BasilError(format!("Failed to read {}: {}", cand.display(), e)))?;
+                let prog = deserialize_program(&bytes)
+                    .map_err(|_| BasilError("Bad .basilx file".into()))?;
                 return Ok((prog, cand.to_string_lossy().to_string()));
             } else {
                 // Treat others as .basil source
-                let src = fs::read_to_string(&cand).map_err(|e| BasilError(format!("Failed to read {}: {}", cand.display(), e)))?;
+                let src = fs::read_to_string(&cand)
+                    .map_err(|e| BasilError(format!("Failed to read {}: {}", cand.display(), e)))?;
                 let ast = parse_basil(&src)?;
                 let prog = compile_basil(&ast)?;
                 return Ok((prog, cand.to_string_lossy().to_string()));
@@ -4252,11 +7335,12 @@ fn is_truthy(v: &Value) -> bool {
     }
 }
 
-
 impl Drop for VM {
     fn drop(&mut self) {
         let keys: Vec<i64> = self.file_table.keys().copied().collect();
-        for k in keys { let _ = self.fh_close(k); }
+        for k in keys {
+            let _ = self.fh_close(k);
+        }
     }
 }
 

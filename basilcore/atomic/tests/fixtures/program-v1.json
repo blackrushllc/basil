@@ -1,0 +1,121 @@
+{
+  "format": "atomicflix-game-ir",
+  "version": 1,
+  "entryPoint": "start",
+  "instructions": [
+    {
+      "op": "LABEL",
+      "name": "start",
+      "line": 1
+    },
+    {
+      "op": "LAYOUT",
+      "value": "fullscreen_text",
+      "line": 2
+    },
+    {
+      "op": "IMAGE",
+      "value": "/api/atomic-games/assets/haunted-door.jpg",
+      "line": 3
+    },
+    {
+      "op": "TITLE",
+      "value": "The Old House",
+      "line": 4
+    },
+    {
+      "op": "TEXT",
+      "value": "The front door is slightly open.",
+      "line": 5
+    },
+    {
+      "op": "CHOICE",
+      "text": "Open the door",
+      "target": "openDoor",
+      "line": 7
+    },
+    {
+      "op": "CHOICE",
+      "text": "Run away",
+      "target": "finish",
+      "line": 8
+    },
+    {
+      "op": "WAITCHOICE",
+      "line": 9
+    },
+    {
+      "op": "LABEL",
+      "name": "openDoor",
+      "line": 11
+    },
+    {
+      "op": "TEXT",
+      "value": "The door opens by itself.",
+      "line": 12
+    },
+    {
+      "op": "SET",
+      "variable": "score",
+      "value": 0,
+      "line": 13
+    },
+    {
+      "op": "ADD",
+      "variable": "score",
+      "value": 1,
+      "line": 14
+    },
+    {
+      "op": "IF_EQ",
+      "variable": "score",
+      "value": 1,
+      "target": "survived",
+      "line": 15
+    },
+    {
+      "op": "GOTO",
+      "target": "finish",
+      "line": 16
+    },
+    {
+      "op": "LABEL",
+      "name": "survived",
+      "line": 18
+    },
+    {
+      "op": "TEXT",
+      "value": "You survived the doorway.",
+      "line": 19
+    },
+    {
+      "op": "WAITKEY",
+      "variable": "lastKey",
+      "line": 20
+    },
+    {
+      "op": "GOTO",
+      "target": "finish",
+      "line": 21
+    },
+    {
+      "op": "LABEL",
+      "name": "finish",
+      "line": 23
+    },
+    {
+      "op": "TITLE",
+      "value": "The End",
+      "line": 24
+    },
+    {
+      "op": "TEXT",
+      "value": "Thanks for playing.",
+      "line": 25
+    },
+    {
+      "op": "END",
+      "line": 26
+    }
+  ]
+}

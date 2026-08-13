@@ -3,9 +3,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use basil_bytecode::{
+    ArrayObj, BasicObject, ElemType, MethodDesc, ObjectDescriptor, PropDesc, Value,
+};
 use basil_common::{BasilError, Result};
-use basil_bytecode::{ArrayObj, BasicObject, ElemType, MethodDesc, ObjectDescriptor, PropDesc, Value};
-use sqlx::{Row, Column};
+use sqlx::{Column, Row};
 
 use crate::runtime::TOKIO_RT;
 use base64::Engine;
@@ -13,15 +15,34 @@ use base64::Engine;
 fn make_str_array(items: Vec<String>) -> Value {
     let dims = vec![items.len()];
     let data = items.into_iter().map(Value::Str).collect::<Vec<_>>();
-    let arr = Rc::new(ArrayObj { elem: ElemType::Str, dims, data: RefCell::new(data) });
+    let arr = Rc::new(ArrayObj {
+        elem: ElemType::Str,
+        dims,
+        data: RefCell::new(data),
+    });
     Value::Array(arr)
 }
 
-fn str_arg(v: &Value) -> String { match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=> n.to_string(), Value::Bool(b)=> b.to_string(), _=> String::new() } }
+fn str_arg(v: &Value) -> String {
+    match v {
+        Value::Str(s) => s.clone(),
+        Value::Int(i) => i.to_string(),
+        Value::Num(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    }
+}
 
-fn bad_arity(name: &str, expect: usize, got: usize) -> BasilError { BasilError(format!("DB_POSTGRES.{}: expected {} args, got {}", name, expect, got)) }
+fn bad_arity(name: &str, expect: usize, got: usize) -> BasilError {
+    BasilError(format!(
+        "DB_POSTGRES.{}: expected {} args, got {}",
+        name, expect, got
+    ))
+}
 
-fn err(op: &str, e: impl std::fmt::Display) -> BasilError { BasilError(format!("SQL(Postgres) {}: {}", op, e)) }
+fn err(op: &str, e: impl std::fmt::Display) -> BasilError {
+    BasilError(format!("SQL(Postgres) {}: {}", op, e))
+}
 
 pub struct PgObj {
     dsn: Option<String>,
@@ -62,35 +83,121 @@ impl PgObj {
             version: "0.1".into(),
             summary: "PostgreSQL/Aurora connector with pooled connections (SQLx/rustls)".into(),
             properties: vec![
-                PropDesc { name: "PoolMax%".into(), type_name: "Int".into(), readable: true, writable: true },
-                PropDesc { name: "ConnectTimeoutMs%".into(), type_name: "Int".into(), readable: true, writable: true },
-                PropDesc { name: "CommandTimeoutMs%".into(), type_name: "Int".into(), readable: true, writable: true },
-                PropDesc { name: "TlsMode$".into(), type_name: "String".into(), readable: true, writable: true },
-                PropDesc { name: "RootCertPath$".into(), type_name: "String".into(), readable: true, writable: true },
-                PropDesc { name: "LastRowsAffected%".into(), type_name: "Int".into(), readable: true, writable: false },
-                PropDesc { name: "LastError$".into(), type_name: "String".into(), readable: true, writable: false },
+                PropDesc {
+                    name: "PoolMax%".into(),
+                    type_name: "Int".into(),
+                    readable: true,
+                    writable: true,
+                },
+                PropDesc {
+                    name: "ConnectTimeoutMs%".into(),
+                    type_name: "Int".into(),
+                    readable: true,
+                    writable: true,
+                },
+                PropDesc {
+                    name: "CommandTimeoutMs%".into(),
+                    type_name: "Int".into(),
+                    readable: true,
+                    writable: true,
+                },
+                PropDesc {
+                    name: "TlsMode$".into(),
+                    type_name: "String".into(),
+                    readable: true,
+                    writable: true,
+                },
+                PropDesc {
+                    name: "RootCertPath$".into(),
+                    type_name: "String".into(),
+                    readable: true,
+                    writable: true,
+                },
+                PropDesc {
+                    name: "LastRowsAffected%".into(),
+                    type_name: "Int".into(),
+                    readable: true,
+                    writable: false,
+                },
+                PropDesc {
+                    name: "LastError$".into(),
+                    type_name: "String".into(),
+                    readable: true,
+                    writable: false,
+                },
             ],
             methods: vec![
-                MethodDesc { name: "Connect$".into(), arity: 6, arg_names: vec!["host$".into(), "port%".into(), "user$".into(), "pass$".into(), "dbname$".into(), "sslmode$".into()], return_type: "Int (ok%)".into() },
-                MethodDesc { name: "Execute".into(), arity: 2, arg_names: vec!["sql$".into(), "params$[]?".into()], return_type: "Int (rows%)".into() },
-                MethodDesc { name: "Query$".into(), arity: 2, arg_names: vec!["sql$".into(), "params$[]?".into()], return_type: "String (json$)".into() },
-                MethodDesc { name: "QueryTable$".into(), arity: 2, arg_names: vec!["sql$".into(), "params$[]?".into()], return_type: "String[]".into() },
-                MethodDesc { name: "Begin".into(), arity: 0, arg_names: vec![], return_type: "Int (ok%)".into() },
-                MethodDesc { name: "Commit".into(), arity: 0, arg_names: vec![], return_type: "Int (ok%)".into() },
-                MethodDesc { name: "Rollback".into(), arity: 0, arg_names: vec![], return_type: "Int (ok%)".into() },
+                MethodDesc {
+                    name: "Connect$".into(),
+                    arity: 6,
+                    arg_names: vec![
+                        "host$".into(),
+                        "port%".into(),
+                        "user$".into(),
+                        "pass$".into(),
+                        "dbname$".into(),
+                        "sslmode$".into(),
+                    ],
+                    return_type: "Int (ok%)".into(),
+                },
+                MethodDesc {
+                    name: "Execute".into(),
+                    arity: 2,
+                    arg_names: vec!["sql$".into(), "params$[]?".into()],
+                    return_type: "Int (rows%)".into(),
+                },
+                MethodDesc {
+                    name: "Query$".into(),
+                    arity: 2,
+                    arg_names: vec!["sql$".into(), "params$[]?".into()],
+                    return_type: "String (json$)".into(),
+                },
+                MethodDesc {
+                    name: "QueryTable$".into(),
+                    arity: 2,
+                    arg_names: vec!["sql$".into(), "params$[]?".into()],
+                    return_type: "String[]".into(),
+                },
+                MethodDesc {
+                    name: "Begin".into(),
+                    arity: 0,
+                    arg_names: vec![],
+                    return_type: "Int (ok%)".into(),
+                },
+                MethodDesc {
+                    name: "Commit".into(),
+                    arity: 0,
+                    arg_names: vec![],
+                    return_type: "Int (ok%)".into(),
+                },
+                MethodDesc {
+                    name: "Rollback".into(),
+                    arity: 0,
+                    arg_names: vec![],
+                    return_type: "Int (ok%)".into(),
+                },
             ],
             examples: vec![
-                "DIM db@ AS DB_POSTGRES(\"postgres://user:pass@host:5432/db?sslmode=require\")".into()
+                "DIM db@ AS DB_POSTGRES(\"postgres://user:pass@host:5432/db?sslmode=require\")"
+                    .into(),
             ],
         }
     }
 
     fn ensure_pool(&mut self) -> Result<sqlx::PgPool> {
-        if let Some(p) = &self.pool { return Ok(p.clone()); }
-        let dsn = self.dsn.clone().ok_or_else(|| BasilError("DB_POSTGRES: no DSN configured; pass in constructor or call Connect$".into()))?;
+        if let Some(p) = &self.pool {
+            return Ok(p.clone());
+        }
+        let dsn = self.dsn.clone().ok_or_else(|| {
+            BasilError(
+                "DB_POSTGRES: no DSN configured; pass in constructor or call Connect$".into(),
+            )
+        })?;
 
         // Build options from DSN
-        let mut opts: sqlx::postgres::PgConnectOptions = dsn.parse().map_err(|_e| BasilError("SQL(Postgres) ConnectFailed: bad DSN".into()))?;
+        let mut opts: sqlx::postgres::PgConnectOptions = dsn
+            .parse()
+            .map_err(|_e| BasilError("SQL(Postgres) ConnectFailed: bad DSN".into()))?;
         // TLS mode mapping
         let tls = self.tls_mode.to_ascii_lowercase();
         use sqlx::postgres::PgSslMode;
@@ -100,13 +207,18 @@ impl PgObj {
             _ => PgSslMode::Require,
         };
         opts = opts.ssl_mode(mode);
-        if let Some(path) = &self.root_cert_path { if !path.is_empty() { opts = opts.ssl_root_cert(PathBuf::from(path)); } }
+        if let Some(path) = &self.root_cert_path {
+            if !path.is_empty() {
+                opts = opts.ssl_root_cert(PathBuf::from(path));
+            }
+        }
 
         let mut builder = sqlx::postgres::PgPoolOptions::new();
         builder = builder.max_connections(self.pool_max);
         builder = builder.acquire_timeout(Duration::from_millis(self.connect_timeout_ms));
         // Connect on runtime
-        let pool = TOKIO_RT.block_on(async move { builder.connect_with(opts).await })
+        let pool = TOKIO_RT
+            .block_on(async move { builder.connect_with(opts).await })
             .map_err(|e| BasilError(format!("SQL(Postgres) ConnectFailed: {}", e)))?;
         self.pool = Some(pool.clone());
         Ok(pool)
@@ -120,29 +232,45 @@ impl PgObj {
         Ok(ExecutorEither::Pool(pool))
     }
 
-    fn bind_pg<'q>(mut qb: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>, params: &'q [String]) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        for p in params { qb = qb.bind(p); }
+    fn bind_pg<'q>(
+        mut qb: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+        params: &'q [String],
+    ) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+        for p in params {
+            qb = qb.bind(p);
+        }
         qb
     }
 
     fn to_json_rows(rows: Vec<sqlx::postgres::PgRow>) -> String {
-        use serde_json::{Value as J, Map};
+        use serde_json::{Map, Value as J};
         let mut out = Vec::with_capacity(rows.len());
         for row in rows.iter() {
             let mut m = Map::new();
             for col in row.columns() {
                 let name = col.name().to_string();
                 // Try common types; fall back to string
-                let jv = if let Ok(v) = row.try_get::<i64, _>(name.as_str()) { J::from(v) }
-                else if let Ok(v) = row.try_get::<f64, _>(name.as_str()) { J::from(v) }
-                else if let Ok(v) = row.try_get::<bool, _>(name.as_str()) { J::from(v) }
-                else if let Ok(v) = row.try_get::<String, _>(name.as_str()) { J::from(v) }
-                else if let Ok(v) = row.try_get::<bigdecimal::BigDecimal, _>(name.as_str()) { J::from(v.to_string()) }
-                else if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(name.as_str()) { J::from(v.to_string()) }
-                else if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(name.as_str()) { J::from(v.to_string()) }
-                else if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(name.as_str()) { J::from(v.to_string()) }
-                else if let Ok(v) = row.try_get::<Vec<u8>, _>(name.as_str()) { J::from(base64::engine::general_purpose::STANDARD.encode(v)) }
-                else { J::Null };
+                let jv = if let Ok(v) = row.try_get::<i64, _>(name.as_str()) {
+                    J::from(v)
+                } else if let Ok(v) = row.try_get::<f64, _>(name.as_str()) {
+                    J::from(v)
+                } else if let Ok(v) = row.try_get::<bool, _>(name.as_str()) {
+                    J::from(v)
+                } else if let Ok(v) = row.try_get::<String, _>(name.as_str()) {
+                    J::from(v)
+                } else if let Ok(v) = row.try_get::<bigdecimal::BigDecimal, _>(name.as_str()) {
+                    J::from(v.to_string())
+                } else if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(name.as_str()) {
+                    J::from(v.to_string())
+                } else if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(name.as_str()) {
+                    J::from(v.to_string())
+                } else if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(name.as_str()) {
+                    J::from(v.to_string())
+                } else if let Ok(v) = row.try_get::<Vec<u8>, _>(name.as_str()) {
+                    J::from(base64::engine::general_purpose::STANDARD.encode(v))
+                } else {
+                    J::Null
+                };
                 m.insert(name, jv);
             }
             out.push(J::Object(m));
@@ -152,24 +280,46 @@ impl PgObj {
 
     fn to_table_lines(rows: Vec<sqlx::postgres::PgRow>) -> Vec<String> {
         let mut lines = Vec::new();
-        if rows.is_empty() { return lines; }
+        if rows.is_empty() {
+            return lines;
+        }
         // header
-        let header = rows[0].columns().iter().map(|c| c.name().to_string()).collect::<Vec<_>>().join(",");
+        let header = rows[0]
+            .columns()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         lines.push(header);
         for row in rows.iter() {
             let mut vals: Vec<String> = Vec::new();
             for col in row.columns() {
                 let name = col.name();
-                let s = if let Ok(v) = row.try_get::<String, _>(name) { v }
-                else if let Ok(v) = row.try_get::<i64, _>(name) { v.to_string() }
-                else if let Ok(v) = row.try_get::<f64, _>(name) { let mut s=v.to_string(); if s.ends_with('.') {s.push('0');} s }
-                else if let Ok(v) = row.try_get::<bool, _>(name) { if v {"1"} else {"0"}.to_string() }
-                else if let Ok(v) = row.try_get::<bigdecimal::BigDecimal, _>(name) { v.to_string() }
-                else if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(name) { v.to_string() }
-                else if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(name) { v.to_string() }
-                else if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(name) { v.to_string() }
-                else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) { format!("[{} bytes]", v.len()) }
-                else { String::new() };
+                let s = if let Ok(v) = row.try_get::<String, _>(name) {
+                    v
+                } else if let Ok(v) = row.try_get::<i64, _>(name) {
+                    v.to_string()
+                } else if let Ok(v) = row.try_get::<f64, _>(name) {
+                    let mut s = v.to_string();
+                    if s.ends_with('.') {
+                        s.push('0');
+                    }
+                    s
+                } else if let Ok(v) = row.try_get::<bool, _>(name) {
+                    if v { "1" } else { "0" }.to_string()
+                } else if let Ok(v) = row.try_get::<bigdecimal::BigDecimal, _>(name) {
+                    v.to_string()
+                } else if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(name) {
+                    v.to_string()
+                } else if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(name) {
+                    v.to_string()
+                } else if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(name) {
+                    v.to_string()
+                } else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) {
+                    format!("[{} bytes]", v.len())
+                } else {
+                    String::new()
+                };
                 vals.push(s);
             }
             lines.push(vals.join(","));
@@ -178,15 +328,33 @@ impl PgObj {
     }
 
     fn parse_params(args: &[Value]) -> Vec<String> {
-        if args.len() < 2 { return Vec::new(); }
+        if args.len() < 2 {
+            return Vec::new();
+        }
         match &args[1] {
             Value::Array(arr) => {
                 let data = arr.data.borrow();
-                data.iter().map(|v| match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=>n.to_string(), Value::Bool(b)=>b.to_string(), _=> String::new() }).collect()
+                data.iter()
+                    .map(|v| match v {
+                        Value::Str(s) => s.clone(),
+                        Value::Int(i) => i.to_string(),
+                        Value::Num(n) => n.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => String::new(),
+                    })
+                    .collect()
             }
             Value::List(list) => {
                 let data = list.borrow();
-                data.iter().map(|v| match v { Value::Str(s)=>s.clone(), Value::Int(i)=>i.to_string(), Value::Num(n)=>n.to_string(), Value::Bool(b)=>b.to_string(), _=> String::new() }).collect()
+                data.iter()
+                    .map(|v| match v {
+                        Value::Str(s) => s.clone(),
+                        Value::Int(i) => i.to_string(),
+                        Value::Num(n) => n.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => String::new(),
+                    })
+                    .collect()
             }
             _ => {
                 if args.len() == 2 {
@@ -204,9 +372,10 @@ enum ExecutorEither<'a> {
     Txn(&'a mut sqlx::pool::PoolConnection<sqlx::Postgres>),
 }
 
-
 impl BasicObject for PgObj {
-    fn type_name(&self) -> &str { "DB_POSTGRES" }
+    fn type_name(&self) -> &str {
+        "DB_POSTGRES"
+    }
 
     fn get_prop(&self, name: &str) -> Result<Value> {
         match name.to_ascii_uppercase().as_str() {
@@ -223,125 +392,224 @@ impl BasicObject for PgObj {
 
     fn set_prop(&mut self, name: &str, v: Value) -> Result<()> {
         match name.to_ascii_uppercase().as_str() {
-            "POOLMAX%" => { self.pool_max = match v { Value::Int(i)=> i as u32, Value::Num(n)=> n as u32, _=> self.pool_max }; self.pool=None; Ok(()) }
-            ,"CONNECTTIMEOUTMS%" => { self.connect_timeout_ms = match v { Value::Int(i)=> i as u64, Value::Num(n)=> n as u64, _=> self.connect_timeout_ms }; self.pool=None; Ok(()) }
-            ,"COMMANDTIMEOUTMS%" => { self.command_timeout_ms = match v { Value::Int(i)=> i as u64, Value::Num(n)=> n as u64, _=> self.command_timeout_ms }; Ok(()) }
-            ,"TLSMODE$" => { self.tls_mode = str_arg(&v).to_ascii_lowercase(); self.pool=None; Ok(()) }
-            ,"ROOTCERTPATH$" => { let s = str_arg(&v); self.root_cert_path = if s.is_empty(){None}else{Some(s)}; self.pool=None; Ok(()) }
-            ,_ => Err(BasilError("DB_POSTGRES: unknown or read-only property".into()))
+            "POOLMAX%" => {
+                self.pool_max = match v {
+                    Value::Int(i) => i as u32,
+                    Value::Num(n) => n as u32,
+                    _ => self.pool_max,
+                };
+                self.pool = None;
+                Ok(())
+            }
+            "CONNECTTIMEOUTMS%" => {
+                self.connect_timeout_ms = match v {
+                    Value::Int(i) => i as u64,
+                    Value::Num(n) => n as u64,
+                    _ => self.connect_timeout_ms,
+                };
+                self.pool = None;
+                Ok(())
+            }
+            "COMMANDTIMEOUTMS%" => {
+                self.command_timeout_ms = match v {
+                    Value::Int(i) => i as u64,
+                    Value::Num(n) => n as u64,
+                    _ => self.command_timeout_ms,
+                };
+                Ok(())
+            }
+            "TLSMODE$" => {
+                self.tls_mode = str_arg(&v).to_ascii_lowercase();
+                self.pool = None;
+                Ok(())
+            }
+            "ROOTCERTPATH$" => {
+                let s = str_arg(&v);
+                self.root_cert_path = if s.is_empty() { None } else { Some(s) };
+                self.pool = None;
+                Ok(())
+            }
+            _ => Err(BasilError(
+                "DB_POSTGRES: unknown or read-only property".into(),
+            )),
         }
     }
 
     fn call(&mut self, method: &str, args: &[Value]) -> Result<Value> {
         match method.to_ascii_uppercase().as_str() {
             "CONNECT$" => {
-                if args.len() != 6 { return Err(bad_arity("Connect$", 6, args.len())); }
+                if args.len() != 6 {
+                    return Err(bad_arity("Connect$", 6, args.len()));
+                }
                 let host = str_arg(&args[0]);
-                let port = match &args[1] { Value::Int(i)=> *i as u16, Value::Num(n)=> n.trunc() as u16, _=> 5432 };
+                let port = match &args[1] {
+                    Value::Int(i) => *i as u16,
+                    Value::Num(n) => n.trunc() as u16,
+                    _ => 5432,
+                };
                 let user = str_arg(&args[2]);
                 let pass = str_arg(&args[3]);
                 let db = str_arg(&args[4]);
                 let ssl = str_arg(&args[5]);
-                let dsn = format!("postgres://{}:{}@{}:{}/{}?sslmode={}", user, pass, host, port, db, if ssl.is_empty(){"require"} else {&ssl});
+                let dsn = format!(
+                    "postgres://{}:{}@{}:{}/{}?sslmode={}",
+                    user,
+                    pass,
+                    host,
+                    port,
+                    db,
+                    if ssl.is_empty() { "require" } else { &ssl }
+                );
                 self.dsn = Some(dsn);
                 self.pool = None;
                 let ok = self.ensure_pool().is_ok();
-                Ok(Value::Int(if ok {1} else {0}))
+                Ok(Value::Int(if ok { 1 } else { 0 }))
             }
-            ,"EXECUTE" => {
-                if args.is_empty() { return Err(bad_arity("Execute", 1, args.len())); }
+            "EXECUTE" => {
+                if args.is_empty() {
+                    return Err(bad_arity("Execute", 1, args.len()));
+                }
                 let sql = str_arg(&args[0]);
                 let params = Self::parse_params(args);
                 self.last_err.clear();
                 let timeout = self.command_timeout_ms;
-                let exec_res: Result<u64> = (||{
+                let exec_res: Result<u64> = (|| {
                     let mut qb = sqlx::query(&sql);
                     qb = Self::bind_pg(qb, &params);
                     match self.get_executor()? {
                         ExecutorEither::Pool(pool) => {
                             let fut = qb.execute(&pool);
-                            let res = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
+                            let res = TOKIO_RT
+                                .block_on(async move {
+                                    tokio::time::timeout(Duration::from_millis(timeout), fut).await
+                                })
                                 .map_err(|_| err("Execute(Timeout)", "command timeout"))?
                                 .map_err(|e| err("Execute", e))?;
                             Ok(res.rows_affected())
                         }
                         ExecutorEither::Txn(conn) => {
                             let fut = qb.execute(conn.as_mut());
-                            let res = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
+                            let res = TOKIO_RT
+                                .block_on(async move {
+                                    tokio::time::timeout(Duration::from_millis(timeout), fut).await
+                                })
                                 .map_err(|_| err("Execute(Timeout)", "command timeout"))?
                                 .map_err(|e| err("Execute", e))?;
                             Ok(res.rows_affected())
                         }
                     }
                 })();
-                match exec_res { Ok(n)=> { self.last_rows = n as i64; Ok(Value::Int(self.last_rows)) }, Err(e)=> { self.last_err = format!("{}", e); Err(e) } }
+                match exec_res {
+                    Ok(n) => {
+                        self.last_rows = n as i64;
+                        Ok(Value::Int(self.last_rows))
+                    }
+                    Err(e) => {
+                        self.last_err = format!("{}", e);
+                        Err(e)
+                    }
+                }
             }
-            ,"QUERY$" => {
-                if args.is_empty() { return Err(bad_arity("Query$", 1, args.len())); }
+            "QUERY$" => {
+                if args.is_empty() {
+                    return Err(bad_arity("Query$", 1, args.len()));
+                }
                 let sql = str_arg(&args[0]);
                 let params = Self::parse_params(args);
                 self.last_err.clear();
                 let timeout = self.command_timeout_ms;
-                let query_res: Result<String> = (||{
+                let query_res: Result<String> = (|| {
                     let mut qb = sqlx::query(&sql);
                     qb = Self::bind_pg(qb, &params);
                     match self.get_executor()? {
                         ExecutorEither::Pool(pool) => {
                             let fut = qb.fetch_all(&pool);
-                            let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
+                            let rows = TOKIO_RT
+                                .block_on(async move {
+                                    tokio::time::timeout(Duration::from_millis(timeout), fut).await
+                                })
                                 .map_err(|_| err("Query(Timeout)", "command timeout"))?
                                 .map_err(|e| err("Query", e))?;
                             Ok(Self::to_json_rows(rows))
                         }
                         ExecutorEither::Txn(conn) => {
                             let fut = qb.fetch_all(conn.as_mut());
-                            let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
+                            let rows = TOKIO_RT
+                                .block_on(async move {
+                                    tokio::time::timeout(Duration::from_millis(timeout), fut).await
+                                })
                                 .map_err(|_| err("Query(Timeout)", "command timeout"))?
                                 .map_err(|e| err("Query", e))?;
                             Ok(Self::to_json_rows(rows))
                         }
                     }
                 })();
-                match query_res { Ok(s)=> Ok(Value::Str(s)), Err(e)=> { self.last_err = format!("{}", e); Err(e) } }
+                match query_res {
+                    Ok(s) => Ok(Value::Str(s)),
+                    Err(e) => {
+                        self.last_err = format!("{}", e);
+                        Err(e)
+                    }
+                }
             }
-            ,"QUERYTABLE$" => {
-                if args.is_empty() { return Err(bad_arity("QueryTable$", 1, args.len())); }
+            "QUERYTABLE$" => {
+                if args.is_empty() {
+                    return Err(bad_arity("QueryTable$", 1, args.len()));
+                }
                 let sql = str_arg(&args[0]);
                 let params = Self::parse_params(args);
                 self.last_err.clear();
                 let timeout = self.command_timeout_ms;
-                let query_res: Result<Vec<String>> = (||{
+                let query_res: Result<Vec<String>> = (|| {
                     let mut qb = sqlx::query(&sql);
                     qb = Self::bind_pg(qb, &params);
                     match self.get_executor()? {
                         ExecutorEither::Pool(pool) => {
                             let fut = qb.fetch_all(&pool);
-                            let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
+                            let rows = TOKIO_RT
+                                .block_on(async move {
+                                    tokio::time::timeout(Duration::from_millis(timeout), fut).await
+                                })
                                 .map_err(|_| err("QueryTable(Timeout)", "command timeout"))?
                                 .map_err(|e| err("QueryTable", e))?;
                             Ok(Self::to_table_lines(rows))
                         }
                         ExecutorEither::Txn(conn) => {
                             let fut = qb.fetch_all(conn.as_mut());
-                            let rows = TOKIO_RT.block_on(async move { tokio::time::timeout(Duration::from_millis(timeout), fut).await })
+                            let rows = TOKIO_RT
+                                .block_on(async move {
+                                    tokio::time::timeout(Duration::from_millis(timeout), fut).await
+                                })
                                 .map_err(|_| err("QueryTable(Timeout)", "command timeout"))?
                                 .map_err(|e| err("QueryTable", e))?;
                             Ok(Self::to_table_lines(rows))
                         }
                     }
                 })();
-                match query_res { Ok(lines)=> Ok(make_str_array(lines)), Err(e)=> { self.last_err = format!("{}", e); Err(e) } }
+                match query_res {
+                    Ok(lines) => Ok(make_str_array(lines)),
+                    Err(e) => {
+                        self.last_err = format!("{}", e);
+                        Err(e)
+                    }
+                }
             }
-            ,"BEGIN" => {
-                if self.txn_conn.is_some() { return Ok(Value::Int(1)); }
+            "BEGIN" => {
+                if self.txn_conn.is_some() {
+                    return Ok(Value::Int(1));
+                }
                 let pool = self.ensure_pool()?;
-                let mut conn = TOKIO_RT.block_on(async move { pool.acquire().await }).map_err(|e| err("Begin(Acquire)", e))?;
+                let mut conn = TOKIO_RT
+                    .block_on(async move { pool.acquire().await })
+                    .map_err(|e| err("Begin(Acquire)", e))?;
                 // BEGIN
-                TOKIO_RT.block_on(async { sqlx::query("BEGIN").execute(conn.as_mut()).await }).map_err(|e| err("Begin", e))?;
+                TOKIO_RT
+                    .block_on(async { sqlx::query("BEGIN").execute(conn.as_mut()).await })
+                    .map_err(|e| err("Begin", e))?;
                 self.txn_conn = Some(conn);
                 Ok(Value::Int(1))
             }
-            ,"COMMIT" => {
+            "COMMIT" => {
                 if let Some(mut conn) = self.txn_conn.take() {
                     let res = TOKIO_RT.block_on(async move {
                         let r = sqlx::query("COMMIT").execute(conn.as_mut()).await;
@@ -349,10 +617,15 @@ impl BasicObject for PgObj {
                         drop(conn);
                         r
                     });
-                    match res { Ok(_)=> Ok(Value::Int(1)), Err(e)=> Err(err("Commit", e)) }
-                } else { Ok(Value::Int(1)) }
+                    match res {
+                        Ok(_) => Ok(Value::Int(1)),
+                        Err(e) => Err(err("Commit", e)),
+                    }
+                } else {
+                    Ok(Value::Int(1))
+                }
             }
-            ,"ROLLBACK" => {
+            "ROLLBACK" => {
                 if let Some(mut conn) = self.txn_conn.take() {
                     let res = TOKIO_RT.block_on(async move {
                         let r = sqlx::query("ROLLBACK").execute(conn.as_mut()).await;
@@ -360,38 +633,60 @@ impl BasicObject for PgObj {
                         drop(conn);
                         r
                     });
-                    match res { Ok(_)=> Ok(Value::Int(1)), Err(e)=> Err(err("Rollback", e)) }
-                } else { Ok(Value::Int(1)) }
+                    match res {
+                        Ok(_) => Ok(Value::Int(1)),
+                        Err(e) => Err(err("Rollback", e)),
+                    }
+                } else {
+                    Ok(Value::Int(1))
+                }
             }
-            ,other => Err(BasilError(format!("Unknown method '{}' on DB_POSTGRES", other)))
+            other => Err(BasilError(format!(
+                "Unknown method '{}' on DB_POSTGRES",
+                other
+            ))),
         }
     }
 
-    fn descriptor(&self) -> ObjectDescriptor { Self::descriptor_static() }
+    fn descriptor(&self) -> ObjectDescriptor {
+        Self::descriptor_static()
+    }
 }
 
 pub fn register<F: FnMut(&str, crate::TypeInfo)>(reg: &mut F) {
     let factory = |args: &[Value]| -> Result<Rc<RefCell<dyn BasicObject>>> {
         let mut obj = PgObj::default();
-        if args.len() == 1 { obj.dsn = Some(str_arg(&args[0])); }
+        if args.len() == 1 {
+            obj.dsn = Some(str_arg(&args[0]));
+        }
         Ok(Rc::new(RefCell::new(obj)))
     };
     let descriptor = || PgObj::descriptor_static();
     let constants = || Vec::<(String, Value)>::new();
-    reg("DB_POSTGRES", crate::TypeInfo { factory, descriptor, constants });
+    reg(
+        "DB_POSTGRES",
+        crate::TypeInfo {
+            factory,
+            descriptor,
+            constants,
+        },
+    );
 }
-
 
 // Ensure any outstanding SQLx resources are released inside Tokio runtime
 impl Drop for PgObj {
     fn drop(&mut self) {
         // Drop any in-progress transaction connection inside Tokio
         if let Some(conn) = self.txn_conn.take() {
-            let _ = TOKIO_RT.block_on(async move { drop(conn); });
+            let _ = TOKIO_RT.block_on(async move {
+                drop(conn);
+            });
         }
         // Also drop the pool inside Tokio to avoid runtime-context panics during shutdown
         if let Some(pool) = self.pool.take() {
-            let _ = TOKIO_RT.block_on(async move { drop(pool); });
+            let _ = TOKIO_RT.block_on(async move {
+                drop(pool);
+            });
         }
     }
 }

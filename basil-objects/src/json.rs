@@ -1,7 +1,7 @@
-use basil_common::{Result, BasilError};
+use basil_common::{BasilError, Result};
 
 #[cfg(feature = "serde_json")]
-use serde_json::{Value as JValue};
+use serde_json::Value as JValue;
 
 #[cfg(feature = "serde_json")]
 pub fn parse_normalize(s: &str) -> Result<String> {
